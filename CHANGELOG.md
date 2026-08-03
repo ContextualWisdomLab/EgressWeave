@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Security
+- Revalidate caller-supplied `ValidatedEgressURL` objects before constructing a
+  pinned transport. Forged allowlist, scheme, hostname, port, address-shape, or
+  canonicalization state can no longer bypass the normal URL policy.
 - Bind every `allow_local` exception to the original local hostname. Built-in
   local names accept loopback only, while allowlisted single-label container
   names accept loopback, RFC 1918 IPv4, or RFC 4193 IPv6 unique-local space.
