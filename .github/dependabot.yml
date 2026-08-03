@@ -9,9 +9,6 @@ updates:
       time: "04:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - python
     groups:
       runtime-network-stack:
         dependency-type: production
@@ -31,9 +28,6 @@ updates:
       time: "04:30"
       timezone: Asia/Seoul
     open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - github-actions
     groups:
       workflow-actions:
         patterns:
