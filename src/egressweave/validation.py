@@ -267,6 +267,51 @@ def _normalize_egress_url(
     )
 
 
+def _revalidate_pinned_egress_url(
+    validated: ValidatedEgressURL, policy: EgressPolicy
+) -> ValidatedEgressURL:
+    """Re-check a caller-supplied validation result before transport use.
+
+    ``ValidatedEgressURL`` is a public dataclass and therefore forgeable. This
+    restores every invariant established by the normal validation path without
+    performing another DNS lookup: URL policy, canonical host and port
+    agreement, a non-empty tuple of textual addresses, and per-address scope
+    validation.
+    """
+    if (
+        not isinstance(validated, ValidatedEgressURL)
+        or not isinstance(validated.normalized_url, str)
+        or not isinstance(validated.hostname, str)
+        or not isinstance(validated.port, int)
+        or isinstance(validated.port, bool)
+        or not isinstance(validated.addresses, tuple)
+        or not validated.addresses
+        or any(not isinstance(address, str) for address in validated.addresses)
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    normalized_url, hostname, port = _normalize_egress_url(
+        validated.normalized_url, policy
+    )
+    if (
+        normalized_url is None
+        or hostname is None
+        or port is None
+        or normalized_url != validated.normalized_url
+        or hostname != validated.hostname
+        or port != validated.port
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    addresses = tuple(
+        dict.fromkeys(
+            _validate_global_address(address, policy, hostname=hostname)
+            for address in validated.addresses
+        )
+    )
+    return ValidatedEgressURL(normalized_url, hostname, port, addresses)
+
+
 def validate_egress_url_details(
     value: str | None, *, policy: EgressPolicy
 ) -> ValidatedEgressURL | None:
