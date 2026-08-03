@@ -34,6 +34,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Require every local-development target, including `localhost` and
+  `localhost.localdomain`, to appear explicitly in `allowed_hosts` before DNS
+  resolution. `allow_local=True` now widens only the permitted address class;
+  it no longer grants an implicit hostname. Loopback IP-literal URLs remain
+  forbidden, preventing a policy intended for one container alias from reaching
+  an unrelated local listener on the same authorized port.
 - Canonicalize trusted allowlist entries and candidate URL hostnames with UTS #46
   non-transitional IDNA processing and STD3 rules before comparison, DNS lookup,
   TLS SNI, or HTTP authority construction. Valid Unicode names now share one

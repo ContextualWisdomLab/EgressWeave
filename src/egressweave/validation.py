@@ -33,7 +33,6 @@ _MAX_CONCURRENT_DNS_RESOLUTIONS = 32
 _DNS_RESOLUTION_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT_DNS_RESOLUTIONS)
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
-_LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
 _PRIVATE_LOCAL_NETWORKS = (
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
@@ -130,11 +129,8 @@ def _looks_like_ip_literal(candidate: str) -> bool:
 
 
 def _is_local_dev_host(hostname: str) -> bool:
-    normalized_hostname = _normalize_host(hostname)
-    return (
-        normalized_hostname in _LOCAL_DEV_HOSTNAMES
-        or normalized_hostname in _LOCAL_DEV_IP_LITERALS
-    )
+    """Return whether ``hostname`` is an RFC 6761 local development name."""
+    return _normalize_host(hostname) in _LOCAL_DEV_HOSTNAMES
 
 
 def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
@@ -166,10 +162,10 @@ def _validate_global_address(
 ) -> str:
     """Validate that an IP address is globally routable, or locally scoped.
 
-    Local exceptions are bound to the original hostname. Built-in local names
-    and loopback literals may resolve only to loopback addresses. An explicitly
-    allowlisted single-label container name may resolve only to loopback or
-    private network space. Dotted remote hosts never inherit either exception.
+    Local exceptions are bound to an explicitly allowlisted hostname. RFC 6761
+    local names may resolve only to loopback addresses. An explicitly allowlisted
+    single-label container name may resolve only to loopback or private network
+    space. IP-literal URLs and dotted remote hosts never inherit either exception.
     """
     try:
         ip_address = ipaddress.ip_address(address)
@@ -315,6 +311,9 @@ def _validate_url_components(
     if parsed.scheme.lower() not in {"http", "https"}:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
+    if is_local_dev_host and not policy.allow_local:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
     if (
         parsed.scheme.lower() == "http"
         and not is_local_dev_host
@@ -355,8 +354,7 @@ def _normalize_egress_url(
 
     _validate_url_components(parsed, hostname, port, is_local_dev_host, policy)
 
-    if not is_local_dev_host:
-        _validate_remote_host_is_allowed(hostname, policy)
+    _validate_remote_host_is_allowed(hostname, policy)
 
     netloc = _format_normalized_netloc(
         hostname, port, explicit_port=parsed.port is not None
