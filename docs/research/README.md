@@ -7,9 +7,11 @@ rather than an ad-hoc heuristic. The primary sources:
 
 - **CWE-918: Server-Side Request Forgery (SSRF).** A server can be induced to
   make requests to unintended destinations — internal services, the cloud
-  metadata endpoint at `169.254.169.254`, loopback admin panels. egressweave's
-  address classifier rejects every non-globally-routable target (private,
-  loopback, link-local, reserved, multicast, unspecified, non-global).
+  metadata endpoint at `169.254.169.254`, loopback admin panels, or unexpected
+  services on alternate ports. egressweave's exact hostname and destination-
+  port policy plus address classifier reject every unapproved authority and
+  non-globally-routable target (private, loopback, link-local, reserved,
+  multicast, unspecified, non-global).
 - **OWASP SSRF Prevention Cheat Sheet.** Recommends an *allowlist* of permitted
   hosts (never a denylist), rejecting non-standard schemes and embedded
   credentials, disabling redirects, and validating the *resolved* IP — all
@@ -24,6 +26,16 @@ rather than an ad-hoc heuristic. The primary sources:
   once, validates *every* returned address, and **pins** those addresses into
   the transport, re-validating immediately before each connect and refusing any
   host/port drift. The `Host` header is rewritten to the validated netloc.
+
+## Internationalized hostnames — IDNA2008 / UTS #46
+
+- **RFC 5890 / RFC 5891:** define the IDNA2008 framework and lookup protocol
+  that represents internationalized labels as DNS-compatible ASCII A-labels.
+- **Unicode Technical Standard #46:** defines deterministic compatibility
+  mapping and validation before IDNA2008 lookup. egressweave uses
+  non-transitional UTS #46 processing with STD3 ASCII rules so policy entries,
+  request hosts, DNS lookups, TLS SNI, and transport pinning share one canonical
+  ASCII representation. Labels that fail processing are rejected.
 
 ## Concurrent connection — RFC 8305 (Happy Eyeballs)
 
