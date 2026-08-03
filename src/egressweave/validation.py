@@ -319,6 +319,8 @@ def _normalize_egress_url(
     is_local_dev_host = _is_local_dev_host(hostname)
 
     _validate_url_components(parsed, hostname, is_local_dev_host, policy)
+    if not policy.is_port_allowed(port):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     if not is_local_dev_host:
         _validate_remote_host_is_allowed(hostname, policy)
