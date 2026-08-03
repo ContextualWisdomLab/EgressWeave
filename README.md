@@ -23,6 +23,10 @@ and a permissive URL parser can be tricked into reaching internal services
 - **DNS rebinding / validate-then-connect TOCTOU (CWE-350):** resolves *all*
   addresses up front, validates each, and pins them into a custom transport
   that re-validates on every connect and refuses any host/port drift.
+- **Bounded DNS resolution:** synchronous and asynchronous validation apply the
+  same finite positive `dns_timeout_seconds` deadline. Resolver workers are
+  concurrency-bounded and failures remain generic, preventing a stalled system
+  resolver from hanging request setup or leaking target-specific details.
 - **Egress allowlist:** only hostnames you explicitly list are reachable;
   wildcards are refused — the allowlist is exact.
 - Redirects are disabled and environment proxies ignored (`trust_env=False`),
@@ -72,6 +76,10 @@ whitespace: they return `(None, client)`, but that client rejects every request
 with `EgressNotAllowedError` before network I/O. This lets applications preserve
 optional configuration shapes without silently bypassing the egress policy.
 
+DNS resolution for both builders is bounded by `policy.dns_timeout_seconds`.
+The value must be a finite positive number; invalid configuration is rejected
+at policy construction rather than silently disabling the deadline.
+
 Validate without building a client:
 
 ```python
@@ -94,7 +102,7 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, `dns_timeout_seconds`. |
+| `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, and a finite positive `dns_timeout_seconds` applied to sync and async resolution. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client. |

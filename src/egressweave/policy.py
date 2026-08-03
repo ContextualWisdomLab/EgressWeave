@@ -17,8 +17,10 @@ or, for a local Ollama-style stack::
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
+from numbers import Real
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
 
@@ -38,6 +40,11 @@ class EgressPolicy:
     only for hostname-bound local development: built-in local names accept
     loopback, while single-label allowlisted container names accept loopback,
     RFC 1918 IPv4, or RFC 4193 IPv6 unique-local addresses.
+
+    ``dns_timeout_seconds`` is a finite positive deadline applied to both
+    synchronous and asynchronous DNS resolution. Invalid timeout values are
+    rejected during construction so callers cannot accidentally disable the
+    fail-closed resolution budget.
     """
 
     allowed_hosts: frozenset[str]
@@ -45,12 +52,22 @@ class EgressPolicy:
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
+        timeout = self.dns_timeout_seconds
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, Real)
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("dns_timeout_seconds must be a finite positive number")
+
         normalized = frozenset(
             _normalize_host(host) for host in self.allowed_hosts if host and host.strip()
         )
         # Frozen dataclass: bypass the immutability guard exactly once to store
-        # the normalized set built from caller input.
+        # normalized caller input and a canonical float timeout.
         object.__setattr__(self, "allowed_hosts", normalized)
+        object.__setattr__(self, "dns_timeout_seconds", float(timeout))
 
     @classmethod
     def from_hosts(
