@@ -41,3 +41,10 @@ def test_runtime_version_matches_declared_project_version() -> None:
 
     Version(egressweave.__version__)
     assert egressweave.__version__ == version
+
+
+def test_inline_type_information_is_marked_for_pep_561_consumers() -> None:
+    """Keep the declared typed-package classifier usable after installation."""
+    package_directory = Path(egressweave.__file__).resolve().parent
+
+    assert (package_directory / "py.typed").is_file()
