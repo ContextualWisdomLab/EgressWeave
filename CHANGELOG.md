@@ -37,6 +37,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Reject caller-supplied HTTPX/HTTPCore `target` request extensions before the
+  synchronous or asynchronous connection pool. Absolute-form proxy targets can
+  carry a second, unvalidated destination independently of the pinned URL, so
+  every request target is now derived exclusively from the validated URL path.
 - Require every local-development target, including `localhost` and
   `localhost.localdomain`, to appear explicitly in `allowed_hosts` before DNS
   resolution. `allow_local=True` now widens only the permitted address class;
