@@ -19,17 +19,37 @@ or, for a local Ollama-style stack::
 
 from __future__ import annotations
 
+import ipaddress
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+import idna
 
 DEFAULT_ALLOWED_PORTS = frozenset({80, 443})
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
 
 
 def _normalize_host(value: str) -> str:
-    """Return the canonical comparison form for a hostname."""
-    return value.strip().lower().rstrip(".")
+    """Return a canonical ASCII comparison form for a hostname or IP literal.
+
+    Domain names are converted to an IDNA A-label with UTS #46 processing and
+    STD3 rules. IP literals are canonicalized with :mod:`ipaddress` so IPv6
+    remains usable for the deliberately narrow local-development exception.
+    """
+    if not isinstance(value, str):
+        raise ValueError("hostnames must be strings")
+    candidate = value.strip().rstrip(".")
+    if not candidate:
+        return ""
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        pass
+    try:
+        return idna.encode(candidate, uts46=True, std3_rules=True).decode("ascii")
+    except idna.IDNAError as exc:
+        raise ValueError("hostname is not a valid IDNA name") from exc
 
 
 @dataclass(frozen=True)
@@ -53,7 +73,9 @@ class EgressPolicy:
     def __post_init__(self) -> None:
         """Normalize policy values and reject unsafe ports or DNS timeouts."""
         normalized_hosts = frozenset(
-            _normalize_host(host) for host in self.allowed_hosts if host and host.strip()
+            normalized_host
+            for host in self.allowed_hosts
+            if (normalized_host := _normalize_host(host))
         )
         normalized_ports: set[int] = set()
         for port in self.allowed_ports:
