@@ -274,7 +274,7 @@ def _resolve_all_global_addresses(
     )
     try:
         worker.start()
-    except Exception as exc:  # noqa: BLE001
+    except RuntimeError as exc:
         _DNS_RESOLUTION_SLOTS.release()
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
 
