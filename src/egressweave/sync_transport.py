@@ -20,6 +20,7 @@ from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.request_safety import (
     _bind_validated_tls_server_name,
+    _build_safe_request_headers,
     _enforce_allowed_http_method,
 )
 from egressweave.validation import (
@@ -178,12 +179,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         safe_extensions = _bind_validated_tls_server_name(
             request.extensions, self._validated.hostname
         )
-        safe_headers = [
-            (key, value)
-            for key, value in request.headers.raw
-            if key.lower() != b"host"
-        ]
-        safe_headers.append((b"host", parsed_url.netloc.encode("ascii")))
+        safe_headers = _build_safe_request_headers(
+            request.headers.raw, parsed_url.netloc.encode("ascii")
+        )
 
         core_request = httpcore.Request(
             method=request.method,
