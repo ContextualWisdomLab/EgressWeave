@@ -7,10 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Security
-- Restrict the `allow_local` single-label-host escape hatch to loopback or
-  private network space. Link-local, shared, unspecified, multicast, and
-  reserved addresses remain blocked, including link-local cloud metadata
-  endpoints.
+- Bind every `allow_local` exception to the original local hostname. Built-in
+  local names accept loopback only, while allowlisted single-label container
+  names accept loopback or private network space. Dotted remote hosts cannot
+  inherit the exception during DNS rebinding, and link-local, shared,
+  unspecified, multicast, and reserved addresses remain blocked, including
+  link-local cloud metadata endpoints.
 
 ## [0.1.0] - 2026-07-12
 
