@@ -28,6 +28,8 @@ and a permissive URL parser can be tricked into reaching internal services
 - Redirects are disabled and environment proxies ignored (`trust_env=False`),
   so a `302` cannot bounce a request to an unvalidated host, and Unix sockets
   are refused.
+- **Fail-closed optional configuration:** an empty or absent base URL returns a
+  deny-all client rather than an unrestricted fallback transport.
 
 ## Install
 
@@ -65,6 +67,11 @@ async with client:
     response = await client.get(f"{normalized_url}/models")
 ```
 
+Both builders fail closed when the supplied base URL is `None`, empty, or only
+whitespace: they return `(None, client)`, but that client rejects every request
+with `EgressNotAllowedError` before network I/O. This lets applications preserve
+optional configuration shapes without silently bypassing the egress policy.
+
 Validate without building a client:
 
 ```python
@@ -89,8 +96,8 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 |---|---|
 | `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, `dns_timeout_seconds`. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`. |
-| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`. |
+| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client. |
+| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client. |
 | `build_pinned_https_client(validated, *, policy)` | Build a synchronous client from an already-validated URL. |
 | `build_pinned_https_async_client(validated, *, policy)` | Build an asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
@@ -134,9 +141,10 @@ synchronous and asynchronous transports.
 
 ## Research grounding
 
-See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention, CWE-918,
-CWE-350 (DNS rebinding / TOCTOU), and RFC 8305 (Happy Eyeballs — the concurrent
-connect used across asynchronously pinned addresses).
+See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention, secure
+by default / fail securely, CWE-918, CWE-350 (DNS rebinding / TOCTOU), and RFC
+8305 (Happy Eyeballs — the concurrent connect used across asynchronously pinned
+addresses).
 
 ## License
 
