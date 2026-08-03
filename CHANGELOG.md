@@ -29,6 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Require `allow_local` to be an actual boolean. Truthy strings, integers, and
+  other ambiguous configuration values now fail at policy construction instead
+  of accidentally enabling access to loopback, RFC 1918, or RFC 4193 targets.
 - Enforce the positive destination-port allowlist during URL validation before
   DNS resolution in synchronous and asynchronous paths. URLs that name an
   unauthorized effective port now fail with the generic

@@ -65,6 +65,26 @@ permission to use a generic transport. The public client builders preserve
 their `(None, client)` return shape, but that client denies every request before
 network I/O.
 
+## Security-control configuration — CWE-20 / OWASP ASVS
+
+- **CWE-20: Improper Input Validation.** Security-relevant input should be
+  checked for its required type as well as its acceptable value range and
+  business meaning; values that do not strictly conform should be rejected.
+- **OWASP ASVS access-control design.** Security controls should fail securely
+  when configuration or execution is indeterminate.
+
+`allow_local` materially widens the address classes that a policy may reach.
+Python treats non-empty strings such as `"false"` as truthy, so permissive
+coercion would turn a common configuration-parsing mistake into local-network
+authority. EgressWeave therefore accepts only the actual boolean values `True`
+and `False`; strings, integers, and other ambiguous values fail during policy
+construction before any URL is resolved.
+
+Primary references:
+
+- [CWE-20: Improper Input Validation](https://cwe.mitre.org/data/definitions/20.html)
+- [OWASP Application Security Verification Standard](https://owasp.org/www-project-application-security-verification-standard/)
+
 ## DNS rebinding / TOCTOU — CWE-350
 
 - **CWE-350: Reliance on Reverse DNS Resolution / time-of-check to
