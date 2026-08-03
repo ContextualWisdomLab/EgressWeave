@@ -5,11 +5,23 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from egressweave.policy import _normalize_host
+from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
 )
+
+
+def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
+    """Reject request methods outside the policy before any network I/O.
+
+    This is enforced at the transport boundary rather than only in a builder or
+    helper so a caller cannot bypass it by constructing an absolute request or
+    reusing a returned client directly. ``CONNECT`` always fails because it can
+    ask an otherwise allowlisted proxy to tunnel to an unvalidated destination.
+    """
+    if not policy.allows_http_method(method):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
 def _bind_validated_tls_server_name(
