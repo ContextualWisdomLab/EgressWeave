@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Ship the PEP 561 `py.typed` marker and enforce complete source docstrings.
+- Enforce 100% line and branch coverage across every supported Python version.
+
+### Changed
+- Cancel superseded CI runs for the same pull request to reduce runner backlog.
+
 ### Security
 - Reject reserved explicit port `0` instead of silently rewriting it to the
   scheme default, and reject non-positive, non-finite, boolean, or non-numeric
