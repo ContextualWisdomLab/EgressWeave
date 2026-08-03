@@ -13,9 +13,9 @@ Only the latest minor release receives security fixes. Upgrade to the newest pub
 
 ## Reporting a vulnerability
 
-Use GitHub's private **Report a vulnerability** flow on this repository. Do not open a public issue, pull request, discussion, or test repository containing exploit details, private addresses, credentials, or production traffic.
+Use GitHub's private **Report a vulnerability** flow on this repository. If that control is unavailable, open a public issue containing only `Security contact requested` and no technical details; a maintainer will establish a private channel. Do not place exploit details, private addresses, credentials, production traffic, or an executable proof of concept in a public issue, pull request, discussion, fork, or test repository.
 
-A useful report includes:
+A useful private report includes:
 
 - the affected EgressWeave version and Python version;
 - the exact policy and URL shape, with secrets and real internal hosts replaced;
