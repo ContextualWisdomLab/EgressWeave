@@ -66,9 +66,12 @@ def test_validate_global_address_accepts_public():
     assert v._validate_global_address("93.184.216.34", POLICY) == "93.184.216.34"
 
 
-def test_allow_local_accepts_loopback():
+def test_allow_local_accepts_loopback_for_local_hostname():
     policy = EgressPolicy.from_hosts("ollama", allow_local=True)
-    assert v._validate_global_address("127.0.0.1", policy) == "127.0.0.1"
+    assert (
+        v._validate_global_address("127.0.0.1", policy, hostname="localhost")
+        == "127.0.0.1"
+    )
 
 
 def test_allow_local_accepts_allowlisted_container_private_ip():
