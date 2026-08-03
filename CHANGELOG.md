@@ -9,10 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Security
 - Bind every `allow_local` exception to the original local hostname. Built-in
   local names accept loopback only, while allowlisted single-label container
-  names accept loopback or private network space. Dotted remote hosts cannot
-  inherit the exception during DNS rebinding, and link-local, shared,
-  unspecified, multicast, and reserved addresses remain blocked, including
-  link-local cloud metadata endpoints.
+  names accept loopback, RFC 1918 IPv4, or RFC 4193 IPv6 unique-local space.
+  Dotted remote hosts cannot inherit the exception during DNS rebinding.
+  Link-local, shared, documentation, benchmarking, unspecified, multicast, and
+  reserved addresses remain blocked, including cloud metadata endpoints.
 
 ## [0.1.0] - 2026-07-12
 
