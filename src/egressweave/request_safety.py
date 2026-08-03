@@ -27,15 +27,22 @@ def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
 def _bind_validated_tls_server_name(
     extensions: Mapping[str, Any], hostname: str
 ) -> dict[str, Any]:
-    """Return copied HTTP extensions with TLS SNI bound to ``hostname``.
+    """Return safe HTTP extensions with TLS SNI bound to ``hostname``.
 
-    HTTPX exposes low-level request extensions to transports, and httpcore
-    honors ``sni_hostname`` while opening TLS. A caller-supplied value is an
-    independent authority channel, so it must either name the already
-    validated host or be rejected. The returned copy always carries the
-    validated hostname, preventing later consumers from falling back to an
-    untrusted override.
+    HTTPX and HTTPCore expose low-level request extensions to transports. The
+    ``target`` extension overrides the request target carried by the URL and can
+    encode an absolute URI for forward-proxy dispatch, creating a second
+    destination channel independent of the validated authority. It is therefore
+    always rejected.
+
+    HTTPCore also honors ``sni_hostname`` while opening TLS. A caller-supplied
+    value must either name the already validated host or be rejected. The
+    returned copy always carries the validated hostname, preventing later
+    consumers from falling back to an untrusted override.
     """
+    if "target" in extensions:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
     requested_server_name = extensions.get("sni_hostname")
     if requested_server_name is not None:
         if isinstance(requested_server_name, bytes):
