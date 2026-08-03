@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-03
+
 ### Added
 - Add `build_egress_sync_client` and `build_pinned_https_client` for blocking
   applications. The synchronous `httpx.Client` transport preserves the same
