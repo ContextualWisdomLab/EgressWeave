@@ -3,9 +3,10 @@ import pytest
 from egressweave import (
     EgressNotAllowedError,
     EgressPolicy,
-    ValidatedEgressURL,
     build_pinned_https_async_client,
+    validate_egress_url_details,
 )
+from egressweave import validation as v
 from egressweave.transport import _PinnedEgressNetworkBackend
 
 POLICY = EgressPolicy.from_hosts("api.openai.com")
@@ -42,9 +43,14 @@ async def test_connect_unix_socket_is_refused():
         await backend.connect_unix_socket("/tmp/anything.sock")
 
 
-def test_build_pinned_client_constructs():
-    validated = ValidatedEgressURL(
-        "https://api.openai.com", "api.openai.com", 443, ("93.184.216.34",)
+async def test_build_pinned_client_constructs(monkeypatch):
+    def fake_getaddrinfo(host, port, type=None):
+        return [(2, 1, 6, "", ("93.184.216.34", port))]
+
+    monkeypatch.setattr(v.socket, "getaddrinfo", fake_getaddrinfo)
+    validated = validate_egress_url_details(
+        "https://api.openai.com", policy=POLICY
     )
-    client = build_pinned_https_async_client(validated, policy=POLICY)
-    assert client is not None
+    assert validated is not None
+    async with build_pinned_https_async_client(validated, policy=POLICY) as client:
+        assert client is not None
