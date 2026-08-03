@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Security
+- Isolate autonomous maintenance across credential-separated runners. A
+  protected guard now rejects out-of-bound patch metadata and files, while
+  modified source and tests execute only in an offline, non-root,
+  capability-free, read-only verifier container built from trusted base
+  dependencies before the patch is applied. The publisher never executes
+  modified package code before obtaining its external write identity.
 - Make `ValidatedEgressURL` construction factory-only and attach a process-local
   integrity signature to every issued result. Pinned transports reject forged
   objects and any post-validation mutation, including replacement with another
