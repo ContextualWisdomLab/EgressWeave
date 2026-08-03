@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   API operations and explicit opt-in for non-tunnelling extension methods.
 
 ### Fixed
+- Treat a directly supplied comma-separated `allowed_hosts` string as hostname
+  configuration instead of iterating it character by character.
 - Preserve explicit port zero during URL parsing so it is rejected by the port
   policy rather than being silently replaced by the scheme's default port.
 - Apply `EgressPolicy.dns_timeout_seconds` consistently to synchronous and
@@ -29,6 +31,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Canonicalize trusted allowlist entries and candidate URL hostnames with UTS #46
+  non-transitional IDNA processing and STD3 rules before comparison, DNS lookup,
+  TLS SNI, or HTTP authority construction. Valid Unicode names now share one
+  lowercase ASCII A-label identity, while malformed labels, invalid A-labels,
+  empty labels, disallowed characters, and DNS length violations fail at policy
+  construction instead of surfacing later at resolver or transport boundaries.
 - Require `allow_local` to be an actual boolean. Truthy strings, integers, and
   other ambiguous configuration values now fail at policy construction instead
   of accidentally enabling access to loopback, RFC 1918, or RFC 4193 targets.
