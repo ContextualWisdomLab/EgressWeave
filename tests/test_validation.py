@@ -44,6 +44,16 @@ def test_normalize_accepts_and_canonicalizes_allowlisted():
     assert normalized == "https://api.openai.com/v1/"
 
 
+def test_normalize_maps_unicode_hostname_to_ascii_alabel():
+    policy = EgressPolicy.from_hosts("BÜCHER.example")
+    normalized, hostname, port = v._normalize_egress_url(
+        "https://bücher.example/v1", policy
+    )
+    assert hostname == "xn--bcher-kva.example"
+    assert port == 443
+    assert normalized == "https://xn--bcher-kva.example/v1"
+
+
 @pytest.mark.parametrize(
     "address",
     [
@@ -100,6 +110,23 @@ def test_full_validate_resolves_and_pins_public_address(monkeypatch):
     assert details.hostname == "api.openai.com"
     assert details.port == 443
     assert details.addresses == ("93.184.216.34",)
+
+
+def test_full_validate_resolves_the_canonical_alabel(monkeypatch):
+    resolved_hosts = []
+
+    def fake_getaddrinfo(host, port, type=None):
+        resolved_hosts.append(host)
+        return [(2, 1, 6, "", ("93.184.216.34", port))]
+
+    policy = EgressPolicy.from_hosts("BÜCHER.example")
+    monkeypatch.setattr(v.socket, "getaddrinfo", fake_getaddrinfo)
+    details = validate_egress_url_details("https://bücher.example/v1", policy=policy)
+
+    assert details is not None
+    assert details.normalized_url == "https://xn--bcher-kva.example/v1"
+    assert details.hostname == "xn--bcher-kva.example"
+    assert resolved_hosts == ["xn--bcher-kva.example"]
 
 
 def test_full_validate_rejects_allowlisted_host_resolving_to_private(monkeypatch):
