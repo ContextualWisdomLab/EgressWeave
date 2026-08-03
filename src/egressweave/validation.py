@@ -63,6 +63,7 @@ class ValidatedEgressURL:
         port: int,
         addresses: tuple[str, ...],
     ) -> None:
+        """Reject direct construction; validated instances come from factories."""
         raise TypeError(
             "ValidatedEgressURL objects must come from a validation function"
         )
@@ -104,10 +105,12 @@ def _make_validated_egress_url(
 
 
 def _has_url_control_character(value: str) -> bool:
+    """Return whether ``value`` contains an ASCII control character."""
     return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 def _is_ip_literal(candidate: str) -> bool:
+    """Return whether ``candidate`` is a canonical IPv4 or IPv6 literal."""
     try:
         ipaddress.ip_address(candidate)
     except ValueError:
@@ -116,6 +119,7 @@ def _is_ip_literal(candidate: str) -> bool:
 
 
 def _looks_like_ip_literal(candidate: str) -> bool:
+    """Return whether ``candidate`` resembles a non-canonical IP literal."""
     compact_candidate = candidate.replace(".", "").lower()
     return (
         ":" in candidate
@@ -125,6 +129,7 @@ def _looks_like_ip_literal(candidate: str) -> bool:
 
 
 def _is_local_dev_host(hostname: str) -> bool:
+    """Return whether ``hostname`` is a built-in loopback development name."""
     normalized_hostname = _normalize_host(hostname)
     return (
         normalized_hostname in _LOCAL_DEV_HOSTNAMES
@@ -156,6 +161,7 @@ def _is_private_local_address(
 
 
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
+    """Render a canonical URL authority, including brackets for IPv6."""
     host_part = f"[{hostname}]" if ":" in hostname else hostname
     if not explicit_port:
         return host_part
@@ -205,6 +211,7 @@ def _validate_global_address(
 def _resolve_all_global_addresses(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
+    """Resolve, validate, canonicalize, and deduplicate every target address."""
     try:
         address_infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
@@ -229,6 +236,7 @@ def _resolve_all_global_addresses(
 async def _resolve_all_global_addresses_async(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
+    """Resolve all valid addresses without blocking the event loop."""
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy),
@@ -241,6 +249,7 @@ async def _resolve_all_global_addresses_async(
 def _parse_and_validate_candidate_url(
     value: str | None,
 ) -> tuple[SplitResult | None, int | None]:
+    """Parse a candidate URL and return its components and effective port."""
     if value is None:
         return None, None
 
@@ -266,6 +275,7 @@ def _parse_and_validate_candidate_url(
 def _validate_url_components(
     parsed: SplitResult, hostname: str, is_local_dev_host: bool, policy: EgressPolicy
 ) -> None:
+    """Validate scheme, transport security, credentials, query, and fragment."""
     if parsed.scheme.lower() not in {"http", "https"}:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
@@ -287,6 +297,7 @@ def _validate_url_components(
 
 
 def _validate_remote_host_is_allowed(hostname: str, policy: EgressPolicy) -> None:
+    """Require exact remote-host membership and reject wildcard or IP forms."""
     allowed_hosts = policy.allowed_hosts
     if not allowed_hosts or any("*" in allowed_host for allowed_host in allowed_hosts):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
@@ -299,6 +310,7 @@ def _validate_remote_host_is_allowed(hostname: str, policy: EgressPolicy) -> Non
 def _normalize_egress_url(
     value: str | None, policy: EgressPolicy
 ) -> tuple[str | None, str | None, int | None]:
+    """Apply URL policy and return canonical URL, hostname, and port."""
     parsed, port = _parse_and_validate_candidate_url(value)
     if parsed is None or port is None:
         return None, None, None
