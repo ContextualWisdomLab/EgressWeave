@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   attacker capabilities, enforced invariants, trust boundaries, integration
   requirements, and explicit non-goals.
 
+### Fixed
+- Align the public `egressweave.__version__` value with the package release
+  metadata and add a regression check that prevents future runtime/package
+  version drift.
+
 ### Security
 - Add weekly Dependabot monitoring for Python runtime/test dependencies and
   SHA-pinned GitHub Actions so constrained transport internals and CI supply-chain
