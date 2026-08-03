@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add deterministic IDNA hostname canonicalization using UTS #46
+  non-transitional processing and STD3 rules; Unicode policy entries and URLs
+  converge on one ASCII A-label before comparison, DNS resolution, and pinning.
 - Add an explicit TCP destination-port allowlist to `EgressPolicy`; the default
   permits standard HTTP/HTTPS ports, while custom and local service ports must
   be opted in.
@@ -21,6 +24,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cancel superseded CI runs for the same pull request to reduce runner backlog.
 
 ### Security
+- Reject invalid IDNA labels and non-string policy hosts at construction, and
+  surface malformed Unicode URL hosts only through the generic egress denial.
 - Reject URLs whose effective destination port is not explicitly allowlisted,
   preventing an approved hostname from being used as a proxy to unexpected
   services on alternate ports.
