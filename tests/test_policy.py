@@ -43,8 +43,17 @@ def test_dns_timeout_is_normalized_to_float():
 
 @pytest.mark.parametrize(
     "timeout",
-    [0, -1, math.inf, -math.inf, math.nan, True, "5"],
-    ids=["zero", "negative", "positive-infinity", "negative-infinity", "nan", "bool", "str"],
+    [0, -1, math.inf, -math.inf, math.nan, True, "5", 10**1000],
+    ids=[
+        "zero",
+        "negative",
+        "positive-infinity",
+        "negative-infinity",
+        "nan",
+        "bool",
+        "str",
+        "overflowing-int",
+    ],
 )
 def test_invalid_dns_timeouts_are_rejected(timeout):
     with pytest.raises(ValueError, match="finite positive number"):
