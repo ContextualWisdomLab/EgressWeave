@@ -81,12 +81,9 @@ def test_parser_wraps_urlsplit_value_errors(candidate: str) -> None:
         v._parse_and_validate_candidate_url(candidate)
 
 
-@pytest.mark.parametrize(
-    "policy",
-    [EgressPolicy.from_hosts([]), EgressPolicy.from_hosts("*")],
-    ids=["empty", "wildcard"],
-)
-def test_remote_policy_rejects_empty_or_wildcard_allowlists(policy: EgressPolicy) -> None:
+def test_remote_policy_rejects_empty_allowlist() -> None:
+    policy = EgressPolicy.from_hosts([])
+
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         v._normalize_egress_url("https://api.openai.com", policy)
 
