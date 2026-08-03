@@ -260,24 +260,38 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
 
 async def build_egress_http_client(
     base_url: str | None, *, policy: EgressPolicy
-) -> tuple[str | None, httpx.AsyncClient]:
-    """Build a DNS-pinned client for ``base_url`` if it passes ``policy``.
+) -> tuple[str, httpx.AsyncClient]:
+    """Build a DNS-pinned client for one required, policy-valid base URL.
 
-    Returns ``(normalized_url, client)``. When ``base_url`` is empty/absent the
-    normalized URL is ``None`` and a plain non-proxy client is returned; a
-    non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`.
+    Empty or absent URLs fail closed with :class:`EgressNotAllowedError`; this
+    function never returns an unrestricted fallback client. Integrations whose
+    endpoint is genuinely optional should use
+    :func:`build_optional_egress_http_client`, which returns no client when the
+    URL is absent.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
-        return None, httpx.AsyncClient(follow_redirects=False, trust_env=False)
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
     return (
         validated.normalized_url,
-        httpx.AsyncClient(
-            follow_redirects=False,
-            trust_env=False,
-            transport=_PinnedEgressAsyncTransport(validated, policy),
-        ),
+        build_pinned_https_async_client(validated, policy=policy),
+    )
+
+
+async def build_optional_egress_http_client(
+    base_url: str | None, *, policy: EgressPolicy
+) -> tuple[str | None, httpx.AsyncClient | None]:
+    """Build a pinned client for an optional URL without a fail-open fallback.
+
+    Returns ``(None, None)`` when the URL is empty or absent. A supplied URL is
+    validated and pinned exactly like :func:`build_egress_http_client`.
+    """
+    validated = await validate_egress_url_details_async(base_url, policy=policy)
+    if validated is None:
+        return None, None
+    return (
+        validated.normalized_url,
+        build_pinned_https_async_client(validated, policy=policy),
     )
 
 
