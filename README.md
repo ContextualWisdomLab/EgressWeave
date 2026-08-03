@@ -84,6 +84,28 @@ every LLM-provider call. It is usable both as a standalone dependency and as a
 git submodule. The only change on extraction was replacing the app-specific
 settings object with an injected `EgressPolicy`.
 
+## Autonomous maintenance
+
+Two hourly, credential-separated workflows keep the pull-request queue and the
+product roadmap moving without bypassing normal governance:
+
+- at minute `07`, the repository calls the organization-owned review-fix and
+  merge schedulers to inspect feedback, recheck current-head evidence, update
+  eligible branches, and merge only when every central gate permits it;
+- at minute `37`, a bounded Codex maintainer runs only when there are zero open
+  pull requests and implements one test-driven improvement.
+
+The product workflow uses three fresh runners. The model job has read-only
+GitHub permissions, no direct network access, and can emit only a guard-checked
+patch. A second credential-free job builds trusted dependencies before applying
+the patch and executes modified source only inside an offline, non-root,
+capability-free, read-only verifier container. A third publisher rechecks the
+sealed patch but never executes modified package code before obtaining an
+external write identity. CI, security scans, independent reviews, branch
+protection, and guarded auto-merge remain authoritative. See
+[`docs/hourly-autonomous-maintenance.md`](docs/hourly-autonomous-maintenance.md)
+for the complete control and configuration contract.
+
 ## Version compatibility
 
 The pinned transport uses a few `httpx` / `httpcore` internals, so those

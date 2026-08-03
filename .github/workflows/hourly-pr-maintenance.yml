@@ -1,0 +1,51 @@
+name: Hourly PR Maintenance
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: egressweave-hourly-pr-maintenance
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  fix-review-feedback:
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: read
+      statuses: read
+    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@74e54255ec903e3ba5f920859b656fe2defcb057
+    with:
+      target_repository: ContextualWisdomLab/EgressWeave
+      base_branch: main
+      max_prs: "100"
+      max_dispatches: "100"
+      retry_hours: "1"
+    secrets: inherit
+
+  review-recheck-and-merge:
+    needs: fix-review-feedback
+    if: ${{ always() }}
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      id-token: write
+      pull-requests: write
+    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@74e54255ec903e3ba5f920859b656fe2defcb057
+    with:
+      base_branch: main
+      max_prs: "100"
+      trigger_reviews: true
+      review_dispatch_limit: "-1"
+      branch_update_limit: "-1"
+      enable_auto_merge: true
+      merge_mode: direct_or_auto
+      update_branches: true
+    secrets: inherit
