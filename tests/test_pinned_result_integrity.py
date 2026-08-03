@@ -55,18 +55,24 @@ def test_build_pinned_client_rejects_untrusted_result() -> None:
     [
         ("normalized_url", "https://evil.example"),
         ("normalized_url", "http://api.openai.com"),
+        ("normalized_url", "https://api.openai.com/v2"),
         ("hostname", "api.anthropic.com"),
         ("port", 8443),
         ("addresses", ["93.184.216.34"]),
         ("addresses", ("10.0.0.1",)),
+        ("addresses", ("8.8.8.8",)),
+        ("_integrity_signature", b"forged"),
     ],
     ids=[
         "host-not-allowlisted",
         "remote-plaintext-http",
+        "url-path-integrity",
         "url-hostname-mismatch",
         "url-port-mismatch",
         "address-container-shape",
         "address-scope",
+        "public-address-integrity",
+        "signature-integrity",
     ],
 )
 def test_build_pinned_client_rejects_tampered_trusted_result(
