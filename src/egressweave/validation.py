@@ -315,7 +315,10 @@ def _normalize_egress_url(
     if parsed is None or port is None:
         return None, None, None
 
-    hostname = _normalize_host(parsed.hostname or "")
+    try:
+        hostname = _normalize_host(parsed.hostname or "")
+    except ValueError as exc:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
     is_local_dev_host = _is_local_dev_host(hostname)
 
     _validate_url_components(parsed, hostname, is_local_dev_host, policy)
