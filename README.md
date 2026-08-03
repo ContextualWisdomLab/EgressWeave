@@ -25,6 +25,9 @@ and a permissive URL parser can be tricked into reaching internal services
   that re-validates on every connect and refuses any host or port drift.
 - **Egress allowlist:** only hostnames you explicitly list are reachable;
   wildcards are refused — the allowlist is exact.
+- **Fail-closed construction:** the required client factory rejects an absent
+  URL instead of returning an unrestricted fallback client. The optional
+  factory returns no client when no endpoint is configured.
 - Redirects are disabled and environment proxies ignored (`trust_env=False`),
   so a `302` cannot bounce a request to an unvalidated host, and Unix sockets
   are refused.
@@ -47,6 +50,20 @@ normalized_url, client = await build_egress_http_client(
 )
 async with client:
     resp = await client.get(f"{normalized_url}/models")
+```
+
+For an integration whose endpoint is optional, use the explicit optional
+factory. An absent URL produces `(None, None)`, never a general-purpose client:
+
+```python
+from egressweave import build_optional_egress_http_client
+
+normalized_url, client = await build_optional_egress_http_client(
+    configured_url, policy=policy
+)
+if client is not None:
+    async with client:
+        ...
 ```
 
 Validate without building a client:
@@ -73,7 +90,8 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 |---|---|
 | `EgressPolicy` | Injected host allowlist with `allow_local` and a finite, positive DNS timeout. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_http_client(url, *, policy)` | Validate + build a DNS-pinned `httpx.AsyncClient`. |
+| `build_egress_http_client(url, *, policy)` | Require a URL, then validate and build a DNS-pinned client. |
+| `build_optional_egress_http_client(url, *, policy)` | Return no client for an absent URL; otherwise validate and pin it. |
 | `build_pinned_https_async_client(validated, *, policy)` | Pin an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
