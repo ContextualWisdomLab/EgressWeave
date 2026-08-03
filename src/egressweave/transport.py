@@ -102,7 +102,9 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
             for task in done:
                 try:
                     stream = task.result()
-                except Exception as exc:  # pragma: no cover - backend-specific
+                except Exception as exc:  # noqa: BLE001  # pragma: no cover
+                    # Backends expose different connection exception classes;
+                    # one failed address must not abort the remaining candidates.
                     last_error = exc
                     continue
 

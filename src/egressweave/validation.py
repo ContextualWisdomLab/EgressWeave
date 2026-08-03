@@ -25,6 +25,12 @@ EGRESS_NOT_ALLOWED = "egress URL is not allowed"
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
+_PRIVATE_LOCAL_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+)
 
 
 class EgressNotAllowedError(ValueError):
@@ -85,6 +91,19 @@ def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
     )
 
 
+def _is_private_local_address(
+    ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """Whether an address is RFC 1918 or IPv6 unique-local network space.
+
+    Do not use :attr:`ipaddress.ip_address.is_private` here: Python also marks
+    documentation and benchmarking ranges as private. The local-development
+    escape hatch is intentionally limited to the three RFC 1918 IPv4 blocks and
+    RFC 4193 IPv6 unique-local addresses.
+    """
+    return any(ip_address in network for network in _PRIVATE_LOCAL_NETWORKS)
+
+
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
     host_part = f"[{hostname}]" if ":" in hostname else hostname
     if not explicit_port:
@@ -95,37 +114,40 @@ def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) 
 def _validate_global_address(
     address: str, policy: EgressPolicy, *, hostname: str | None = None
 ) -> str:
-    """Validate that an IP address is globally routable, or explicitly allowed.
+    """Validate that an IP address is globally routable, or locally scoped.
 
-    When ``policy.allow_local`` is enabled the address is accepted if the IP is
-    a loopback address, or the *original* hostname (before DNS resolution) is an
-    allowlisted single-label local host. That second condition is necessary
-    because Docker container names (e.g. ``ollama``) resolve to RFC 1918 private
-    IPs that would otherwise be rejected by the global-address check.
+    Local exceptions are bound to the original hostname. Built-in local names
+    and loopback literals may resolve only to loopback addresses. An explicitly
+    allowlisted single-label container name may resolve only to loopback or
+    private network space. Dotted remote hosts never inherit either exception,
+    so enabling ``allow_local`` cannot turn a DNS rebind to loopback into an
+    allowed connection.
     """
     try:
         ip_address = ipaddress.ip_address(address)
     except ValueError as exc:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
 
-    is_allowed_local = False
-    if policy.allow_local:
-        if ip_address.is_loopback:
-            is_allowed_local = True
-        elif hostname and _is_allowlisted_local_host(hostname, policy):
-            is_allowed_local = True
-
-    if not is_allowed_local:
-        if (
-            ip_address.is_private
-            or ip_address.is_loopback
-            or ip_address.is_link_local
-            or ip_address.is_reserved
-            or ip_address.is_unspecified
-            or ip_address.is_multicast
-            or not ip_address.is_global
-        ):
+    if hostname and _is_local_dev_host(hostname):
+        if not policy.allow_local or not ip_address.is_loopback:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        return str(ip_address)
+
+    if hostname and _is_allowlisted_local_host(hostname, policy):
+        if not (ip_address.is_loopback or _is_private_local_address(ip_address)):
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        return str(ip_address)
+
+    if (
+        ip_address.is_private
+        or ip_address.is_loopback
+        or ip_address.is_link_local
+        or ip_address.is_reserved
+        or ip_address.is_unspecified
+        or ip_address.is_multicast
+        or not ip_address.is_global
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
     return str(ip_address)
 
 
