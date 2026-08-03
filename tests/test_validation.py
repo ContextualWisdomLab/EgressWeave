@@ -35,6 +35,11 @@ def test_normalize_rejects_bad_urls(url):
         v._normalize_egress_url(url, POLICY)
 
 
+def test_normalize_rejects_reserved_explicit_port_zero():
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        v._normalize_egress_url("https://api.openai.com:0/v1", POLICY)
+
+
 def test_normalize_accepts_and_canonicalizes_allowlisted():
     normalized, hostname, port = v._normalize_egress_url(
         "https://API.OpenAI.com/v1/", POLICY
