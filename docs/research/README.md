@@ -15,6 +15,19 @@ rather than an ad-hoc heuristic. The primary sources:
   credentials, disabling redirects, and validating the *resolved* IP — all
   implemented here.
 
+## Secure defaults and fail-secure behavior — OWASP
+
+- **OWASP Secure Product Design Cheat Sheet.** Establish secure defaults,
+  minimize attack surface, and fail securely to those defaults.
+- **OWASP Fail Securely.** A security-control exception or indeterminate state
+  should follow the same execution path as denial, not enable behavior that the
+  control would normally reject.
+
+Accordingly, an empty or absent base URL is treated as an indeterminate target,
+not permission to use a generic transport. The public client builders preserve
+their `(None, client)` return shape but that client denies every request before
+network I/O.
+
 ## DNS rebinding / TOCTOU — CWE-350
 
 - **CWE-350: Reliance on Reverse DNS Resolution / time-of-check to
