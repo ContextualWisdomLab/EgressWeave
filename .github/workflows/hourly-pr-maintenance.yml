@@ -10,16 +10,16 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  actions: write
-  checks: read
-  contents: write
-  id-token: write
-  issues: write
-  pull-requests: write
-  statuses: read
+  contents: read
 
 jobs:
   fix-review-feedback:
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: read
+      statuses: read
     uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@74e54255ec903e3ba5f920859b656fe2defcb057
     with:
       target_repository: ContextualWisdomLab/EgressWeave
@@ -32,6 +32,12 @@ jobs:
   review-recheck-and-merge:
     needs: fix-review-feedback
     if: ${{ always() }}
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      id-token: write
+      pull-requests: write
     uses: ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@74e54255ec903e3ba5f920859b656fe2defcb057
     with:
       base_branch: main
