@@ -22,6 +22,7 @@ from urllib.parse import SplitResult, urlsplit, urlunsplit
 from egressweave.policy import EgressPolicy, _normalize_host
 
 EGRESS_NOT_ALLOWED = "egress URL is not allowed"
+_VALIDATED_EGRESS_URL_TOKEN = object()
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
@@ -42,14 +43,49 @@ class EgressNotAllowedError(ValueError):
     """
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class ValidatedEgressURL:
-    """An egress URL that passed every policy check, with pinned addresses."""
+    """Factory-only egress validation result with pinned addresses."""
 
     normalized_url: str
     hostname: str
     port: int
     addresses: tuple[str, ...]
+
+    def __init__(
+        self,
+        normalized_url: str,
+        hostname: str,
+        port: int,
+        addresses: tuple[str, ...],
+        *,
+        _validation_token: object | None = None,
+    ) -> None:
+        if _validation_token is not _VALIDATED_EGRESS_URL_TOKEN:
+            raise TypeError(
+                "ValidatedEgressURL objects must come from a validation function"
+            )
+        object.__setattr__(self, "normalized_url", normalized_url)
+        object.__setattr__(self, "hostname", hostname)
+        object.__setattr__(self, "port", port)
+        object.__setattr__(self, "addresses", addresses)
+        object.__setattr__(self, "_validation_token", _validation_token)
+
+
+def _make_validated_egress_url(
+    normalized_url: str,
+    hostname: str,
+    port: int,
+    addresses: tuple[str, ...],
+) -> ValidatedEgressURL:
+    """Create a result exclusively from the module's completed validation path."""
+    return ValidatedEgressURL(
+        normalized_url,
+        hostname,
+        port,
+        addresses,
+        _validation_token=_VALIDATED_EGRESS_URL_TOKEN,
+    )
 
 
 def _has_url_control_character(value: str) -> bool:
@@ -272,14 +308,17 @@ def _revalidate_pinned_egress_url(
 ) -> ValidatedEgressURL:
     """Re-check a caller-supplied validation result before transport use.
 
-    ``ValidatedEgressURL`` is a public dataclass and therefore forgeable. This
-    restores every invariant established by the normal validation path without
-    performing another DNS lookup: URL policy, canonical host and port
-    agreement, a non-empty tuple of textual addresses, and per-address scope
-    validation.
+    The public result type has a factory-only constructor token. This function
+    also restores every invariant established by the normal validation path
+    without another DNS lookup: URL policy, canonical host and port agreement,
+    a non-empty tuple of textual addresses, and per-address scope validation.
     """
     if (
         not isinstance(validated, ValidatedEgressURL)
+        or (
+            getattr(validated, "_validation_token", None)
+            is not _VALIDATED_EGRESS_URL_TOKEN
+        )
         or not isinstance(validated.normalized_url, str)
         or not isinstance(validated.hostname, str)
         or not isinstance(validated.port, int)
@@ -309,7 +348,7 @@ def _revalidate_pinned_egress_url(
             for address in validated.addresses
         )
     )
-    return ValidatedEgressURL(normalized_url, hostname, port, addresses)
+    return _make_validated_egress_url(normalized_url, hostname, port, addresses)
 
 
 def validate_egress_url_details(
@@ -325,7 +364,7 @@ def validate_egress_url_details(
     if normalized_url is None or hostname is None or port is None:
         return None
     addresses = _resolve_all_global_addresses(hostname, port, policy)
-    return ValidatedEgressURL(normalized_url, hostname, port, addresses)
+    return _make_validated_egress_url(normalized_url, hostname, port, addresses)
 
 
 def validate_egress_url(value: str | None, *, policy: EgressPolicy) -> str | None:
@@ -344,7 +383,7 @@ async def validate_egress_url_details_async(
     if normalized_url is None or hostname is None or port is None:
         return None
     addresses = await _resolve_all_global_addresses_async(hostname, port, policy)
-    return ValidatedEgressURL(normalized_url, hostname, port, addresses)
+    return _make_validated_egress_url(normalized_url, hostname, port, addresses)
 
 
 async def validate_egress_url_async(
