@@ -27,7 +27,7 @@ For a non-local target, EgressWeave:
 9. refuses Unix-domain sockets; and
 10. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
-A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` during construction so deterministic operator mistakes are discovered before request handling begins.
+A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 
 ## Local-development exception
 
