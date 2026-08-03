@@ -17,7 +17,7 @@ The attacker is not assumed to control the embedding application's Python proces
 For a non-local target, EgressWeave:
 
 1. accepts only `https` URLs without embedded credentials, query strings, fragments, backslashes, or ASCII control characters;
-2. requires an exact normalized hostname match and rejects wildcard policy entries and IP-literal forms;
+2. accepts only exact hostname entries when `EgressPolicy` is constructed, rejects wildcard, URL/authority, whitespace/control, non-string, and IP-literal forms, and then requires an exact normalized hostname match at request validation;
 3. resolves every address returned by the system resolver and rejects the complete target if any address is not globally routable;
 4. signs the resulting `ValidatedEgressURL` with a process-local integrity key and revalidates its URL, hostname, port, address shape, signature, and address scope before transport construction;
 5. connects only to the validated address set while preserving the original hostname for certificate verification and TLS Server Name Indication;
@@ -27,7 +27,7 @@ For a non-local target, EgressWeave:
 9. refuses Unix-domain sockets; and
 10. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
-A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle.
+A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 
 ## Local-development exception
 
@@ -65,7 +65,7 @@ EgressWeave does not:
 
 ## Integration requirements
 
-Use a distinct policy for each trust domain and keep the allowlist as small as possible. Construct clients once per validated authority, close them deterministically, set application-appropriate HTTPX timeouts, and never fall back to an unguarded HTTP client after `EgressNotAllowedError`.
+Use a distinct policy for each trust domain and keep the allowlist as small as possible. Supply bare hostnames only—never schemes, credentials, ports, paths, wildcards, or IP literals—and construct the policy during application startup so configuration errors stop deployment before traffic is served. Construct clients once per validated authority, close them deterministically, set application-appropriate HTTPX timeouts, and never fall back to an unguarded HTTP client after `EgressNotAllowedError`.
 
 An empty or absent base URL is not an authorization signal. The builder returns a deny-all client in that state; applications should treat `normalized_url is None` as disabled configuration and must not replace the returned client with a generic HTTPX client.
 

@@ -1,3 +1,5 @@
+import pytest
+
 from egressweave import EgressPolicy
 
 
@@ -16,6 +18,34 @@ def test_from_hosts_iterable():
 def test_direct_construction_normalizes():
     policy = EgressPolicy(allowed_hosts=frozenset({"API.Example.COM."}))
     assert policy.allowed_hosts == frozenset({"api.example.com"})
+
+
+@pytest.mark.parametrize(
+    "invalid_host",
+    [
+        "*.example.com",
+        "https://api.example.com",
+        "api.example.com:443",
+        "user@api.example.com",
+        "api.example.com/path",
+        "api.example.com?debug=true",
+        "api.example.com#fragment",
+        "api\\example.com",
+        "api example.com",
+        "127.0.0.1",
+        "2130706433",
+        "0x7f000001",
+        "::1",
+    ],
+)
+def test_invalid_allowed_host_configuration_fails_fast(invalid_host):
+    with pytest.raises(ValueError, match="exact hostnames"):
+        EgressPolicy.from_hosts(invalid_host)
+
+
+def test_non_string_allowed_host_configuration_fails_fast():
+    with pytest.raises(TypeError, match="exact hostname strings"):
+        EgressPolicy(allowed_hosts=frozenset({"api.example.com", 443}))
 
 
 def test_is_allowlisted_local_host_requires_allow_local_and_single_label():
