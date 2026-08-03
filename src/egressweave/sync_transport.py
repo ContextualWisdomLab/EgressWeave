@@ -17,7 +17,7 @@ import httpx
 from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
-from egressweave.policy import EgressPolicy
+from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _enforce_allowed_http_method,
@@ -158,7 +158,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         _enforce_allowed_http_method(request.method, self._policy)
         parsed_url = urlsplit(self._validated.normalized_url)
         request_scheme = request.url.scheme.lower()
-        request_host = request.url.host.lower().rstrip(".")
+        request_host = _normalize_host(request.url.host)
         request_port = request.url.port
         if request_port is None:
             request_port = {"http": 80, "https": 443}.get(request_scheme)
