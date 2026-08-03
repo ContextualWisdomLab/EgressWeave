@@ -58,3 +58,29 @@ def test_dns_timeout_is_normalized_to_float():
 def test_invalid_dns_timeouts_are_rejected(timeout):
     with pytest.raises(ValueError, match="finite positive number"):
         EgressPolicy.from_hosts("api.openai.com", dns_timeout_seconds=timeout)
+
+
+def test_default_ports_are_standard_http_and_https() -> None:
+    policy = EgressPolicy.from_hosts("api.openai.com")
+
+    assert policy.allowed_ports == frozenset({80, 443})
+    assert policy.is_port_allowed(443) is True
+    assert policy.is_port_allowed(8443) is False
+
+
+def test_custom_ports_are_normalized_and_deduplicated() -> None:
+    policy = EgressPolicy.from_hosts(
+        "api.openai.com", allowed_ports=[443, 8443, 8443]
+    )
+
+    assert policy.allowed_ports == frozenset({443, 8443})
+
+
+@pytest.mark.parametrize(
+    "ports",
+    [(0,), (65536,), (-1,), (True,), ("443",)],
+    ids=["zero", "too-large", "negative", "bool", "str"],
+)
+def test_invalid_allowed_ports_are_rejected(ports) -> None:
+    with pytest.raises(ValueError, match="integers from 1 through 65535"):
+        EgressPolicy.from_hosts("api.openai.com", allowed_ports=ports)
