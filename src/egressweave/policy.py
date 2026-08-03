@@ -53,7 +53,7 @@ def _normalize_allowed_host(value: object) -> str | None:
     configuration error until the first request.
     """
     if not isinstance(value, str):
-        raise ValueError("allowed_hosts entries must be exact hostname strings")
+        raise TypeError("allowed_hosts entries must be exact hostname strings")
 
     normalized = _normalize_host(value)
     if not normalized:
@@ -148,4 +148,8 @@ class EgressPolicy:
         address; this only governs the local escape hatch.
         """
         normalized = _normalize_host(hostname)
-        return self.allow_local and normalized in self.allowed_hosts and "." not in normalized
+        return (
+            self.allow_local
+            and normalized in self.allowed_hosts
+            and "." not in normalized
+        )
