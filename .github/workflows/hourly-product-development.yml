@@ -9,8 +9,12 @@ concurrency:
   group: egressweave-hourly-product-development
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONPATH: src
 
 jobs:
   develop:
@@ -67,14 +71,13 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: requirements-ci.txt
 
       - name: Install the trusted base test toolchain
         if: steps.queue.outputs.develop == 'true'
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[test]" ruff
+          python -m pip install --require-hashes -r requirements-ci.txt
 
       - name: Prepare a protected immutable diff baseline
         if: steps.queue.outputs.develop == 'true'
@@ -223,9 +226,8 @@ jobs:
           set -euo pipefail
           context="${RUNNER_TEMP}/egressweave-verifier-context"
           image_tag="egressweave-verifier:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$context/src"
-          cp pyproject.toml README.md "$context/"
-          cp -a src/egressweave "$context/src/"
+          mkdir -p "$context"
+          cp requirements-ci.txt "$context/"
 
           docker pull python:3.13-slim
           base_image="$(docker image inspect --format '{{index .RepoDigests 0}}' python:3.13-slim)"
@@ -239,9 +241,8 @@ jobs:
               PIP_NO_CACHE_DIR=1 \
               PYTHONUNBUFFERED=1
           WORKDIR /trusted-base
-          COPY pyproject.toml README.md ./
-          COPY src/egressweave ./src/egressweave
-          RUN python -m pip install '.[test]' ruff
+          COPY requirements-ci.txt ./
+          RUN python -m pip install --require-hashes -r requirements-ci.txt
           WORKDIR /work
           DOCKERFILE
           docker build --pull=false --network=default --tag "$image_tag" "$context"
