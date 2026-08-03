@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fail-closed boundary checks for EgressWeave's autonomous product workflow."""
 
 from __future__ import annotations
@@ -7,12 +6,12 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
 import tempfile
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path, PurePosixPath
 
 ALLOWED_ROOTS = ("src/egressweave/", "tests/", "docs/")
 ALLOWED_FILES = frozenset({"README.md", "CHANGELOG.md"})
@@ -226,8 +225,7 @@ def _write_outputs(values: dict[str, str]) -> None:
     if not output:
         return
     with Path(output).open("a", encoding="utf-8") as stream:
-        for key, value in values.items():
-            stream.write(f"{key}={value}\n")
+        stream.writelines(f"{key}={value}\n" for key, value in values.items())
 
 
 def _prepare_diff_index(
