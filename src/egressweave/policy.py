@@ -17,6 +17,7 @@ or, for a local Ollama-style stack::
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -45,12 +46,22 @@ class EgressPolicy:
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
 
     def __post_init__(self) -> None:
+        """Normalize hosts and reject unsafe DNS timeout configuration."""
         normalized = frozenset(
             _normalize_host(host) for host in self.allowed_hosts if host and host.strip()
         )
+        timeout = self.dns_timeout_seconds
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("dns_timeout_seconds must be a finite positive number")
         # Frozen dataclass: bypass the immutability guard exactly once to store
-        # the normalized set built from caller input.
+        # the normalized values built from caller input.
         object.__setattr__(self, "allowed_hosts", normalized)
+        object.__setattr__(self, "dns_timeout_seconds", float(timeout))
 
     @classmethod
     def from_hosts(
