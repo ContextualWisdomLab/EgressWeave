@@ -7,10 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add `build_optional_egress_http_client`, which represents an absent optional
+  endpoint as `(None, None)` rather than an unrestricted HTTP client.
 - Ship the PEP 561 `py.typed` marker and enforce complete source docstrings.
 - Enforce 100% line and branch coverage across every supported Python version.
 
 ### Changed
+- Make `build_egress_http_client` fail closed for empty or absent URLs instead
+  of returning an unrestricted fallback client.
 - Cancel superseded CI runs for the same pull request to reduce runner backlog.
 
 ### Security
