@@ -254,7 +254,10 @@ def _parse_and_validate_candidate_url(
     try:
         parsed = urlsplit(candidate)
         default_port = 443 if parsed.scheme.lower() == "https" else 80
-        port = parsed.port or default_port
+        explicit_port = parsed.port
+        if explicit_port == 0:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        port = default_port if explicit_port is None else explicit_port
         return parsed, port
     except ValueError as exc:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
