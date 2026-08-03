@@ -18,7 +18,10 @@ from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy
-from egressweave.request_safety import _bind_validated_tls_server_name
+from egressweave.request_safety import (
+    _bind_validated_tls_server_name,
+    _enforce_allowed_http_method,
+)
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -126,9 +129,14 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
 class _PinnedEgressTransport(httpx.BaseTransport):
     """Synchronous HTTPX transport pinned to one validated URL authority."""
 
+    # A private transport allocated without ``__init__`` (for example by a
+    # low-level test double) still gets the secure default method policy.
+    _policy = EgressPolicy(allowed_hosts=frozenset())
+
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
         """Revalidate caller-supplied state and construct a pinned connection pool."""
         self._validated = _revalidate_pinned_egress_url(validated, policy)
+        self._policy = policy
         ssl_context = create_ssl_context(verify=True, trust_env=False)
         self._pool = httpcore.ConnectionPool(
             ssl_context=ssl_context,
@@ -146,7 +154,8 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         )
 
     def _verify_request_target(self, request: httpx.Request) -> None:
-        """Reject request authority drift before the request reaches the pool."""
+        """Reject method or authority drift before the request reaches the pool."""
+        _enforce_allowed_http_method(request.method, self._policy)
         parsed_url = urlsplit(self._validated.normalized_url)
         request_scheme = request.url.scheme.lower()
         request_host = request.url.host.lower().rstrip(".")

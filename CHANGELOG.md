@@ -11,6 +11,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   response expectations, plus a security model that defines protected assets,
   attacker capabilities, enforced invariants, trust boundaries, integration
   requirements, and explicit non-goals.
+- Add `EgressPolicy.allowed_methods` with a fail-closed default set for ordinary
+  API operations and explicit opt-in for non-tunnelling extension methods.
 
 ### Fixed
 - Apply `EgressPolicy.dns_timeout_seconds` consistently to synchronous and
@@ -22,6 +24,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Enforce the HTTP-method allowlist inside both pinned transports before network
+  I/O. Methods outside the policy now fail with the generic
+  `EgressNotAllowedError`, and `CONNECT` cannot be configured because its
+  proxy-tunnel target would introduce a second, unvalidated authority channel.
 - Reject unusable non-empty allowlist entries when `EgressPolicy` is
   constructed. Wildcards, URL or authority syntax, IP literals and legacy
   numeric IP forms, whitespace/control characters, and non-string entries now

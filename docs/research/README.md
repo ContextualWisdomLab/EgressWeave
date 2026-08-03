@@ -14,6 +14,27 @@ rather than an ad-hoc heuristic. The primary sources:
   hosts (never a denylist), rejecting non-standard schemes and embedded
   credentials, disabling redirects, and validating the *resolved* IP — all
   implemented here.
+- **OWASP Top 10 A10:2021 SSRF.** Recommends positive allowlists for URL scheme,
+  port, and destination, plus deny-by-default network controls. EgressWeave
+  applies the same least-authority principle to the request method at the final
+  transport boundary rather than trusting a helper call earlier in the flow.
+
+## HTTP method authority — RFC 9110
+
+- **RFC 9110, section 9.3.6 (`CONNECT`).** `CONNECT` asks a proxy to establish a
+  tunnel to the host and port carried in the method-specific request target and
+  then blindly forward traffic. That tunnel destination is a second authority
+  channel independent of the URL authority EgressWeave validated and pinned.
+- EgressWeave therefore uses a positive HTTP-method allowlist for every pinned
+  client, defaults to ordinary API methods, and refuses `CONNECT` even when an
+  operator attempts to add it. Less common non-tunnelling methods such as
+  WebDAV verbs require explicit opt-in.
+
+Primary references:
+
+- [RFC 9110: HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html#name-connect)
+- [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
+- [OWASP Top 10 A10:2021 SSRF](https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/)
 
 ## Secure defaults and fail-secure behavior — OWASP
 
