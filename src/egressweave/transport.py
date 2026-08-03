@@ -186,7 +186,25 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             ),
         )
 
+    def _verify_request_target(self, request: httpx.Request) -> None:
+        """Reject request authority drift before the request reaches the pool."""
+        parsed_url = urlsplit(self._validated.normalized_url)
+        request_scheme = request.url.scheme.lower()
+        request_host = request.url.host.lower().rstrip(".")
+        request_port = request.url.port
+        if request_port is None:
+            request_port = {"http": 80, "https": 443}.get(request_scheme)
+
+        if (
+            request.url.userinfo
+            or request_scheme != parsed_url.scheme
+            or request_host != self._validated.hostname
+            or request_port != self._validated.port
+        ):
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         validated_scheme = parsed_url.scheme.encode("ascii")
         validated_host = self._validated.hostname.encode("ascii")
