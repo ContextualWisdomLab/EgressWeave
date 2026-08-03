@@ -2,10 +2,10 @@
 
 **SSRF- and DNS-rebinding-safe outbound HTTP for Python.**
 
-`egressweave` validates an outbound URL against an explicit host allowlist,
-refuses any target that resolves to a non-globally-routable address, and hands
-back an `httpx.AsyncClient` whose every connection is *pinned* to the validated
-addresses — rejecting any host or port that changes after validation.
+`egressweave` validates an outbound URL against explicit host and TCP-port
+allowlists, refuses any target that resolves to a non-globally-routable address,
+and hands back an `httpx.AsyncClient` whose every connection is *pinned* to the
+validated addresses — rejecting any host or port that changes after validation.
 
 It exists because the naive pattern — resolve, check the IP, then
 `httpx.get(url)` — is unsafe: the attacker-controlled DNS answer can change
@@ -23,8 +23,10 @@ and a permissive URL parser can be tricked into reaching internal services
 - **DNS rebinding / validate-then-connect TOCTOU (CWE-350):** resolves *all*
   addresses up front, validates each, and pins them into a custom transport
   that re-validates on every connect and refuses any host or port drift.
-- **Egress allowlist:** only hostnames you explicitly list are reachable;
-  wildcards are refused — the allowlist is exact.
+- **Egress allowlist:** only hostnames and TCP destination ports you explicitly
+  list are reachable; wildcards are refused. Remote HTTPS defaults to port 443
+  because the default port set is `{80, 443}` and remote plaintext HTTP is
+  rejected.
 - **Fail-closed construction:** the required client factory rejects an absent
   URL instead of returning an unrestricted fallback client. The optional
   factory returns no client when no endpoint is configured.
@@ -81,14 +83,16 @@ except EgressNotAllowedError:
 Local development (Ollama-style container name that resolves to a private IP):
 
 ```python
-policy = EgressPolicy.from_hosts("ollama", allow_local=True)
+policy = EgressPolicy.from_hosts(
+    "ollama", allow_local=True, allowed_ports=(11434,)
+)
 ```
 
 ## API
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected host allowlist with `allow_local` and a finite, positive DNS timeout. |
+| `EgressPolicy` | Exact host and TCP-port allowlists with `allow_local` and a finite, positive DNS timeout. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_http_client(url, *, policy)` | Require a URL, then validate and build a DNS-pinned client. |
 | `build_optional_egress_http_client(url, *, policy)` | Return no client for an absent URL; otherwise validate and pin it. |
