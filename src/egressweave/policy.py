@@ -144,7 +144,9 @@ class EgressPolicy:
     ``allow_local`` widens the guard only for hostname-bound local development:
     built-in local names accept loopback, while single-label allowlisted
     container names accept loopback, RFC 1918 IPv4, or RFC 4193 IPv6
-    unique-local addresses.
+    unique-local addresses. It must be an actual boolean; truthy strings or
+    integers are rejected so configuration parsing cannot accidentally enable
+    the local-network escape hatch.
 
     ``allowed_ports`` is the exhaustive set of destination TCP ports. The
     secure default authorizes only the standard HTTPS port, 443. Alternate TLS
@@ -170,6 +172,9 @@ class EgressPolicy:
     allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
 
     def __post_init__(self) -> None:
+        if not isinstance(self.allow_local, bool):
+            raise TypeError("allow_local must be a boolean")
+
         timeout = self.dns_timeout_seconds
         if (
             isinstance(timeout, bool)
