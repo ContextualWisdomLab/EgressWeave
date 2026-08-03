@@ -17,8 +17,11 @@ import asyncio
 import hashlib
 import hmac
 import ipaddress
+import queue
 import secrets
 import socket
+import threading
+import time
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
@@ -26,6 +29,8 @@ from egressweave.policy import EgressPolicy, _normalize_host
 
 EGRESS_NOT_ALLOWED = "egress URL is not allowed"
 _VALIDATED_EGRESS_URL_INTEGRITY_KEY = secrets.token_bytes(32)
+_MAX_CONCURRENT_DNS_RESOLUTIONS = 32
+_DNS_RESOLUTION_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT_DNS_RESOLUTIONS)
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
@@ -202,12 +207,13 @@ def _validate_global_address(
     return str(ip_address)
 
 
-def _resolve_all_global_addresses(
+def _resolve_all_global_addresses_blocking(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
+    """Resolve and validate every address on the current worker thread."""
     try:
         address_infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
+    except (OSError, UnicodeError) as exc:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
 
     if not address_infos:
@@ -226,16 +232,73 @@ def _resolve_all_global_addresses(
     return tuple(addresses)
 
 
+def _resolve_all_global_addresses(
+    hostname: str, port: int, policy: EgressPolicy
+) -> tuple[str, ...]:
+    """Resolve addresses within a bounded, fail-closed synchronous deadline.
+
+    The system ``getaddrinfo`` API has no per-call timeout parameter. Run it on
+    a daemon worker so the caller can enforce ``dns_timeout_seconds`` without
+    mutating process-global socket defaults. A semaphore bounds workers whose
+    platform resolver remains blocked after the caller has timed out.
+    """
+    deadline = time.monotonic() + policy.dns_timeout_seconds
+    if not _DNS_RESOLUTION_SLOTS.acquire(timeout=policy.dns_timeout_seconds):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    remaining_timeout = deadline - time.monotonic()
+    if remaining_timeout <= 0:
+        _DNS_RESOLUTION_SLOTS.release()
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    resolution_result: queue.Queue[
+        tuple[tuple[str, ...] | None, Exception | None]
+    ] = queue.Queue(maxsize=1)
+
+    def resolve_on_worker() -> None:
+        try:
+            addresses = _resolve_all_global_addresses_blocking(hostname, port, policy)
+            resolution_result.put((addresses, None))
+        except Exception as exc:  # noqa: BLE001
+            # Resolver and address-validation implementations may expose
+            # platform-specific exception types. The public boundary below
+            # converts all of them to the generic fail-closed error.
+            resolution_result.put((None, exc))
+        finally:
+            _DNS_RESOLUTION_SLOTS.release()
+
+    worker = threading.Thread(
+        target=resolve_on_worker,
+        name="egressweave-dns-resolver",
+        daemon=True,
+    )
+    try:
+        worker.start()
+    except Exception as exc:  # noqa: BLE001
+        _DNS_RESOLUTION_SLOTS.release()
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+
+    try:
+        addresses, error = resolution_result.get(
+            timeout=max(0.0, deadline - time.monotonic())
+        )
+    except queue.Empty as exc:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+
+    if error is not None:
+        if isinstance(error, EgressNotAllowedError):
+            raise error
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from error
+    if addresses is None:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    return addresses
+
+
 async def _resolve_all_global_addresses_async(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy),
-            timeout=policy.dns_timeout_seconds,
-        )
-    except asyncio.TimeoutError as exc:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+    """Run the same bounded resolver without blocking the event loop."""
+    return await asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy)
 
 
 def _parse_and_validate_candidate_url(
