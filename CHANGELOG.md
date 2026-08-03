@@ -37,6 +37,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Validate every outbound raw HTTP field name and value before HTTPCore
+  dispatch, reject malformed names, control octets, and leading or trailing
+  whitespace with the generic policy error, then restore exactly one trusted
+  `Host` field. This prevents parser differentials from turning ambiguous raw
+  headers into request-routing or request-smuggling channels.
 - Reject caller-supplied HTTPX/HTTPCore `target` request extensions before the
   synchronous or asynchronous connection pool. Absolute-form proxy targets can
   carry a second, unvalidated destination independently of the pinned URL, so

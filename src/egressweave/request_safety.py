@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
+)
+
+_HTTP_FIELD_NAME_OCTETS = frozenset(
+    b"!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
 
@@ -22,6 +26,51 @@ def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
     """
     if not policy.allows_http_method(method):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+
+def _is_valid_http_field_value(value: bytes) -> bool:
+    """Return whether ``value`` is one normalized RFC 9110 field value.
+
+    Field values may be empty and may contain visible ASCII, internal SP/HTAB,
+    or opaque ``obs-text`` octets. Leading/trailing whitespace and every other
+    control octet are rejected so downstream parsers cannot disagree about the
+    field boundary or value.
+    """
+    if value[:1] in {b" ", b"\t"} or value[-1:] in {b" ", b"\t"}:
+        return False
+    return all(
+        octet == 9 or 32 <= octet <= 126 or 128 <= octet <= 255 for octet in value
+    )
+
+
+def _build_safe_request_headers(
+    headers: Iterable[tuple[bytes, bytes]], validated_authority: bytes
+) -> list[tuple[bytes, bytes]]:
+    """Validate field syntax and restore exactly one trusted ``Host`` field.
+
+    HTTPX preserves raw byte headers until transport dispatch. Invalid field
+    names, whitespace before the colon, control characters, and duplicate or
+    ambiguous host spellings must not be delegated to a downstream HTTP parser:
+    parser differentials around those forms have historically enabled request
+    smuggling and routing confusion. Every caller-supplied field is therefore
+    checked against RFC 9110 syntax, all case-insensitive ``Host`` fields are
+    removed, and one validated authority is appended.
+    """
+    safe_headers: list[tuple[bytes, bytes]] = []
+    for name, value in headers:
+        if (
+            not isinstance(name, bytes)
+            or not name
+            or any(octet not in _HTTP_FIELD_NAME_OCTETS for octet in name)
+            or not isinstance(value, bytes)
+            or not _is_valid_http_field_value(value)
+        ):
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        if name.lower() != b"host":
+            safe_headers.append((name, value))
+
+    safe_headers.append((b"host", validated_authority))
+    return safe_headers
 
 
 def _bind_validated_tls_server_name(
