@@ -1,10 +1,10 @@
 """URL and address validation for egressweave.
 
-This is a faithful extraction of a production-vetted SSRF guard. Every outbound
-URL is parsed, its scheme/credential/host shape checked, its hostname matched
-against an explicit :class:`~egressweave.policy.EgressPolicy` allowlist, and
-**every** resolved address verified to be globally routable before a connection
-is ever attempted (CWE-918, Server-Side Request Forgery).
+Every outbound URL is parsed, its scheme/credential/host/port shape checked,
+its hostname and effective port matched against an explicit
+:class:`~egressweave.policy.EgressPolicy` allowlist, and **every** resolved
+address verified before a connection is attempted (CWE-918, Server-Side
+Request Forgery).
 
 The resolved addresses are returned so the transport layer can *pin* them and
 reject any post-validation host/port change — closing the validate-then-connect
@@ -138,7 +138,7 @@ def _is_local_dev_host(hostname: str) -> bool:
 
 
 def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
-    """Single-label allowlisted local host (Docker container name), IP literals excluded."""
+    """Return whether this is an allowlisted single-label local hostname."""
     normalized_hostname = _normalize_host(hostname)
     return (
         policy.is_allowlisted_local_host(hostname)
@@ -150,13 +150,7 @@ def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
 def _is_private_local_address(
     ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> bool:
-    """Whether an address is RFC 1918 or IPv6 unique-local network space.
-
-    Do not use :attr:`ipaddress.ip_address.is_private` here: Python also marks
-    documentation and benchmarking ranges as private. The local-development
-    escape hatch is intentionally limited to the three RFC 1918 IPv4 blocks and
-    RFC 4193 IPv6 unique-local addresses.
-    """
+    """Whether an address is RFC 1918 or IPv6 unique-local network space."""
     return any(ip_address in network for network in _PRIVATE_LOCAL_NETWORKS)
 
 
@@ -175,9 +169,7 @@ def _validate_global_address(
     Local exceptions are bound to the original hostname. Built-in local names
     and loopback literals may resolve only to loopback addresses. An explicitly
     allowlisted single-label container name may resolve only to loopback or
-    private network space. Dotted remote hosts never inherit either exception,
-    so enabling ``allow_local`` cannot turn a DNS rebind to loopback into an
-    allowed connection.
+    private network space. Dotted remote hosts never inherit either exception.
     """
     try:
         ip_address = ipaddress.ip_address(address)
@@ -221,8 +213,6 @@ def _resolve_all_global_addresses_blocking(
     addresses: list[str] = []
     seen_addresses: set[str] = set()
     for address_info in address_infos:
-        # Pass the original hostname so allowlisted container names are matched
-        # before checking the resolved IP.
         address = _validate_global_address(
             str(address_info[4][0]), policy, hostname=hostname
         )
@@ -235,13 +225,7 @@ def _resolve_all_global_addresses_blocking(
 def _resolve_all_global_addresses(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
-    """Resolve addresses within a bounded, fail-closed synchronous deadline.
-
-    The system ``getaddrinfo`` API has no per-call timeout parameter. Run it on
-    a daemon worker so the caller can enforce ``dns_timeout_seconds`` without
-    mutating process-global socket defaults. A semaphore bounds workers whose
-    platform resolver remains blocked after the caller has timed out.
-    """
+    """Resolve addresses within a bounded, fail-closed synchronous deadline."""
     deadline = time.monotonic() + policy.dns_timeout_seconds
     if not _DNS_RESOLUTION_SLOTS.acquire(timeout=policy.dns_timeout_seconds):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
@@ -260,9 +244,6 @@ def _resolve_all_global_addresses(
             addresses = _resolve_all_global_addresses_blocking(hostname, port, policy)
             resolution_result.put((addresses, None))
         except Exception as exc:  # noqa: BLE001
-            # Resolver and address-validation implementations may expose
-            # platform-specific exception types. The public boundary below
-            # converts all of them to the generic fail-closed error.
             resolution_result.put((None, exc))
         finally:
             _DNS_RESOLUTION_SLOTS.release()
@@ -317,14 +298,19 @@ def _parse_and_validate_candidate_url(
     try:
         parsed = urlsplit(candidate)
         default_port = 443 if parsed.scheme.lower() == "https" else 80
-        port = parsed.port or default_port
+        parsed_port = parsed.port
+        port = parsed_port if parsed_port is not None else default_port
         return parsed, port
     except ValueError as exc:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
 
 
 def _validate_url_components(
-    parsed: SplitResult, hostname: str, is_local_dev_host: bool, policy: EgressPolicy
+    parsed: SplitResult,
+    hostname: str,
+    port: int,
+    is_local_dev_host: bool,
+    policy: EgressPolicy,
 ) -> None:
     if parsed.scheme.lower() not in {"http", "https"}:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
@@ -342,6 +328,7 @@ def _validate_url_components(
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
+        or not policy.allows_port(port)
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
@@ -366,7 +353,7 @@ def _normalize_egress_url(
     hostname = _normalize_host(parsed.hostname or "")
     is_local_dev_host = _is_local_dev_host(hostname)
 
-    _validate_url_components(parsed, hostname, is_local_dev_host, policy)
+    _validate_url_components(parsed, hostname, port, is_local_dev_host, policy)
 
     if not is_local_dev_host:
         _validate_remote_host_is_allowed(hostname, policy)
@@ -384,14 +371,7 @@ def _normalize_egress_url(
 def _revalidate_pinned_egress_url(
     validated: ValidatedEgressURL, policy: EgressPolicy
 ) -> ValidatedEgressURL:
-    """Re-check a caller-supplied validation result before transport use.
-
-    The public result type has a factory-only constructor and a process-local
-    integrity signature. This function verifies that signature, then restores
-    every invariant established by the normal validation path without another
-    DNS lookup: URL policy, canonical host and port agreement, a non-empty tuple
-    of textual addresses, and per-address scope validation.
-    """
+    """Re-check caller-supplied validation state before transport use."""
     integrity_signature = getattr(validated, "_integrity_signature", None)
     if (
         not isinstance(validated, ValidatedEgressURL)
@@ -440,12 +420,7 @@ def _revalidate_pinned_egress_url(
 def validate_egress_url_details(
     value: str | None, *, policy: EgressPolicy
 ) -> ValidatedEgressURL | None:
-    """Validate ``value`` against ``policy`` and resolve pinnable addresses.
-
-    Returns ``None`` for an empty/absent URL, a :class:`ValidatedEgressURL` on
-    success, and raises :class:`EgressNotAllowedError` when a non-empty URL
-    violates the policy.
-    """
+    """Validate ``value`` against ``policy`` and resolve pinnable addresses."""
     normalized_url, hostname, port = _normalize_egress_url(value, policy)
     if normalized_url is None or hostname is None or port is None:
         return None
