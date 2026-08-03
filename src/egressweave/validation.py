@@ -25,6 +25,12 @@ EGRESS_NOT_ALLOWED = "egress URL is not allowed"
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
+_PRIVATE_LOCAL_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+)
 
 
 class EgressNotAllowedError(ValueError):
@@ -88,21 +94,14 @@ def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
 def _is_private_local_address(
     ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> bool:
-    """Whether an address is private network space safe for local development.
+    """Whether an address is RFC 1918 or IPv6 unique-local network space.
 
-    ``ipaddress.is_private`` also covers several special-use ranges on supported
-    Python versions. Keep link-local, reserved, unspecified, and multicast
-    addresses outside the ``allow_local`` escape hatch; notably, this prevents
-    an allowlisted container hostname from being rebound to a link-local cloud
-    metadata endpoint.
+    Do not use :attr:`ipaddress.ip_address.is_private` here: Python also marks
+    documentation and benchmarking ranges as private. The local-development
+    escape hatch is intentionally limited to the three RFC 1918 IPv4 blocks and
+    RFC 4193 IPv6 unique-local addresses.
     """
-    return (
-        ip_address.is_private
-        and not ip_address.is_link_local
-        and not ip_address.is_reserved
-        and not ip_address.is_unspecified
-        and not ip_address.is_multicast
-    )
+    return any(ip_address in network for network in _PRIVATE_LOCAL_NETWORKS)
 
 
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
