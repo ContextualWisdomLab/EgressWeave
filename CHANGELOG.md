@@ -37,6 +37,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Reject ambiguous HTTP/1.1 request-body framing before synchronous or
+  asynchronous connection-pool dispatch. Duplicate `Content-Length` or
+  `Transfer-Encoding` fields, mixed framing fields, malformed decimal lengths,
+  comma-joined lengths, and transfer codings other than a single `chunked`
+  coding now fail with the generic policy error, preventing CWE-444 parser
+  differentials while preserving ordinary fixed-size and HTTPX streaming bodies.
 - Validate every outbound raw HTTP field name and value before HTTPCore
   dispatch, reject malformed names, control octets, and leading or trailing
   whitespace with the generic policy error, then restore exactly one trusted
