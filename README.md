@@ -82,10 +82,10 @@ at policy construction rather than silently disabling the deadline.
 
 Allowlist configuration is also validated when `EgressPolicy` is constructed.
 Supply bare hostnames only. Wildcards, URLs, credentials, ports, paths, IP
-literals or legacy numeric IP forms, whitespace/control characters, and
-non-string entries raise `ValueError` before request handling begins. Empty
-segments remain ignored so comma-separated environment variables may contain
-trailing separators.
+literals or legacy numeric IP forms, and embedded whitespace/control characters
+raise `ValueError` before request handling begins; non-string entries raise
+`TypeError`. Empty segments remain ignored so comma-separated environment
+variables may contain trailing separators.
 
 Validate without building a client:
 
