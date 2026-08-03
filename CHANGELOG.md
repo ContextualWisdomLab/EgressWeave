@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Add a coordinated vulnerability-disclosure policy with supported-version and
+  response expectations, plus a security model that defines protected assets,
+  attacker capabilities, enforced invariants, trust boundaries, integration
+  requirements, and explicit non-goals.
+
+### Security
+- Add weekly Dependabot monitoring for Python runtime/test dependencies and
+  SHA-pinned GitHub Actions so constrained transport internals and CI supply-chain
+  changes are surfaced for normal review and validation.
+
 ## [0.2.0] - 2026-08-03
 
 ### Added
