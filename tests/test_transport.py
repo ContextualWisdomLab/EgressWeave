@@ -4,6 +4,7 @@ import pytest
 from egressweave import (
     EgressNotAllowedError,
     EgressPolicy,
+    build_egress_http_client,
     build_pinned_https_async_client,
     validate_egress_url_details,
 )
@@ -105,3 +106,18 @@ async def test_build_pinned_client_constructs(monkeypatch):
     validated = _validated_result(monkeypatch)
     async with build_pinned_https_async_client(validated, policy=POLICY) as client:
         assert client is not None
+
+
+async def test_build_async_client_without_base_url_fails_closed():
+    normalized_url, client = await build_egress_http_client(None, policy=POLICY)
+
+    try:
+        assert normalized_url is None
+        assert client.follow_redirects is False
+        assert client.trust_env is False
+        with pytest.raises(
+            EgressNotAllowedError, match="^egress URL is not allowed$"
+        ):
+            await client.get("https://api.openai.com/v1/models")
+    finally:
+        await client.aclose()
