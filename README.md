@@ -80,6 +80,13 @@ DNS resolution for both builders is bounded by `policy.dns_timeout_seconds`.
 The value must be a finite positive number; invalid configuration is rejected
 at policy construction rather than silently disabling the deadline.
 
+Allowlist configuration is also validated when `EgressPolicy` is constructed.
+Supply bare hostnames only. Wildcards, URLs, credentials, ports, paths, IP
+literals or legacy numeric IP forms, whitespace/control characters, and
+non-string entries raise `ValueError` before request handling begins. Empty
+segments remain ignored so comma-separated environment variables may contain
+trailing separators.
+
 Validate without building a client:
 
 ```python
@@ -102,7 +109,7 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, and a finite positive `dns_timeout_seconds` applied to sync and async resolution. |
+| `EgressPolicy` | Injected exact-host allowlist config: `from_hosts(...)`, fail-fast entry validation, `allow_local`, and a finite positive `dns_timeout_seconds` applied to sync and async resolution. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client. |
