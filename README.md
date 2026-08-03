@@ -18,10 +18,11 @@ and a permissive URL parser can be tricked into reaching internal services
 - **SSRF (CWE-918):** rejects private, loopback, link-local, reserved,
   multicast, unspecified, and otherwise non-global addresses; rejects embedded
   credentials, query/fragment, plaintext `http` to remote hosts, IP-literal
-  hosts, backslash smuggling, and ASCII control characters.
+  hosts, reserved explicit port `0`, backslash smuggling, and ASCII control
+  characters.
 - **DNS rebinding / validate-then-connect TOCTOU (CWE-350):** resolves *all*
   addresses up front, validates each, and pins them into a custom transport
-  that re-validates on every connect and refuses any host/port drift.
+  that re-validates on every connect and refuses any host or port drift.
 - **Egress allowlist:** only hostnames you explicitly list are reachable;
   wildcards are refused — the allowlist is exact.
 - Redirects are disabled and environment proxies ignored (`trust_env=False`),
@@ -70,7 +71,7 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, `dns_timeout_seconds`. |
+| `EgressPolicy` | Injected host allowlist with `allow_local` and a finite, positive DNS timeout. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_http_client(url, *, policy)` | Validate + build a DNS-pinned `httpx.AsyncClient`. |
 | `build_pinned_https_async_client(validated, *, policy)` | Pin an already-validated URL. |
