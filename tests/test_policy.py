@@ -1,3 +1,7 @@
+import math
+
+import pytest
+
 from egressweave import EgressPolicy
 
 
@@ -28,3 +32,20 @@ def test_is_allowlisted_local_host_requires_allow_local_and_single_label():
     assert disabled.is_allowlisted_local_host("ollama") is False
     # Not in the allowlist → not local.
     assert allowed.is_allowlisted_local_host("other") is False
+
+
+def test_dns_timeout_is_normalized_to_float():
+    policy = EgressPolicy.from_hosts("api.openai.com", dns_timeout_seconds=2)
+
+    assert policy.dns_timeout_seconds == 2.0
+    assert isinstance(policy.dns_timeout_seconds, float)
+
+
+@pytest.mark.parametrize(
+    "timeout",
+    [0, -1, math.inf, -math.inf, math.nan, True, "5"],
+    ids=["zero", "negative", "positive-infinity", "negative-infinity", "nan", "bool", "str"],
+)
+def test_invalid_dns_timeouts_are_rejected(timeout):
+    with pytest.raises(ValueError, match="finite positive number"):
+        EgressPolicy.from_hosts("api.openai.com", dns_timeout_seconds=timeout)
