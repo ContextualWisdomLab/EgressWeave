@@ -16,6 +16,7 @@ post-validation host/port change (CWE-350 / DNS rebinding).
 from egressweave.policy import EgressPolicy
 from egressweave.transport import (
     build_egress_http_client,
+    build_optional_egress_http_client,
     build_pinned_https_async_client,
 )
 from egressweave.validation import (
@@ -36,6 +37,7 @@ __all__ = [
     "EgressPolicy",
     "ValidatedEgressURL",
     "build_egress_http_client",
+    "build_optional_egress_http_client",
     "build_pinned_https_async_client",
     "validate_egress_url",
     "validate_egress_url_async",
