@@ -51,17 +51,20 @@ class EgressPolicy:
             _normalize_host(host) for host in self.allowed_hosts if host and host.strip()
         )
         timeout = self.dns_timeout_seconds
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, (int, float))
-            or not math.isfinite(timeout)
-            or timeout <= 0
-        ):
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise ValueError("dns_timeout_seconds must be a finite positive number")
+        try:
+            normalized_timeout = float(timeout)
+        except (OverflowError, ValueError) as exc:
+            raise ValueError(
+                "dns_timeout_seconds must be a finite positive number"
+            ) from exc
+        if not math.isfinite(normalized_timeout) or normalized_timeout <= 0:
             raise ValueError("dns_timeout_seconds must be a finite positive number")
         # Frozen dataclass: bypass the immutability guard exactly once to store
         # the normalized values built from caller input.
         object.__setattr__(self, "allowed_hosts", normalized)
-        object.__setattr__(self, "dns_timeout_seconds", float(timeout))
+        object.__setattr__(self, "dns_timeout_seconds", normalized_timeout)
 
     @classmethod
     def from_hosts(
