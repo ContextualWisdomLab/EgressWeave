@@ -22,6 +22,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Reject unusable non-empty allowlist entries when `EgressPolicy` is
+  constructed. Wildcards, URL or authority syntax, IP literals and legacy
+  numeric IP forms, whitespace/control characters, and non-string entries now
+  fail fast instead of creating a policy that can only fail on its first
+  request.
 - Bind HTTPX's low-level `sni_hostname` request extension to the already
   validated authority in both synchronous and asynchronous transports. A
   mismatched, malformed, or nontextual TLS server-name override now fails
