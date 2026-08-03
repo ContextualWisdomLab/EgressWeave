@@ -24,3 +24,30 @@ def test_allowlisted_local_host_rejects_addresses_outside_private_or_loopback_ra
 
     with pytest.raises(EgressNotAllowedError):
         v._validate_global_address(address, policy, hostname="ollama")
+
+
+def test_allow_local_does_not_allow_remote_host_to_rebind_to_loopback() -> None:
+    policy = EgressPolicy.from_hosts("api.openai.com", allow_local=True)
+
+    with pytest.raises(EgressNotAllowedError):
+        v._validate_global_address(
+            "127.0.0.1", policy, hostname="api.openai.com"
+        )
+
+
+def test_allowlisted_local_host_rejects_global_address() -> None:
+    policy = EgressPolicy.from_hosts("ollama", allow_local=True)
+
+    with pytest.raises(EgressNotAllowedError):
+        v._validate_global_address(
+            "93.184.216.34", policy, hostname="ollama"
+        )
+
+
+def test_localhost_rejects_non_loopback_address() -> None:
+    policy = EgressPolicy.from_hosts([], allow_local=True)
+
+    with pytest.raises(EgressNotAllowedError):
+        v._validate_global_address(
+            "93.184.216.34", policy, hostname="localhost"
+        )
