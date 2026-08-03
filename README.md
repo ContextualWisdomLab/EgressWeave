@@ -3,16 +3,16 @@
 **SSRF- and DNS-rebinding-safe outbound HTTP for Python.**
 
 `egressweave` validates an outbound URL against an explicit host allowlist,
-refuses any target that resolves to a non-globally-routable address, and hands
-back a synchronous `httpx.Client` or asynchronous `httpx.AsyncClient` whose
-every connection is *pinned* to the validated addresses — rejecting any host
-or port that changes after validation.
+refuses any target that resolves to a non-globally-routable address, authorizes
+only an explicit HTTP-method set, and hands back a synchronous `httpx.Client` or
+asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
+validated addresses — rejecting any host or port that changes after validation.
 
 It exists because the naive pattern — resolve, check the IP, then
 `httpx.get(url)` — is unsafe: the attacker-controlled DNS answer can change
 between the check and the connect (a TOCTOU / DNS-rebinding attack, CWE-350),
-and a permissive URL parser can be tricked into reaching internal services
-(SSRF, CWE-918).
+and a permissive URL parser or HTTP method can be abused to reach unintended
+services (SSRF, CWE-918).
 
 ## What it defends against
 
@@ -23,6 +23,10 @@ and a permissive URL parser can be tricked into reaching internal services
 - **DNS rebinding / validate-then-connect TOCTOU (CWE-350):** resolves *all*
   addresses up front, validates each, and pins them into a custom transport
   that re-validates on every connect and refuses any host/port drift.
+- **Application-layer tunnelling:** a positive HTTP-method allowlist is enforced
+  at the transport boundary. Common API methods are enabled by default, unusual
+  methods require explicit opt-in, and `CONNECT` can never be authorized because
+  it asks a proxy to open a tunnel to a second, unvalidated destination.
 - **Bounded DNS resolution:** synchronous and asynchronous validation apply the
   same finite positive `dns_timeout_seconds` deadline. Resolver workers are
   concurrency-bounded and failures remain generic, preventing a stalled system
@@ -71,6 +75,20 @@ async with client:
     response = await client.get(f"{normalized_url}/models")
 ```
 
+Narrow the method surface for each integration:
+
+```python
+read_only_policy = EgressPolicy.from_hosts(
+    "api.example.com",
+    allowed_methods={"GET", "HEAD"},
+)
+```
+
+The default method set is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and
+`OPTIONS`. Method names are validated and normalized at policy construction.
+Less common non-tunnelling methods such as `PROPFIND` require explicit opt-in.
+`CONNECT` is always rejected, including when present in configuration.
+
 Both builders fail closed when the supplied base URL is `None`, empty, or only
 whitespace: they return `(None, client)`, but that client rejects every request
 with `EgressNotAllowedError` before network I/O. This lets applications preserve
@@ -84,7 +102,7 @@ Allowlist configuration is also validated when `EgressPolicy` is constructed.
 Supply bare hostnames only. Wildcards, URLs, credentials, ports, paths, IP
 literals or legacy numeric IP forms, and embedded whitespace/control characters
 raise `ValueError` before request handling begins; non-string entries raise
-`TypeError`. Empty segments remain ignored so comma-separated environment
+`TypeError`. Empty host segments remain ignored so comma-separated environment
 variables may contain trailing separators.
 
 Validate without building a client:
@@ -109,7 +127,7 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact-host allowlist config: `from_hosts(...)`, fail-fast entry validation, `allow_local`, and a finite positive `dns_timeout_seconds` applied to sync and async resolution. |
+| `EgressPolicy` | Injected exact-host and HTTP-method allowlist config: `from_hosts(...)`, fail-fast entry validation, `allow_local`, and a finite positive `dns_timeout_seconds` applied to sync and async resolution. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client. |
@@ -157,9 +175,9 @@ synchronous and asynchronous transports.
 ## Research grounding
 
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention, secure
-by default / fail securely, CWE-918, CWE-350 (DNS rebinding / TOCTOU), and RFC
-8305 (Happy Eyeballs — the concurrent connect used across asynchronously pinned
-addresses).
+by default / fail securely, CWE-918, CWE-350 (DNS rebinding / TOCTOU), RFC 9110
+(`CONNECT` tunnelling), and RFC 8305 (Happy Eyeballs — the concurrent connect
+used across asynchronously pinned addresses).
 
 ## License
 
