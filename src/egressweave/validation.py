@@ -85,6 +85,26 @@ def _is_allowlisted_local_host(hostname: str, policy: EgressPolicy) -> bool:
     )
 
 
+def _is_private_local_address(
+    ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    """Whether an address is private network space safe for local development.
+
+    ``ipaddress.is_private`` also covers several special-use ranges on supported
+    Python versions. Keep link-local, reserved, unspecified, and multicast
+    addresses outside the ``allow_local`` escape hatch; notably, this prevents
+    an allowlisted container hostname from being rebound to a link-local cloud
+    metadata endpoint.
+    """
+    return (
+        ip_address.is_private
+        and not ip_address.is_link_local
+        and not ip_address.is_reserved
+        and not ip_address.is_unspecified
+        and not ip_address.is_multicast
+    )
+
+
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
     host_part = f"[{hostname}]" if ":" in hostname else hostname
     if not explicit_port:
@@ -99,9 +119,10 @@ def _validate_global_address(
 
     When ``policy.allow_local`` is enabled the address is accepted if the IP is
     a loopback address, or the *original* hostname (before DNS resolution) is an
-    allowlisted single-label local host. That second condition is necessary
-    because Docker container names (e.g. ``ollama``) resolve to RFC 1918 private
-    IPs that would otherwise be rejected by the global-address check.
+    allowlisted single-label local host resolving to private network space.
+    That second condition is necessary because Docker container names (e.g.
+    ``ollama``) resolve to RFC 1918 private IPs that would otherwise be rejected
+    by the global-address check. Other special-use ranges remain rejected.
     """
     try:
         ip_address = ipaddress.ip_address(address)
@@ -112,7 +133,11 @@ def _validate_global_address(
     if policy.allow_local:
         if ip_address.is_loopback:
             is_allowed_local = True
-        elif hostname and _is_allowlisted_local_host(hostname, policy):
+        elif (
+            hostname
+            and _is_allowlisted_local_host(hostname, policy)
+            and _is_private_local_address(ip_address)
+        ):
             is_allowed_local = True
 
     if not is_allowed_local:
