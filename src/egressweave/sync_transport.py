@@ -18,6 +18,7 @@ from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy
+from egressweave.request_safety import _bind_validated_tls_server_name
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -165,6 +166,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         """Send one request after restoring the validated authority and Host header."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
+        safe_extensions = _bind_validated_tls_server_name(
+            request.extensions, self._validated.hostname
+        )
         safe_headers = [
             (key, value)
             for key, value in request.headers.raw
@@ -182,7 +186,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             ),
             headers=safe_headers,
             content=request.stream,
-            extensions=request.extensions,
+            extensions=safe_extensions,
         )
         with map_httpcore_exceptions():
             response = self._pool.handle_request(core_request)
