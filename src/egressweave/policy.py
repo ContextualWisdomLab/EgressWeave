@@ -3,8 +3,8 @@
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries the allowlist of hostnames that
 outbound requests may target, plus an ``allow_local`` escape hatch for local
-development stacks (loopback and Docker-container names that resolve to
-RFC 1918 addresses).
+development stacks: built-in local names are bound to loopback, while explicit
+Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
 
 Construct it explicitly::
 
@@ -35,9 +35,9 @@ class EgressPolicy:
     ``allowed_hosts`` is the exhaustive set of hostnames an outbound request
     may target. Values are normalized (lower-cased, trailing dot stripped) on
     construction so equality checks are exact. ``allow_local`` widens the guard
-    to accept loopback addresses and single-label allowlisted hosts (Docker
-    container names) that resolve to private addresses — intended for local
-    development only.
+    only for hostname-bound local development: built-in local names accept
+    loopback, while single-label allowlisted container names accept loopback,
+    RFC 1918 IPv4, or RFC 4193 IPv6 unique-local addresses.
     """
 
     allowed_hosts: frozenset[str]
@@ -59,7 +59,7 @@ class EgressPolicy:
         *,
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
-    ) -> "EgressPolicy":
+    ) -> EgressPolicy:
         """Build a policy from a comma-separated string or an iterable of hosts."""
         items: Iterable[str]
         if isinstance(hosts, str):
