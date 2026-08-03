@@ -1,18 +1,21 @@
 """Egress policy — the single injected dependency for egressweave.
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
-application's settings object. It carries the allowlist of hostnames that
-outbound requests may target, plus an ``allow_local`` escape hatch for local
-development stacks: built-in local names are bound to loopback, while explicit
-Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
+application's settings object. It carries the allowlist of hostnames and HTTP
+methods that outbound requests may target, plus an ``allow_local`` escape hatch
+for local development stacks: built-in local names are bound to loopback, while
+explicit Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
 
 Construct it explicitly::
 
     policy = EgressPolicy.from_hosts("api.openai.com, api.anthropic.com")
 
-or, for a local Ollama-style stack::
+or, for a read-only integration::
 
-    policy = EgressPolicy.from_hosts("ollama", allow_local=True)
+    policy = EgressPolicy.from_hosts(
+        "api.example.com",
+        allowed_methods={"GET", "HEAD"},
+    )
 """
 
 from __future__ import annotations
@@ -24,7 +27,13 @@ from dataclasses import dataclass
 from numbers import Real
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
+    {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+)
 _INVALID_HOST_DELIMITERS = frozenset("*/\\@?:#%")
+_HTTP_METHOD_TOKEN_CHARACTERS = frozenset(
+    "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+)
 
 
 def _normalize_host(value: str) -> str:
@@ -74,6 +83,28 @@ def _normalize_allowed_host(value: object) -> str | None:
     return normalized
 
 
+def _normalize_allowed_method(value: object) -> str:
+    """Return one canonical HTTP method token or reject unsafe configuration.
+
+    Method names follow the RFC 9110 ``token`` grammar and are normalized to
+    uppercase because HTTPX serializes method names in uppercase. ``CONNECT``
+    is never accepted: its semantics create an application-layer tunnel whose
+    destination is independent of the validated URL authority.
+    """
+    if not isinstance(value, str):
+        raise TypeError("allowed_methods entries must be HTTP method strings")
+
+    normalized = value.strip().upper()
+    if (
+        not normalized
+        or any(character not in _HTTP_METHOD_TOKEN_CHARACTERS for character in normalized)
+    ):
+        raise ValueError("allowed_methods entries must be valid HTTP method tokens")
+    if normalized == "CONNECT":
+        raise ValueError("CONNECT cannot be authorized by an egress policy")
+    return normalized
+
+
 @dataclass(frozen=True)
 class EgressPolicy:
     """Immutable outbound-egress allowlist policy.
@@ -92,11 +123,18 @@ class EgressPolicy:
     synchronous and asynchronous DNS resolution. Invalid timeout values are
     rejected during construction so callers cannot accidentally disable the
     fail-closed resolution budget.
+
+    ``allowed_methods`` is the exhaustive set of HTTP methods that pinned
+    clients may dispatch. The secure default covers ordinary API operations but
+    excludes TRACE, WebDAV extension methods, and every other unrequested method.
+    ``CONNECT`` is always invalid because it can ask an allowlisted proxy to open
+    a tunnel to a second, unvalidated destination.
     """
 
     allowed_hosts: frozenset[str]
     allow_local: bool = False
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
+    allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
 
     def __post_init__(self) -> None:
         timeout = self.dns_timeout_seconds
@@ -114,10 +152,20 @@ class EgressPolicy:
             if normalized_host is not None:
                 normalized_hosts.add(normalized_host)
 
+        method_values: Iterable[object]
+        if isinstance(self.allowed_methods, str):
+            method_values = self.allowed_methods.split(",")
+        else:
+            method_values = self.allowed_methods
+        normalized_methods = frozenset(
+            _normalize_allowed_method(method) for method in method_values
+        )
+
         # Frozen dataclass: bypass the immutability guard exactly once to store
         # normalized caller input and a canonical float timeout.
         object.__setattr__(self, "allowed_hosts", frozenset(normalized_hosts))
         object.__setattr__(self, "dns_timeout_seconds", float(timeout))
+        object.__setattr__(self, "allowed_methods", normalized_methods)
 
     @classmethod
     def from_hosts(
@@ -126,17 +174,26 @@ class EgressPolicy:
         *,
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+        allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
     ) -> EgressPolicy:
-        """Build a policy from a comma-separated string or an iterable of hosts."""
+        """Build a policy from host and HTTP-method strings or iterables."""
         items: Iterable[str]
         if isinstance(hosts, str):
             items = hosts.split(",")
         else:
             items = hosts
+
+        method_items: Iterable[str]
+        if isinstance(allowed_methods, str):
+            method_items = allowed_methods.split(",")
+        else:
+            method_items = allowed_methods
+
         return cls(
             allowed_hosts=frozenset(items),
             allow_local=allow_local,
             dns_timeout_seconds=dns_timeout_seconds,
+            allowed_methods=frozenset(method_items),
         )
 
     def is_allowlisted_local_host(self, hostname: str) -> bool:
@@ -153,3 +210,11 @@ class EgressPolicy:
             and normalized in self.allowed_hosts
             and "." not in normalized
         )
+
+    def allows_http_method(self, method: str) -> bool:
+        """Return whether ``method`` is authorized by this policy."""
+        try:
+            normalized = _normalize_allowed_method(method)
+        except (TypeError, ValueError):
+            return False
+        return normalized in self.allowed_methods
