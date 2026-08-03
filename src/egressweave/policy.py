@@ -1,19 +1,21 @@
 """Egress policy — the single injected dependency for egressweave.
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
-application's settings object. It carries the allowlist of hostnames and HTTP
-methods that outbound requests may target, plus an ``allow_local`` escape hatch
-for local development stacks: built-in local names are bound to loopback, while
-explicit Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
+application's settings object. It carries the allowlists of hostnames, network
+ports, and HTTP methods that outbound requests may target, plus an
+``allow_local`` escape hatch for local development stacks: built-in local names
+are bound to loopback, while explicit Docker-container names may resolve to RFC
+1918 or RFC 4193 addresses.
 
 Construct it explicitly::
 
     policy = EgressPolicy.from_hosts("api.openai.com, api.anthropic.com")
 
-or, for a read-only integration::
+or, for a read-only integration on an explicit alternate TLS port::
 
     policy = EgressPolicy.from_hosts(
         "api.example.com",
+        allowed_ports={443, 8443},
         allowed_methods={"GET", "HEAD"},
     )
 """
@@ -27,6 +29,7 @@ from dataclasses import dataclass
 from numbers import Real
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
 DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 )
@@ -83,6 +86,30 @@ def _normalize_allowed_host(value: object) -> str | None:
     return normalized
 
 
+def _normalize_allowed_port(value: object) -> int | None:
+    """Normalize one positive TCP port or reject unsafe configuration.
+
+    Decimal strings are accepted for environment-variable ergonomics. Empty
+    string segments remain ignorable, while booleans, non-decimal values, port
+    zero, and values outside the TCP/UDP port range fail at construction.
+    """
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if not normalized.isascii() or not normalized.isdigit():
+            raise ValueError("allowed_ports entries must be decimal port numbers")
+        port = int(normalized)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("allowed_ports entries must be integer port numbers")
+        port = value
+
+    if not 1 <= port <= 65535:
+        raise ValueError("allowed_ports entries must be between 1 and 65535")
+    return port
+
+
 def _normalize_allowed_method(value: object) -> str:
     """Return one canonical HTTP method token or reject unsafe configuration.
 
@@ -119,6 +146,11 @@ class EgressPolicy:
     container names accept loopback, RFC 1918 IPv4, or RFC 4193 IPv6
     unique-local addresses.
 
+    ``allowed_ports`` is the exhaustive set of destination TCP ports. The
+    secure default authorizes only the standard HTTPS port, 443. Alternate TLS
+    ports and local-development HTTP ports require explicit opt-in because RFC
+    9110 defines scheme, host, and port together as the request origin.
+
     ``dns_timeout_seconds`` is a finite positive deadline applied to both
     synchronous and asynchronous DNS resolution. Invalid timeout values are
     rejected during construction so callers cannot accidentally disable the
@@ -134,6 +166,7 @@ class EgressPolicy:
     allowed_hosts: frozenset[str]
     allow_local: bool = False
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
+    allowed_ports: frozenset[int] = DEFAULT_ALLOWED_EGRESS_PORTS
     allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
 
     def __post_init__(self) -> None:
@@ -152,6 +185,17 @@ class EgressPolicy:
             if normalized_host is not None:
                 normalized_hosts.add(normalized_host)
 
+        port_values: Iterable[object]
+        if isinstance(self.allowed_ports, str):
+            port_values = self.allowed_ports.split(",")
+        else:
+            port_values = self.allowed_ports
+        normalized_ports: set[int] = set()
+        for port in port_values:
+            normalized_port = _normalize_allowed_port(port)
+            if normalized_port is not None:
+                normalized_ports.add(normalized_port)
+
         method_values: Iterable[object]
         if isinstance(self.allowed_methods, str):
             method_values = self.allowed_methods.split(",")
@@ -165,6 +209,7 @@ class EgressPolicy:
         # normalized caller input and a canonical float timeout.
         object.__setattr__(self, "allowed_hosts", frozenset(normalized_hosts))
         object.__setattr__(self, "dns_timeout_seconds", float(timeout))
+        object.__setattr__(self, "allowed_ports", frozenset(normalized_ports))
         object.__setattr__(self, "allowed_methods", normalized_methods)
 
     @classmethod
@@ -174,14 +219,21 @@ class EgressPolicy:
         *,
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+        allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
     ) -> EgressPolicy:
-        """Build a policy from host and HTTP-method strings or iterables."""
+        """Build a policy from host, port, and HTTP-method strings or iterables."""
         items: Iterable[str]
         if isinstance(hosts, str):
             items = hosts.split(",")
         else:
             items = hosts
+
+        port_items: Iterable[int | str]
+        if isinstance(allowed_ports, str):
+            port_items = allowed_ports.split(",")
+        else:
+            port_items = allowed_ports
 
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
@@ -193,6 +245,7 @@ class EgressPolicy:
             allowed_hosts=frozenset(items),
             allow_local=allow_local,
             dns_timeout_seconds=dns_timeout_seconds,
+            allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
         )
 
@@ -209,6 +262,14 @@ class EgressPolicy:
             self.allow_local
             and normalized in self.allowed_hosts
             and "." not in normalized
+        )
+
+    def allows_port(self, port: int) -> bool:
+        """Return whether the effective destination port is authorized."""
+        return (
+            isinstance(port, int)
+            and not isinstance(port, bool)
+            and port in self.allowed_ports
         )
 
     def allows_http_method(self, method: str) -> bool:
