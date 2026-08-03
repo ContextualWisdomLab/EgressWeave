@@ -183,6 +183,10 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
 
 
 class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
+    # A private transport allocated without ``__init__`` (for example by a
+    # low-level test double) still gets the secure default method policy.
+    _policy = EgressPolicy(allowed_hosts=frozenset())
+
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
         self._validated = _revalidate_pinned_egress_url(validated, policy)
         self._policy = policy
