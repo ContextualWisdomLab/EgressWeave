@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   API operations and explicit opt-in for non-tunnelling extension methods.
 
 ### Fixed
+- Canonicalize request-time Unicode hostnames with the same UTS #46 processing
+  used during policy validation, so an internationalized URL remains equivalent
+  to its validated ASCII A-label in both synchronous and asynchronous clients.
 - Treat a directly supplied comma-separated `allowed_hosts` string as hostname
   configuration instead of iterating it character by character.
 - Preserve explicit port zero during URL parsing so it is rejected by the port
