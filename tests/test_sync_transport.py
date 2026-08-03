@@ -150,6 +150,21 @@ def test_sync_transport_rejects_request_target_drift(monkeypatch, request_url):
         transport.handle_request(httpx.Request("GET", request_url))
 
 
+def test_sync_transport_rejects_tls_server_name_drift(monkeypatch):
+    transport = object.__new__(_PinnedEgressTransport)
+    transport._validated = _validated_result(monkeypatch)
+    transport._pool = _UnexpectedPool()
+
+    request = httpx.Request(
+        "GET",
+        "https://api.openai.com/v1/models",
+        extensions={"sni_hostname": "evil.example"},
+    )
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        transport.handle_request(request)
+
+
 def test_sync_transport_restores_validated_authority(monkeypatch):
     transport = object.__new__(_PinnedEgressTransport)
     transport._validated = _validated_result(monkeypatch)
@@ -161,6 +176,7 @@ def test_sync_transport_restores_validated_authority(monkeypatch):
             "GET",
             "https://api.openai.com/v1/models?after=cursor",
             headers={"Host": "evil.example"},
+            extensions={"sni_hostname": b"API.OPENAI.COM."},
         )
     )
 
@@ -168,6 +184,7 @@ def test_sync_transport_restores_validated_authority(monkeypatch):
     assert pool.request.url.host == b"api.openai.com"
     assert pool.request.url.target == b"/v1/models?after=cursor"
     assert dict(pool.request.headers)[b"host"] == b"api.openai.com"
+    assert pool.request.extensions["sni_hostname"] == "api.openai.com"
 
 
 def test_sync_transport_close_closes_pool(monkeypatch):

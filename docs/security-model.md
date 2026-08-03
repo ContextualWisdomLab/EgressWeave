@@ -8,7 +8,7 @@ Typical protected assets are cloud metadata services, loopback listeners, RFC 19
 
 ## Attacker capabilities
 
-The model assumes an attacker may control the candidate URL, path and request data; operate an allowlisted DNS zone; return multiple A or AAAA records; change DNS answers after validation; supply unusual URL syntax; attempt absolute-target authority drift; and cause individual validated addresses to fail during connection establishment.
+The model assumes an attacker may control the candidate URL, path, request data, and low-level HTTPX request extensions; operate an allowlisted DNS zone; return multiple A or AAAA records; change DNS answers after validation; supply unusual URL syntax; attempt absolute-target, `Host`, or TLS Server Name Indication (SNI) authority drift; and cause individual validated addresses to fail during connection establishment.
 
 The attacker is not assumed to control the embedding application's Python process, `EgressPolicy`, trust store, operating system, installed EgressWeave package, or the legitimate remote service behind an allowlisted hostname. Code execution inside the process can bypass any in-process policy.
 
@@ -20,9 +20,9 @@ For a non-local target, EgressWeave:
 2. requires an exact normalized hostname match and rejects wildcard policy entries and IP-literal forms;
 3. resolves every address returned by the system resolver and rejects the complete target if any address is not globally routable;
 4. signs the resulting `ValidatedEgressURL` with a process-local integrity key and revalidates its URL, hostname, port, address shape, signature, and address scope before transport construction;
-5. connects only to the validated address set while preserving the original hostname for TLS verification and Server Name Indication;
-6. rejects request scheme, user information, hostname, or effective-port drift before the request reaches the connection pool;
-7. replaces any caller-supplied `Host` header with the validated authority;
+5. connects only to the validated address set while preserving the original hostname for certificate verification and TLS Server Name Indication;
+6. rejects request scheme, user information, hostname, effective-port, or caller-supplied SNI drift before the request reaches the connection pool;
+7. replaces any caller-supplied `Host` header and binds the forwarded `sni_hostname` extension to the validated authority;
 8. disables redirects and environment-derived proxy configuration;
 9. refuses Unix-domain sockets; and
 10. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.

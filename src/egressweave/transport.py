@@ -28,6 +28,7 @@ from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy
+from egressweave.request_safety import _bind_validated_tls_server_name
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -220,6 +221,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         validated_scheme = parsed_url.scheme.encode("ascii")
         validated_host = self._validated.hostname.encode("ascii")
         validated_netloc = parsed_url.netloc.encode("ascii")
+        safe_extensions = _bind_validated_tls_server_name(
+            request.extensions, self._validated.hostname
+        )
 
         safe_headers = [
             (key, value)
@@ -238,7 +242,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             ),
             headers=safe_headers,
             content=request.stream,
-            extensions=request.extensions,
+            extensions=safe_extensions,
         )
         with map_httpcore_exceptions():
             resp = await self._pool.handle_async_request(req)

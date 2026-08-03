@@ -1,3 +1,4 @@
+import httpcore
 import httpx
 import pytest
 
@@ -32,6 +33,20 @@ def _validated_result(monkeypatch):
 class _UnexpectedPool:
     async def handle_async_request(self, request):
         pytest.fail("request target drift reached the connection pool")
+
+
+class _RecordingPool:
+    def __init__(self):
+        self.request = None
+
+    async def handle_async_request(self, request):
+        self.request = request
+
+        async def empty_content():
+            if False:  # pragma: no cover
+                yield b""
+
+        return httpcore.Response(204, headers=[], content=empty_content())
 
 
 def test_backend_rejects_empty_addresses():
@@ -100,6 +115,39 @@ async def test_transport_rejects_request_target_drift(monkeypatch, request_url):
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         await transport.handle_async_request(httpx.Request("GET", request_url))
+
+
+async def test_transport_rejects_tls_server_name_drift(monkeypatch):
+    transport = object.__new__(_PinnedEgressAsyncTransport)
+    transport._validated = _validated_result(monkeypatch)
+    transport._pool = _UnexpectedPool()
+
+    request = httpx.Request(
+        "GET",
+        "https://api.openai.com/v1/models",
+        extensions={"sni_hostname": "evil.example"},
+    )
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        await transport.handle_async_request(request)
+
+
+async def test_transport_binds_validated_tls_server_name(monkeypatch):
+    transport = object.__new__(_PinnedEgressAsyncTransport)
+    transport._validated = _validated_result(monkeypatch)
+    pool = _RecordingPool()
+    transport._pool = pool
+
+    response = await transport.handle_async_request(
+        httpx.Request(
+            "GET",
+            "https://api.openai.com/v1/models",
+            extensions={"sni_hostname": b"API.OPENAI.COM."},
+        )
+    )
+
+    assert response.status_code == 204
+    assert pool.request.extensions["sni_hostname"] == "api.openai.com"
 
 
 async def test_build_pinned_client_constructs(monkeypatch):
