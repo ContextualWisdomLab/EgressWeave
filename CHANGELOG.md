@@ -22,6 +22,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Bind HTTPX's low-level `sni_hostname` request extension to the already
+  validated authority in both synchronous and asynchronous transports. A
+  mismatched, malformed, or nontextual TLS server-name override now fails
+  closed before the connection pool, preventing SNI from becoming an
+  independent authority channel on shared network addresses.
 - Bound concurrent DNS resolver workers and keep platform-specific resolver
   failures behind the generic `EgressNotAllowedError` boundary. Timed-out
   resolver work cannot grow unbounded under repeated validation attempts.
