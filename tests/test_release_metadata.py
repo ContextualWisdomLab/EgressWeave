@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import egressweave
 from packaging.version import Version
+
+import egressweave
 
 try:
     import tomllib
