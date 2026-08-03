@@ -2,10 +2,10 @@
 
 **SSRF- and DNS-rebinding-safe outbound HTTP for Python.**
 
-`egressweave` validates an outbound URL against explicit host and TCP-port
-allowlists, refuses any target that resolves to a non-globally-routable address,
-and hands back an `httpx.AsyncClient` whose every connection is *pinned* to the
-validated addresses — rejecting any host or port that changes after validation.
+`egressweave` validates an outbound URL against explicit host and TCP-port allowlists,
+refuses any target that resolves to a non-globally-routable address, and hands
+back an `httpx.AsyncClient` whose every connection is *pinned* to the validated
+addresses — rejecting any host or port that changes after validation.
 
 It exists because the naive pattern — resolve, check the IP, then
 `httpx.get(url)` — is unsafe: the attacker-controlled DNS answer can change
@@ -27,6 +27,9 @@ and a permissive URL parser can be tricked into reaching internal services
   list are reachable; wildcards are refused. Remote HTTPS defaults to port 443
   because the default port set is `{80, 443}` and remote plaintext HTTP is
   rejected.
+- **Internationalized hostnames:** Unicode domains are normalized once to a
+  deterministic IDNA A-label using UTS #46 non-transitional processing and
+  STD3 rules. Invalid labels and non-string policy entries fail closed.
 - **Fail-closed construction:** the required client factory rejects an absent
   URL instead of returning an unrestricted fallback client. The optional
   factory returns no client when no endpoint is configured.
@@ -111,13 +114,14 @@ settings object with an injected `EgressPolicy`.
 
 The pinned transport uses a few `httpx` / `httpcore` internals, so those
 libraries are constrained to `httpx>=0.28,<0.29` and `httpcore>=1.0,<2.0` and
-exercised by the test-suite. Bumping either requires re-verifying the transport.
+exercised by the test-suite. Hostname canonicalization uses `idna>=3.10,<4`.
+Bumping any of these dependencies requires re-verifying the security contract.
 
 ## Research grounding
 
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention, CWE-918,
-CWE-350 (DNS rebinding / TOCTOU), and RFC 8305 (Happy Eyeballs — the concurrent
-connect used across pinned addresses).
+CWE-350 (DNS rebinding / TOCTOU), RFC 8305 (Happy Eyeballs), RFC 5890/5891,
+and Unicode Technical Standard #46.
 
 ## License
 
