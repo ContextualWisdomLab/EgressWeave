@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add an explicit TCP destination-port allowlist to `EgressPolicy`; the default
+  permits standard HTTP/HTTPS ports, while custom and local service ports must
+  be opted in.
 - Add `build_optional_egress_http_client`, which represents an absent optional
   endpoint as `(None, None)` rather than an unrestricted HTTP client.
 - Ship the PEP 561 `py.typed` marker and enforce complete source docstrings.
@@ -18,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Cancel superseded CI runs for the same pull request to reduce runner backlog.
 
 ### Security
+- Reject URLs whose effective destination port is not explicitly allowlisted,
+  preventing an approved hostname from being used as a proxy to unexpected
+  services on alternate ports.
 - Reject reserved explicit port `0` instead of silently rewriting it to the
   scheme default, and reject non-positive, non-finite, boolean, or non-numeric
   DNS timeout configuration when constructing an `EgressPolicy`.
