@@ -9,6 +9,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath
@@ -407,7 +408,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except (BoundaryError, OSError, subprocess.CalledProcessError, UnicodeError, ValueError) as exc:
-        parser.exit(1, f"hourly product guard rejected the change: {exc}\n")
+        sys.stderr.write(f"hourly product guard rejected the change: {exc}\n")
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
