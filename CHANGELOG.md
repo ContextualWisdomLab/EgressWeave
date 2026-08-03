@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Security
+- Reject reserved explicit port `0` instead of silently rewriting it to the
+  scheme default, and reject non-positive, non-finite, boolean, or non-numeric
+  DNS timeout configuration when constructing an `EgressPolicy`.
 - Make `ValidatedEgressURL` construction factory-only and attach a process-local
   integrity signature to every issued result. Pinned transports reject forged
   objects and any post-validation mutation, including replacement with another
