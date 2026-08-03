@@ -20,6 +20,12 @@ def test_direct_construction_normalizes():
     assert policy.allowed_hosts == frozenset({"api.example.com"})
 
 
+@pytest.mark.parametrize("invalid_allow_local", ["false", "true", 0, 1, None])
+def test_allow_local_requires_an_explicit_boolean(invalid_allow_local):
+    with pytest.raises(TypeError, match="allow_local must be a boolean"):
+        EgressPolicy.from_hosts("ollama", allow_local=invalid_allow_local)
+
+
 @pytest.mark.parametrize(
     "invalid_host",
     [
