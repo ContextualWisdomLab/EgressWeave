@@ -13,6 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   globally routable address, before rechecking scheme, allowlist, canonical
   URL/hostname/port agreement, address shape, and per-address scope without
   another DNS lookup.
+- Reject every outbound request whose scheme, hostname, effective port, or
+  embedded user information differs from the validated target before it reaches
+  the connection pool. Requests can no longer be silently rewritten from an
+  unvalidated absolute URL to the pinned host.
 - Bind every `allow_local` exception to the original local hostname. Built-in
   local names accept loopback only, while allowlisted single-label container
   names accept loopback, RFC 1918 IPv4, or RFC 4193 IPv6 unique-local space.
