@@ -34,6 +34,17 @@ SocketOption = (
 )
 
 
+class _DenyAllSyncTransport(httpx.BaseTransport):
+    """Fail-closed transport used when no outbound authority was validated."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        """Reject every request before any network or proxy code can run."""
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    def close(self) -> None:
+        """Close the stateless deny transport."""
+
+
 class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
     """Open synchronous TCP connections only to prevalidated IP addresses."""
 
@@ -191,16 +202,23 @@ class _PinnedEgressTransport(httpx.BaseTransport):
 def build_egress_sync_client(
     base_url: str | None, *, policy: EgressPolicy
 ) -> tuple[str | None, httpx.Client]:
-    """Validate ``base_url`` and return a synchronous DNS-pinned HTTPX client.
+    """Validate ``base_url`` and return a synchronous fail-closed HTTPX client.
 
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
-    the normalized URL is ``None`` and a plain non-proxy client is returned. A
-    non-empty URL that violates the policy raises
+    the normalized URL is ``None`` and the returned client rejects every
+    request before network I/O. A non-empty URL that violates the policy raises
     :class:`~egressweave.validation.EgressNotAllowedError`.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
-        return None, httpx.Client(follow_redirects=False, trust_env=False)
+        return (
+            None,
+            httpx.Client(
+                follow_redirects=False,
+                trust_env=False,
+                transport=_DenyAllSyncTransport(),
+            ),
+        )
     return (
         validated.normalized_url,
         httpx.Client(
