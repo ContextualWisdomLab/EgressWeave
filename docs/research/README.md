@@ -85,6 +85,31 @@ Primary references:
 - [CWE-20: Improper Input Validation](https://cwe.mitre.org/data/definitions/20.html)
 - [OWASP Application Security Verification Standard](https://owasp.org/www-project-application-security-verification-standard/)
 
+## Internationalized hostname identity — RFC 5891 / UTS #46
+
+RFC 5891 requires domain names placed into non-IDNA-aware protocol slots and
+DNS lookups to use ASCII labels, and requires comparisons to use equivalent
+forms. Unicode Technical Standard #46 defines stable non-transitional mapping
+and validation for converting user-facing Unicode names to IDNA2008-compatible
+ASCII A-labels. Its `ToASCII` operation also validates label and total DNS length
+constraints; STD3 rules restrict ASCII label characters to letters, digits, and
+hyphens.
+
+EgressWeave canonicalizes both trusted allowlist entries and candidate URL
+hostnames to one lowercase ASCII A-label identity before allowlist comparison,
+DNS resolution, TLS SNI construction, and HTTP authority construction. This
+prevents a Unicode hostname from passing policy validation but failing later at
+an ASCII-only transport boundary, and rejects malformed labels at startup
+instead of deferring them to the resolver. A single trailing DNS root dot is
+accepted and removed from the comparison form. Unicode confusables remain a
+configuration-review concern—the control guarantees exact canonical identity,
+not visual similarity detection.
+
+Primary references:
+
+- [RFC 5891: Internationalized Domain Names in Applications (IDNA)](https://www.rfc-editor.org/rfc/rfc5891)
+- [Unicode Technical Standard #46: Unicode IDNA Compatibility Processing](https://unicode.org/reports/tr46/)
+
 ## DNS rebinding / TOCTOU — CWE-350
 
 - **CWE-350: Reliance on Reverse DNS Resolution / time-of-check to
