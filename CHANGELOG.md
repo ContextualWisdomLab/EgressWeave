@@ -7,9 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Ship the PEP 561 `py.typed` marker and regression coverage so installed type
-  checkers and language servers consume EgressWeave's inline annotations,
-  aligning the distribution artifact with its `Typing :: Typed` classifier.
+- Add regression coverage and standards-grounded packaging documentation for
+  the PEP 561 `py.typed` marker, preventing future releases from silently
+  losing downstream type-checker and language-server discovery.
 - Add a coordinated vulnerability-disclosure policy with supported-version and
   response expectations, plus a security model that defines protected assets,
   attacker capabilities, enforced invariants, trust boundaries, integration
