@@ -36,6 +36,10 @@ DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 )
 _INVALID_HOST_DELIMITERS = frozenset("*/\\@?:#%")
+_ALLOWED_HOST_CONFIGURATION_ERROR = (
+    "allowed_hosts entries must be exact hostnames without wildcards, URL syntax, "
+    "invalid IDNA labels, or IP literals"
+)
 _HTTP_METHOD_TOKEN_CHARACTERS = frozenset(
     "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
@@ -105,24 +109,15 @@ def _normalize_allowed_host(value: object) -> str | None:
         )
         or any(delimiter in stripped for delimiter in _INVALID_HOST_DELIMITERS)
     ):
-        raise ValueError(
-            "allowed_hosts entries must be exact valid hostnames without wildcards, "
-            "URL syntax, or IP literals"
-        )
+        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR)
 
     try:
         normalized = _canonicalize_host(stripped)
     except ValueError as exc:
-        raise ValueError(
-            "allowed_hosts entries must be exact valid hostnames without wildcards, "
-            "URL syntax, or IP literals"
-        ) from exc
+        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR) from exc
 
     if _looks_like_ip_literal(normalized):
-        raise ValueError(
-            "allowed_hosts entries must be exact valid hostnames without wildcards, "
-            "URL syntax, or IP literals"
-        )
+        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR)
     return normalized
 
 
