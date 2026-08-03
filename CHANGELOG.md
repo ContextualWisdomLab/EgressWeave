@@ -11,10 +11,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   response expectations, plus a security model that defines protected assets,
   attacker capabilities, enforced invariants, trust boundaries, integration
   requirements, and explicit non-goals.
+- Add `EgressPolicy.allowed_ports`, defaulting to the standard HTTPS port 443,
+  with normalized integer or decimal-string configuration and explicit opt-in
+  for alternate TLS and local-development ports.
 - Add `EgressPolicy.allowed_methods` with a fail-closed default set for ordinary
   API operations and explicit opt-in for non-tunnelling extension methods.
 
 ### Fixed
+- Preserve explicit port zero during URL parsing so it is rejected by the port
+  policy rather than being silently replaced by the scheme's default port.
 - Apply `EgressPolicy.dns_timeout_seconds` consistently to synchronous and
   asynchronous validation. Synchronous callers no longer depend indefinitely
   on a stalled platform resolver, and invalid zero, negative, non-finite,
@@ -24,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Enforce the positive destination-port allowlist during URL validation before
+  DNS resolution in synchronous and asynchronous paths. URLs that name an
+  unauthorized effective port now fail with the generic
+  `EgressNotAllowedError`; malformed, boolean, zero, negative, and out-of-range
+  trusted configuration fails at policy construction.
 - Enforce the HTTP-method allowlist inside both pinned transports before network
   I/O. Methods outside the policy now fail with the generic
   `EgressNotAllowedError`, and `CONNECT` cannot be configured because its
