@@ -18,6 +18,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Make synchronous and asynchronous client builders fail closed when the base
+  URL is empty or absent. They now return a deny-all client instead of silently
+  exposing an unrestricted HTTP transport, preventing optional or missing
+  configuration from bypassing the egress policy.
 - Add weekly Dependabot monitoring for Python runtime/test dependencies and
   SHA-pinned GitHub Actions so constrained transport internals and CI supply-chain
   changes are surfaced for normal review and validation.
