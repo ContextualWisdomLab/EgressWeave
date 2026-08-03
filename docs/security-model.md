@@ -23,8 +23,9 @@ For a non-local target, EgressWeave:
 5. connects only to the validated address set while preserving the original hostname for TLS verification and Server Name Indication;
 6. rejects request scheme, user information, hostname, or effective-port drift before the request reaches the connection pool;
 7. replaces any caller-supplied `Host` header with the validated authority;
-8. disables redirects and environment-derived proxy configuration; and
-9. refuses Unix-domain sockets.
+8. disables redirects and environment-derived proxy configuration;
+9. refuses Unix-domain sockets; and
+10. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
 A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle.
 
@@ -65,6 +66,8 @@ EgressWeave does not:
 ## Integration requirements
 
 Use a distinct policy for each trust domain and keep the allowlist as small as possible. Construct clients once per validated authority, close them deterministically, set application-appropriate HTTPX timeouts, and never fall back to an unguarded HTTP client after `EgressNotAllowedError`.
+
+An empty or absent base URL is not an authorization signal. The builder returns a deny-all client in that state; applications should treat `normalized_url is None` as disabled configuration and must not replace the returned client with a generic HTTPX client.
 
 Treat changes to `httpx`, `httpcore`, Python URL parsing, IP classification, resolver behavior, or local-address policy as security-sensitive. Re-run the complete transport and validation suite before widening the supported dependency range.
 
