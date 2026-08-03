@@ -20,6 +20,16 @@ def test_direct_construction_normalizes():
     assert policy.allowed_hosts == frozenset({"api.example.com"})
 
 
+def test_direct_string_construction_is_not_split_into_characters():
+    policy = EgressPolicy(allowed_hosts="API.Example.COM.")
+    assert policy.allowed_hosts == frozenset({"api.example.com"})
+
+
+def test_unicode_and_alabel_hosts_share_one_canonical_identity():
+    policy = EgressPolicy.from_hosts(["BÜCHER.example.", "xn--bcher-kva.example"])
+    assert policy.allowed_hosts == frozenset({"xn--bcher-kva.example"})
+
+
 @pytest.mark.parametrize("invalid_allow_local", ["false", "true", 0, 1, None])
 def test_allow_local_requires_an_explicit_boolean(invalid_allow_local):
     with pytest.raises(TypeError, match="allow_local must be a boolean"):
@@ -42,6 +52,15 @@ def test_allow_local_requires_an_explicit_boolean(invalid_allow_local):
         "2130706433",
         "0x7f000001",
         "::1",
+        ".example.com",
+        "example..com",
+        "example.com..",
+        "-example.com",
+        "example-.com",
+        "bad_name.example",
+        "xn--",
+        f"{'a' * 64}.example",
+        ".".join(["a" * 63] * 4),
     ],
 )
 def test_invalid_allowed_host_configuration_fails_fast(invalid_host):
