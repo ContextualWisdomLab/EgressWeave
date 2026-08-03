@@ -14,15 +14,18 @@ TOCTOU / DNS-rebinding gap (CWE-350).
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import ipaddress
+import secrets
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from egressweave.policy import EgressPolicy, _normalize_host
 
 EGRESS_NOT_ALLOWED = "egress URL is not allowed"
-_VALIDATED_EGRESS_URL_TOKEN = object()
+_VALIDATED_EGRESS_URL_INTEGRITY_KEY = secrets.token_bytes(32)
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _LOCAL_DEV_IP_LITERALS = frozenset({"127.0.0.1", "::1"})
@@ -45,12 +48,13 @@ class EgressNotAllowedError(ValueError):
 
 @dataclass(frozen=True, init=False)
 class ValidatedEgressURL:
-    """Factory-only egress validation result with pinned addresses."""
+    """Factory-only, tamper-evident egress result with pinned addresses."""
 
     normalized_url: str
     hostname: str
     port: int
     addresses: tuple[str, ...]
+    _integrity_signature: bytes = field(repr=False, compare=False)
 
     def __init__(
         self,
@@ -58,18 +62,25 @@ class ValidatedEgressURL:
         hostname: str,
         port: int,
         addresses: tuple[str, ...],
-        *,
-        _validation_token: object | None = None,
     ) -> None:
-        if _validation_token is not _VALIDATED_EGRESS_URL_TOKEN:
-            raise TypeError(
-                "ValidatedEgressURL objects must come from a validation function"
-            )
-        object.__setattr__(self, "normalized_url", normalized_url)
-        object.__setattr__(self, "hostname", hostname)
-        object.__setattr__(self, "port", port)
-        object.__setattr__(self, "addresses", addresses)
-        object.__setattr__(self, "_validation_token", _validation_token)
+        raise TypeError(
+            "ValidatedEgressURL objects must come from a validation function"
+        )
+
+
+def _validated_egress_url_signature(
+    normalized_url: str,
+    hostname: str,
+    port: int,
+    addresses: tuple[str, ...],
+) -> bytes:
+    """Return a process-local integrity signature for a validation result."""
+    payload = repr((normalized_url, hostname, port, addresses)).encode("utf-8")
+    return hmac.new(
+        _VALIDATED_EGRESS_URL_INTEGRITY_KEY,
+        payload,
+        digestmod=hashlib.sha256,
+    ).digest()
 
 
 def _make_validated_egress_url(
@@ -78,14 +89,18 @@ def _make_validated_egress_url(
     port: int,
     addresses: tuple[str, ...],
 ) -> ValidatedEgressURL:
-    """Create a result exclusively from the module's completed validation path."""
-    return ValidatedEgressURL(
-        normalized_url,
-        hostname,
-        port,
-        addresses,
-        _validation_token=_VALIDATED_EGRESS_URL_TOKEN,
+    """Create and sign a result exclusively after completed validation."""
+    validated = object.__new__(ValidatedEgressURL)
+    object.__setattr__(validated, "normalized_url", normalized_url)
+    object.__setattr__(validated, "hostname", hostname)
+    object.__setattr__(validated, "port", port)
+    object.__setattr__(validated, "addresses", addresses)
+    object.__setattr__(
+        validated,
+        "_integrity_signature",
+        _validated_egress_url_signature(normalized_url, hostname, port, addresses),
     )
+    return validated
 
 
 def _has_url_control_character(value: str) -> bool:
@@ -308,17 +323,16 @@ def _revalidate_pinned_egress_url(
 ) -> ValidatedEgressURL:
     """Re-check a caller-supplied validation result before transport use.
 
-    The public result type has a factory-only constructor token. This function
-    also restores every invariant established by the normal validation path
-    without another DNS lookup: URL policy, canonical host and port agreement,
-    a non-empty tuple of textual addresses, and per-address scope validation.
+    The public result type has a factory-only constructor and a process-local
+    integrity signature. This function verifies that signature, then restores
+    every invariant established by the normal validation path without another
+    DNS lookup: URL policy, canonical host and port agreement, a non-empty tuple
+    of textual addresses, and per-address scope validation.
     """
+    integrity_signature = getattr(validated, "_integrity_signature", None)
     if (
         not isinstance(validated, ValidatedEgressURL)
-        or (
-            getattr(validated, "_validation_token", None)
-            is not _VALIDATED_EGRESS_URL_TOKEN
-        )
+        or not isinstance(integrity_signature, bytes)
         or not isinstance(validated.normalized_url, str)
         or not isinstance(validated.hostname, str)
         or not isinstance(validated.port, int)
@@ -327,6 +341,15 @@ def _revalidate_pinned_egress_url(
         or not validated.addresses
         or any(not isinstance(address, str) for address in validated.addresses)
     ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    expected_signature = _validated_egress_url_signature(
+        validated.normalized_url,
+        validated.hostname,
+        validated.port,
+        validated.addresses,
+    )
+    if not hmac.compare_digest(integrity_signature, expected_signature):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     normalized_url, hostname, port = _normalize_egress_url(
