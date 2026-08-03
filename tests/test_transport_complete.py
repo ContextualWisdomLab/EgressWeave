@@ -10,12 +10,13 @@ import httpcore
 import httpx
 import pytest
 
-from egressweave import EgressPolicy
+from egressweave import EgressNotAllowedError, EgressPolicy
 from egressweave import validation as v
 from egressweave.transport import (
     _PinnedEgressAsyncTransport,
     _PinnedEgressNetworkBackend,
     build_egress_http_client,
+    build_optional_egress_http_client,
 )
 
 PUBLIC_ADDRESS = "93.184.216.34"
@@ -278,14 +279,14 @@ async def test_transport_close_delegates_to_pool(monkeypatch: pytest.MonkeyPatch
     assert pool.closed is True
 
 
-async def test_build_egress_client_covers_empty_and_valid_urls(
+async def test_required_client_factory_fails_closed_for_empty_url() -> None:
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        await build_egress_http_client(None, policy=POLICY)
+
+
+async def test_required_client_factory_builds_pinned_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    normalized, plain_client = await build_egress_http_client(None, policy=POLICY)
-    assert normalized is None
-    assert plain_client.follow_redirects is False
-    await plain_client.aclose()
-
     _validated(monkeypatch)
     normalized, pinned_client = await build_egress_http_client(
         "https://api.openai.com/v1", policy=POLICY
@@ -293,3 +294,24 @@ async def test_build_egress_client_covers_empty_and_valid_urls(
     assert normalized == "https://api.openai.com/v1"
     assert isinstance(pinned_client._transport, _PinnedEgressAsyncTransport)
     await pinned_client.aclose()
+
+
+async def test_optional_client_factory_returns_no_unrestricted_client() -> None:
+    normalized, client = await build_optional_egress_http_client(None, policy=POLICY)
+
+    assert normalized is None
+    assert client is None
+
+
+async def test_optional_client_factory_builds_pinned_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _validated(monkeypatch)
+    normalized, client = await build_optional_egress_http_client(
+        "https://api.openai.com/v1", policy=POLICY
+    )
+
+    assert normalized == "https://api.openai.com/v1"
+    assert client is not None
+    assert isinstance(client._transport, _PinnedEgressAsyncTransport)
+    await client.aclose()
