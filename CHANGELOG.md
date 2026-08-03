@@ -13,11 +13,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   requirements, and explicit non-goals.
 
 ### Fixed
+- Apply `EgressPolicy.dns_timeout_seconds` consistently to synchronous and
+  asynchronous validation. Synchronous callers no longer depend indefinitely
+  on a stalled platform resolver, and invalid zero, negative, non-finite,
+  boolean, or nonnumeric timeout configuration is rejected at construction.
 - Align the public `egressweave.__version__` value with the package release
   metadata and add a regression check that prevents future runtime/package
   version drift.
 
 ### Security
+- Bound concurrent DNS resolver workers and keep platform-specific resolver
+  failures behind the generic `EgressNotAllowedError` boundary. Timed-out
+  resolver work cannot grow unbounded under repeated validation attempts.
 - Make synchronous and asynchronous client builders fail closed when the base
   URL is empty or absent. They now return a deny-all client instead of silently
   exposing an unrestricted HTTP transport, preventing optional or missing
