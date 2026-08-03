@@ -39,6 +39,8 @@ from egressweave.validation import (
 
 
 class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Network backend that connects only to prevalidated pinned addresses."""
+
     def __init__(
         self,
         hostname: str,
@@ -46,6 +48,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         addresses: tuple[str, ...],
         policy: EgressPolicy,
     ) -> None:
+        """Initialize the backend with one or more policy-valid addresses."""
         if not addresses:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
         self._hostname = hostname
@@ -67,6 +70,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None,
         socket_options,
     ):
+        """Revalidate one pinned address immediately before connecting."""
         pinned_address = _validate_global_address(
             address, self._policy, hostname=self._hostname
         )
@@ -79,18 +83,21 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         )
 
     def _verify_host_port(self, host: str | bytes, port: int) -> None:
+        """Reject any host or port drift after URL validation."""
         host_text = host.decode("ascii") if isinstance(host, bytes) else str(host)
         normalized_host = host_text.lower().rstrip(".")
         if normalized_host != self._hostname or int(port) != self._port:
             raise OSError("egress URL host changed after validation")
 
     async def _cancel_and_wait_tasks(self, tasks: set) -> None:
+        """Cancel pending connection attempts and consume their outcomes."""
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _wait_for_first_successful_stream(self, tasks: set):
+        """Return the first successful stream while closing simultaneous extras."""
         last_error: Exception | None = None
         while tasks:
             done, tasks_remaining = await asyncio.wait(
@@ -126,6 +133,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
+        """Race pinned TCP addresses and return the first successful stream."""
         self._verify_host_port(host, port)
 
         tasks = {
@@ -161,14 +169,19 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         timeout: float | None = None,
         socket_options=None,
     ):
+        """Refuse Unix-domain sockets because they bypass URL address policy."""
         raise OSError("egress URL must not use Unix sockets")
 
     async def sleep(self, seconds: float) -> None:
+        """Delegate cooperative sleeps to the selected httpcore backend."""
         await self._backend.sleep(seconds)
 
 
 class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
+    """HTTPX transport that binds every request to one validated authority."""
+
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
+        """Revalidate a signed result and build its pinned connection pool."""
         self._validated = _revalidate_pinned_egress_url(validated, policy)
         ssl_context = create_ssl_context(verify=True, trust_env=False)
         self._pool = httpcore.AsyncConnectionPool(
@@ -204,6 +217,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """Validate the request authority and dispatch through the pinned pool."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         validated_scheme = parsed_url.scheme.encode("ascii")
@@ -240,6 +254,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         )
 
     async def aclose(self) -> None:
+        """Close the underlying pinned connection pool."""
         await self._pool.aclose()
 
 
