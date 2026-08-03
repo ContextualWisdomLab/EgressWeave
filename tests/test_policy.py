@@ -44,7 +44,7 @@ def test_invalid_allowed_host_configuration_fails_fast(invalid_host):
 
 
 def test_non_string_allowed_host_configuration_fails_fast():
-    with pytest.raises(ValueError, match="exact hostname strings"):
+    with pytest.raises(TypeError, match="exact hostname strings"):
         EgressPolicy(allowed_hosts=frozenset({"api.example.com", 443}))
 
 
