@@ -100,7 +100,7 @@ def test_remote_policy_rejects_allowlisted_ip_literal_forms(host: str) -> None:
 
 
 def test_local_url_skips_remote_allowlist_and_preserves_explicit_port() -> None:
-    policy = EgressPolicy.from_hosts([], allow_local=True)
+    policy = EgressPolicy.from_hosts([], allow_local=True, allowed_ports=(11434,))
 
     normalized, hostname, port = v._normalize_egress_url(
         "http://LOCALHOST:11434/v1", policy
