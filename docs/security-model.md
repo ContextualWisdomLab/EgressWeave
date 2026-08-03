@@ -33,20 +33,31 @@ A failure is surfaced as the generic `EgressNotAllowedError` where validation po
 
 ## Local-development exception
 
-`allow_local=True` is intentionally narrow:
+`allow_local=True` is intentionally narrow and never adds a hostname to the allowlist:
 
-- `localhost`, `localhost.localdomain`, `127.0.0.1`, and `::1` may resolve only to loopback addresses;
+- `localhost` and `localhost.localdomain` must be explicitly present in `allowed_hosts` and may resolve only to loopback addresses;
+- loopback IP-literal URLs such as `127.0.0.1` and `::1` remain forbidden, preserving a reviewable hostname identity for every authorized target;
 - an explicitly allowlisted single-label container hostname may resolve only to loopback, RFC 1918 IPv4, or RFC 4193 IPv6 unique-local space;
 - dotted remote names never inherit the local exception; and
 - the local service port remains denied unless it is explicitly present in `allowed_ports`.
 
-For example, Ollama's common local port must be declared explicitly:
+For example, Ollama's common local port and hostname must be declared explicitly:
 
 ```python
 policy = EgressPolicy.from_hosts(
     "ollama",
     allow_local=True,
     allowed_ports={11434},
+)
+```
+
+A loopback service uses the same explicit-host rule:
+
+```python
+policy = EgressPolicy.from_hosts(
+    "localhost",
+    allow_local=True,
+    allowed_ports={8000},
 )
 ```
 
@@ -79,7 +90,7 @@ EgressWeave does not:
 
 ## Integration requirements
 
-Use a distinct policy for each trust domain and keep hostname, port, and method allowlists as small as possible. Supply bare hostnames only—never schemes, credentials, ports, paths, wildcards, or IP literals—and construct the policy during application startup so configuration errors stop deployment before traffic is served. Keep the default port 443 for normal HTTPS APIs; explicitly add only the alternate TLS or local-development ports the integration actually requires. Narrow `allowed_methods` to the operations the integration needs; do not treat the default method set as a substitute for application authorization.
+Use a distinct policy for each trust domain and keep hostname, port, and method allowlists as small as possible. Supply bare hostnames only—never schemes, credentials, ports, paths, wildcards, or IP literals—and construct the policy during application startup so configuration errors stop deployment before traffic is served. Local names are not implicit: add `localhost`, `localhost.localdomain`, or a container alias only when that exact service is intended. Keep the default port 443 for normal HTTPS APIs; explicitly add only the alternate TLS or local-development ports the integration actually requires. Narrow `allowed_methods` to the operations the integration needs; do not treat the default method set as a substitute for application authorization.
 
 Construct clients once per validated origin, close them deterministically, set application-appropriate HTTPX timeouts, and never fall back to an unguarded HTTP client after `EgressNotAllowedError`.
 
