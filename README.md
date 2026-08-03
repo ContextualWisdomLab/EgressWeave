@@ -4,8 +4,9 @@
 
 `egressweave` validates an outbound URL against an explicit host allowlist,
 refuses any target that resolves to a non-globally-routable address, and hands
-back an `httpx.AsyncClient` whose every connection is *pinned* to the validated
-addresses — rejecting any host or port that changes after validation.
+back a synchronous `httpx.Client` or asynchronous `httpx.AsyncClient` whose
+every connection is *pinned* to the validated addresses — rejecting any host
+or port that changes after validation.
 
 It exists because the naive pattern — resolve, check the IP, then
 `httpx.get(url)` — is unsafe: the attacker-controlled DNS answer can change
@@ -36,6 +37,22 @@ pip install egressweave
 
 ## Quickstart
 
+Synchronous applications:
+
+```python
+from egressweave import EgressPolicy, build_egress_sync_client
+
+policy = EgressPolicy.from_hosts("api.openai.com, api.anthropic.com")
+
+normalized_url, client = build_egress_sync_client(
+    "https://api.openai.com/v1", policy=policy
+)
+with client:
+    response = client.get(f"{normalized_url}/models")
+```
+
+Asynchronous applications:
+
 ```python
 from egressweave import EgressPolicy, build_egress_http_client
 
@@ -45,7 +62,7 @@ normalized_url, client = await build_egress_http_client(
     "https://api.openai.com/v1", policy=policy
 )
 async with client:
-    resp = await client.get(f"{normalized_url}/models")
+    response = await client.get(f"{normalized_url}/models")
 ```
 
 Validate without building a client:
@@ -72,8 +89,10 @@ policy = EgressPolicy.from_hosts("ollama", allow_local=True)
 |---|---|
 | `EgressPolicy` | Injected allowlist config: `from_hosts(...)`, `allow_local`, `dns_timeout_seconds`. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_http_client(url, *, policy)` | Validate + build a DNS-pinned `httpx.AsyncClient`. |
-| `build_pinned_https_async_client(validated, *, policy)` | Pin an already-validated URL. |
+| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`. |
+| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`. |
+| `build_pinned_https_client(validated, *, policy)` | Build a synchronous client from an already-validated URL. |
+| `build_pinned_https_async_client(validated, *, policy)` | Build an asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
 ## One source, multi use (OSMU)
@@ -108,15 +127,16 @@ for the complete control and configuration contract.
 
 ## Version compatibility
 
-The pinned transport uses a few `httpx` / `httpcore` internals, so those
+The pinned transports use a few `httpx` / `httpcore` internals, so those
 libraries are constrained to `httpx>=0.28,<0.29` and `httpcore>=1.0,<2.0` and
-exercised by the test-suite. Bumping either requires re-verifying the transport.
+exercised by the test suite. Bumping either requires re-verifying both the
+synchronous and asynchronous transports.
 
 ## Research grounding
 
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention, CWE-918,
 CWE-350 (DNS rebinding / TOCTOU), and RFC 8305 (Happy Eyeballs — the concurrent
-connect used across pinned addresses).
+connect used across asynchronously pinned addresses).
 
 ## License
 

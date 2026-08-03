@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Add `build_egress_sync_client` and `build_pinned_https_client` for blocking
+  applications. The synchronous `httpx.Client` transport preserves the same
+  exact-host allowlist, address pinning, per-connect address revalidation,
+  authority-drift rejection, proxy/redirect isolation, and Unix-socket refusal
+  as the asynchronous transport, while retrying validated addresses within one
+  caller-supplied connection-timeout budget.
+
 ### Security
 - Isolate autonomous maintenance across credential-separated runners. A
   protected guard now rejects out-of-bound patch metadata and files, while
