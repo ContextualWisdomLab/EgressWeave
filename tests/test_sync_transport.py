@@ -190,12 +190,16 @@ def test_build_pinned_sync_client_constructs(monkeypatch):
         assert client.trust_env is False
 
 
-def test_build_sync_client_without_base_url_is_non_proxy_client():
+def test_build_sync_client_without_base_url_fails_closed():
     normalized_url, client = build_egress_sync_client(None, policy=POLICY)
 
     try:
         assert normalized_url is None
         assert client.follow_redirects is False
         assert client.trust_env is False
+        with pytest.raises(
+            EgressNotAllowedError, match="^egress URL is not allowed$"
+        ):
+            client.get("https://api.openai.com/v1/models")
     finally:
         client.close()
