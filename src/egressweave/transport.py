@@ -32,6 +32,7 @@ from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
     ValidatedEgressURL,
+    _revalidate_pinned_egress_url,
     _validate_global_address,
     validate_egress_url_details_async,
 )
@@ -168,7 +169,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
 
 class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
-        self._validated = validated
+        self._validated = _revalidate_pinned_egress_url(validated, policy)
         ssl_context = create_ssl_context(verify=True, trust_env=False)
         self._pool = httpcore.AsyncConnectionPool(
             ssl_context=ssl_context,
@@ -178,9 +179,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             http1=True,
             http2=False,
             network_backend=_PinnedEgressNetworkBackend(
-                validated.hostname,
-                validated.port,
-                validated.addresses,
+                self._validated.hostname,
+                self._validated.port,
+                self._validated.addresses,
                 policy,
             ),
         )
@@ -252,9 +253,9 @@ def build_pinned_https_async_client(
 ) -> httpx.AsyncClient:
     """Build a DNS-pinned ``httpx.AsyncClient`` for an already-validated URL.
 
-    Every outbound connection is re-pinned to ``validated.addresses`` and any
-    host/port that differs from the validated one is rejected, closing the
-    DNS-rebinding gap for integrations that reuse this hardened transport.
+    The supplied result is revalidated without another DNS lookup, then every
+    outbound connection is pinned to its addresses. Any forged policy/URL/host/
+    port combination or post-validation host/port change is rejected.
     """
     return httpx.AsyncClient(
         follow_redirects=False,
