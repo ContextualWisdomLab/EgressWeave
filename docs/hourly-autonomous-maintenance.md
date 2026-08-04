@@ -58,6 +58,10 @@ The model execution boundary provides:
   and `integrate.api.nvidia.com:443`;
 - deny-by-default OpenCode permissions, with edits limited to the normal bounded
   source, test, documentation, README, and CHANGELOG paths;
+- an isolated empty `HOME` and XDG configuration/data/cache roots, plus
+  `OPENCODE_DISABLE_PROJECT_CONFIG=true`, so repository or runner OpenCode
+  configuration, auto-discovered agents, commands, and plugins cannot augment
+  the reviewed in-memory permission policy;
 - no model web tools, external-directory access, task delegation, skill loading,
   language-server execution, shell network commands, repository write token, or
   workflow edits;
