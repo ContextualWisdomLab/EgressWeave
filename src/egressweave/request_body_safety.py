@@ -6,9 +6,11 @@ module applies a finite byte budget twice: it rejects an oversized declared
 ``Content-Length`` before connection-pool dispatch and counts the actual bytes
 produced by synchronous and asynchronous streams. When a content length is
 present, actual stream consumption must also equal that declaration exactly.
-The stream that would exceed either boundary is closed before its over-budget
-chunk can be sent, while callers continue to receive EgressWeave's generic
-non-leaking denial error.
+Each bounded request stream is single-consumption so an exhausted or replayable
+source cannot be retried under stale framing or a reset allowance. The stream
+that would exceed either boundary is closed before its over-budget chunk can be
+sent, while callers continue to receive EgressWeave's generic non-leaking denial
+error.
 """
 
 from __future__ import annotations
@@ -70,7 +72,7 @@ def _enforce_declared_request_size(
 
 
 class _BoundedSyncRequestStream(httpx.SyncByteStream):
-    """Forward synchronous request chunks within policy and framing bounds."""
+    """Forward one synchronous request within policy and framing bounds."""
 
     def __init__(
         self,
@@ -83,9 +85,15 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
         self._max_request_bytes = max_request_bytes
         self._declared_request_bytes = declared_request_bytes
         self._consumed_bytes = 0
+        self._iteration_started = False
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield chunks under one cumulative and framing-exact byte budget."""
+        """Yield one request under cumulative and framing-exact byte bounds."""
+        if self._iteration_started:
+            self.close()
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        self._iteration_started = True
+
         for chunk in self._stream:
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
@@ -114,7 +122,7 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
 
 
 class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
-    """Forward asynchronous request chunks within policy and framing bounds."""
+    """Forward one asynchronous request within policy and framing bounds."""
 
     def __init__(
         self,
@@ -127,9 +135,15 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
         self._max_request_bytes = max_request_bytes
         self._declared_request_bytes = declared_request_bytes
         self._consumed_bytes = 0
+        self._iteration_started = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield async chunks under one cumulative and exact framing budget."""
+        """Yield one async request under cumulative and exact framing bounds."""
+        if self._iteration_started:
+            await self.aclose()
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        self._iteration_started = True
+
         async for chunk in self._stream:
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
