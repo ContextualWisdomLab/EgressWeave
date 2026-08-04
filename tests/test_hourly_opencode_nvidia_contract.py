@@ -82,6 +82,18 @@ def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
     assert "does not execute model-modified repository code" in documentation
 
 
+def test_open_pull_request_gates_count_every_paginated_page() -> None:
+    """Refuse autonomous publication when an open PR exists beyond page one."""
+    workflow = " ".join(_read(PRODUCT_WORKFLOW_PATH).split())
+    complete_query = (
+        'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
+        "--paginate --slurp --jq 'map(length) | add // 0'"
+    )
+
+    assert workflow.count(complete_query) == 3
+    assert "--jq 'length'" not in workflow
+
+
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
     """Do not repurpose the centrally managed review-agent credential path."""
     review_workflow = _read(REVIEW_WORKFLOW_PATH)
