@@ -146,12 +146,29 @@ Primary references:
   transport, re-validating immediately before each connect and refusing any
   host/port drift. The `Host` header is rewritten to the validated netloc.
 
-## Concurrent connection — RFC 8305 (Happy Eyeballs)
+## Staggered concurrent connection — RFC 8305 (Happy Eyeballs)
 
-When a validated hostname yields several addresses, the asynchronous pinned
-transport races connections across them and takes the first to succeed while
-cancelling the rest, following the spirit of RFC 8305's concurrent-connection
-approach without ever connecting to an address that did not pass validation.
+When a validated hostname yields several addresses, RFC 8305 section 5 advises
+clients not to start every connection simultaneously because doing so creates
+unreasonable network load. It recommends starting one candidate first, adding
+later attempts one at a time, cancelling losers after the first success, and
+using a 250 ms default Connection Attempt Delay.
+
+The asynchronous pinned transport follows that schedule while preserving one
+caller-supplied connection-timeout budget. Every candidate remains one of the
+addresses validated and pinned before transport construction, each address is
+rechecked immediately before connect, and every losing task is cancelled and
+awaited. The synchronous transport remains sequential and therefore does not
+create a simultaneous-attempt burst.
+
+See [Staggered pinned connection attempts](staggered-connection-attempts.md) for
+the scheduler, timeout, and resource-consumption rationale.
+
+Primary references:
+
+- [RFC 8305 section 5: Connection Attempts](https://www.rfc-editor.org/rfc/rfc8305.html#section-5)
+- [RFC 8305 section 8: Summary of Configurable Values](https://www.rfc-editor.org/rfc/rfc8305.html#section-8)
+- [CWE-400: Uncontrolled Resource Consumption](https://cwe.mitre.org/data/definitions/400.html)
 
 ## Provenance
 
