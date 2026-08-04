@@ -1,0 +1,67 @@
+name: PR 35 README contract fix
+
+on:
+  push:
+    branches:
+      - security/request-body-resource-limits-v2
+
+concurrency:
+  group: pr35-readme-contract-fix
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: security/request-body-resource-limits-v2
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Restore the authoritative publication-status phrase
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("README.md")
+          content = path.read_text(encoding="utf-8")
+          old = (
+              "distribution, and publish-attestation evidence. Until then, install from a\n"
+              "reviewed source checkout and preserve the repository's hash-locked validation\n"
+          )
+          new = (
+              "distribution, and publish-attestation evidence. Until then, install from a reviewed source checkout\n"
+              "and preserve the repository's hash-locked validation\n"
+          )
+          if content.count(old) != 1:
+              raise SystemExit("README publication-status text did not match the exact expected source")
+          path.write_text(content.replace(old, new), encoding="utf-8")
+          PY
+          rm .github/workflows/pr35-readme-contract-fix.yml
+      - name: Verify the focused and full repository contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements-ci.txt
+          pytest -q tests/test_release_contracts.py
+          ruff check .
+          coverage run -m pytest -q
+          coverage report -m
+          python scripts/ci/hourly_product_guard.py self-test
+          python -m compileall -q src tests scripts
+          git diff --check
+      - name: Commit the verified fix and remove this bootstrap
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add README.md
+          git add -u .github/workflows/pr35-readme-contract-fix.yml
+          git commit -m "docs: preserve release availability contract"
+          git push origin HEAD:security/request-body-resource-limits-v2
