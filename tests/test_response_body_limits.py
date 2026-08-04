@@ -1,6 +1,5 @@
 """Regression coverage for fail-closed outbound response-body limits."""
 
-import gzip
 from types import SimpleNamespace
 
 import httpx
@@ -12,6 +11,7 @@ from egressweave.response_safety import (
     _BoundedAsyncResponseStream,
     _BoundedSyncResponseStream,
     _enforce_declared_response_size,
+    _force_identity_accept_encoding,
 )
 from egressweave.sync_transport import _PinnedEgressTransport
 from egressweave.transport import _PinnedEgressAsyncTransport
@@ -129,14 +129,6 @@ def _request() -> httpx.Request:
     return httpx.Request("GET", "https://api.openai.com/v1/models")
 
 
-def _gzip_headers(encoded_body: bytes) -> tuple[tuple[bytes, bytes], ...]:
-    """Return response headers for one deterministic gzip-encoded body."""
-    return (
-        (b"Content-Encoding", b"gzip"),
-        (b"Content-Length", str(len(encoded_body)).encode("ascii")),
-    )
-
-
 def test_response_budget_has_a_secure_finite_default() -> None:
     """Bound response consumption even when an operator omits configuration."""
     policy = EgressPolicy.from_hosts("api.openai.com")
@@ -171,18 +163,50 @@ def test_response_budget_rejects_non_positive_integers(invalid_value: int) -> No
         _policy(invalid_value)
 
 
-def test_declared_response_size_accepts_absent_or_in_budget_length() -> None:
-    """Allow unrelated metadata, unknown lengths, and one in-budget length."""
+def test_identity_request_header_replaces_caller_compression_preferences() -> None:
+    """Force identity coding while preserving ordinary fields and trusted Host."""
+    headers = _force_identity_accept_encoding(
+        (
+            (b"Accept-Encoding", b"gzip, deflate"),
+            (b"X-Trace", b"one"),
+            (b"accept-encoding", b"br"),
+            (b"host", b"api.openai.com"),
+        )
+    )
+
+    assert headers == [
+        (b"X-Trace", b"one"),
+        (b"accept-encoding", b"identity"),
+        (b"host", b"api.openai.com"),
+    ]
+
+
+def test_identity_request_header_works_without_a_host_item() -> None:
+    """Keep the helper total for already-validated synthetic header sets."""
+    assert _force_identity_accept_encoding(()) == [
+        (b"accept-encoding", b"identity")
+    ]
+
+
+def test_declared_response_size_accepts_identity_or_in_budget_length() -> None:
+    """Allow unrelated metadata, identity coding, and one in-budget length."""
     _enforce_declared_response_size("GET", 200, (), 4)
     _enforce_declared_response_size("GET", 200, ((b"X-Trace", b"one"),), 4)
     _enforce_declared_response_size(
-        "GET", 200, ((b"Content-Length", b"4"),), 4
+        "GET",
+        200,
+        ((b"Content-Encoding", b"identity"), (b"Content-Length", b"4")),
+        4,
     )
 
 
 @pytest.mark.parametrize(
     "headers",
     [
+        ((b"Content-Encoding", b"gzip"),),
+        ((b"Content-Encoding", b"Identity"),),
+        ((b"Content-Encoding", b"identity, gzip"),),
+        ((b"Content-Encoding", b"identity"), (b"content-encoding", b"identity")),
         ((b"Content-Length", b"5"),),
         ((b"Content-Length", b"4"), (b"content-length", b"4")),
         ((b"Content-Length", b""),),
@@ -190,8 +214,8 @@ def test_declared_response_size_accepts_absent_or_in_budget_length() -> None:
         ((b"Content-Length", b"+4"),),
     ],
 )
-def test_declared_response_size_rejects_unsafe_length(headers) -> None:
-    """Reject oversized, duplicated, or malformed response length metadata."""
+def test_declared_response_size_rejects_unsafe_metadata(headers) -> None:
+    """Reject content coding or unsafe response length metadata."""
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         _enforce_declared_response_size("GET", 200, headers, 4)
 
@@ -205,12 +229,18 @@ def test_declared_response_size_ignores_bodyless_response_metadata(
 ) -> None:
     """Do not reject representation metadata on responses that carry no body."""
     _enforce_declared_response_size(
-        method, status_code, ((b"Content-Length", b"999999999999"),), 4
+        method,
+        status_code,
+        (
+            (b"Content-Encoding", b"gzip"),
+            (b"Content-Length", b"999999999999"),
+        ),
+        4,
     )
 
 
 def test_sync_stream_allows_exact_budget_and_manual_close() -> None:
-    """Yield exactly the configured raw-byte budget and preserve close semantics."""
+    """Yield exactly the configured byte budget and preserve close semantics."""
     source = _ClosableSyncStream((b"ab", b"cd"))
     stream = _BoundedSyncResponseStream(source, 4)
 
@@ -220,7 +250,7 @@ def test_sync_stream_allows_exact_budget_and_manual_close() -> None:
 
 
 def test_sync_stream_rejects_overrun_and_closes_source() -> None:
-    """Stop before exposing the raw chunk that would exceed the budget."""
+    """Stop before exposing the chunk that would exceed the response budget."""
     source = _ClosableSyncStream((b"ab", b"cde"))
     stream = _BoundedSyncResponseStream(source, 4)
 
@@ -232,7 +262,7 @@ def test_sync_stream_rejects_overrun_and_closes_source() -> None:
 
 
 async def test_async_stream_allows_exact_budget_and_manual_close() -> None:
-    """Yield exactly the async raw-byte budget and preserve close semantics."""
+    """Yield exactly the async byte budget and preserve close semantics."""
     source = _ClosableAsyncStream((b"ab", b"cd"))
     stream = _BoundedAsyncResponseStream(source, 4)
 
@@ -242,7 +272,7 @@ async def test_async_stream_allows_exact_budget_and_manual_close() -> None:
 
 
 async def test_async_stream_rejects_overrun_and_closes_source() -> None:
-    """Stop async consumption before exposing an over-budget raw chunk."""
+    """Stop async consumption before exposing an over-budget chunk."""
     source = _ClosableAsyncStream((b"ab", b"cde"))
     stream = _BoundedAsyncResponseStream(source, 4)
 
@@ -266,7 +296,7 @@ def test_sync_transport_rejects_oversized_declared_body_and_closes() -> None:
 
 
 def test_sync_transport_bounds_unknown_length_body_during_read() -> None:
-    """Enforce the raw and decoded budgets for an unknown-size body."""
+    """Enforce the budget while consuming a chunked or close-delimited body."""
     source = _ClosableSyncStream((b"ab", b"cde"))
     response = _sync_transport((), source).handle_request(_request())
 
@@ -276,17 +306,14 @@ def test_sync_transport_bounds_unknown_length_body_during_read() -> None:
     assert source.closed is True
 
 
-def test_sync_transport_bounds_gzip_decoded_body() -> None:
-    """Reject a small gzip transfer whose decoded output exceeds the budget."""
-    encoded_body = gzip.compress(b"x" * 1000)
-    assert len(encoded_body) < 100
-    source = _ClosableSyncStream((encoded_body,))
-    response = _sync_transport(
-        _gzip_headers(encoded_body), source, max_response_bytes=100
-    ).handle_request(_request())
+def test_sync_transport_rejects_content_coding_before_decompression() -> None:
+    """Close a gzip response before HTTPX can allocate decompressed output."""
+    source = _ClosableSyncStream((b"compressed",))
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
-        response.read()
+        _sync_transport(
+            ((b"Content-Encoding", b"gzip"),), source, max_response_bytes=100
+        ).handle_request(_request())
 
     assert source.closed is True
 
@@ -304,7 +331,7 @@ async def test_async_transport_rejects_oversized_declared_body_and_closes() -> N
 
 
 async def test_async_transport_bounds_unknown_length_body_during_read() -> None:
-    """Enforce raw and decoded budgets for an async unknown-size body."""
+    """Enforce the budget while asynchronously consuming an unknown-size body."""
     source = _ClosableAsyncStream((b"ab", b"cde"))
     response = await _async_transport((), source).handle_async_request(_request())
 
@@ -314,16 +341,15 @@ async def test_async_transport_bounds_unknown_length_body_during_read() -> None:
     assert source.closed is True
 
 
-async def test_async_transport_bounds_gzip_decoded_body() -> None:
-    """Reject async gzip amplification beyond the decoded response budget."""
-    encoded_body = gzip.compress(b"x" * 1000)
-    assert len(encoded_body) < 100
-    source = _ClosableAsyncStream((encoded_body,))
-    response = await _async_transport(
-        _gzip_headers(encoded_body), source, max_response_bytes=100
-    ).handle_async_request(_request())
+async def test_async_transport_rejects_content_coding_before_decompression() -> None:
+    """Close async gzip content before HTTPX can allocate decoded output."""
+    source = _ClosableAsyncStream((b"compressed",))
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
-        await response.aread()
+        await _async_transport(
+            ((b"Content-Encoding", b"gzip"),),
+            source,
+            max_response_bytes=100,
+        ).handle_async_request(_request())
 
     assert source.closed is True
