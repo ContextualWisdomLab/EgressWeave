@@ -11,6 +11,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
   without exposing request paths or resolved IP addresses.
+- Add immutable `TLSConfiguration` support to synchronous and asynchronous
+  pinned clients for default-plus-private or private-only trust stores, mutual
+  TLS client identities, and explicit TLS protocol floors without accepting a
+  caller-mutable `SSLContext`.
+
+### Security
+- Default newly configured integrations to TLS 1.3 while retaining explicit
+  TLS 1.2 compatibility with only forward-secret ECDHE AEAD cipher suites.
+  Certificate and hostname verification cannot be disabled, custom-only trust
+  requires an explicit authority source, incomplete client identities fail at
+  startup, and secret-bearing key passwords are excluded from representations.
 
 ## [0.3.0] - 2026-08-04
 
