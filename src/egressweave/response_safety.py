@@ -3,9 +3,10 @@
 An allowlisted authority can still be attacker-controlled or compromised. Without
 an explicit consumption budget, a valid outbound request can therefore return an
 unbounded response and exhaust process memory, disk-backed buffers, or worker
-capacity. This module enforces one policy budget twice: declared oversized bodies
-are rejected before they are exposed to callers, while unknown-size or dishonest
-responses are counted as their decoded body chunks are consumed.
+capacity. This module enforces one policy budget at three boundaries: declared
+oversized bodies are rejected before caller-visible delivery, raw transport bytes
+are bounded during transfer, and HTTPX-decoded bytes are bounded after content
+coding so compressed responses cannot amplify past the policy limit.
 """
 
 from __future__ import annotations
@@ -34,9 +35,10 @@ def _enforce_declared_response_size(
     or over-budget values fail behind EgressWeave's generic rejection boundary.
 
     This preflight is an optimization and early-failure control, not the sole
-    resource limit. A server can omit ``Content-Length`` or use chunked framing,
-    and a dishonest peer can declare a smaller value. The bounded stream wrappers
-    below therefore count every decoded chunk as the authoritative enforcement.
+    resource limit. A server can omit ``Content-Length``, use chunked framing,
+    lie about the declared size, or apply a content coding whose decoded output
+    is much larger. The bounded raw streams and response subclass below provide
+    the authoritative transfer and decoded-consumption enforcement.
     """
     if (
         request_method == "HEAD"
@@ -63,7 +65,7 @@ def _enforce_declared_response_size(
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
-    """Count decoded sync response bytes and close on the first overrun."""
+    """Count raw sync response bytes and close on the first overrun."""
 
     def __init__(
         self, stream: httpx.SyncByteStream, max_response_bytes: int
@@ -73,7 +75,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield chunks until the next complete chunk would exceed the budget."""
+        """Yield raw chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         for chunk in self._stream:
             consumed_bytes += len(chunk)
@@ -90,7 +92,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
 
 
 class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
-    """Count decoded async response bytes and close on the first overrun."""
+    """Count raw async response bytes and close on the first overrun."""
 
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
@@ -100,7 +102,7 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield chunks until the next complete chunk would exceed the budget."""
+        """Yield raw chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         async for chunk in self._stream:
             consumed_bytes += len(chunk)
@@ -114,3 +116,40 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
     async def aclose(self) -> None:
         """Release the wrapped async stream and its pooled connection."""
         await self._stream.aclose()
+
+
+class _BoundedHTTPXResponse(httpx.Response):
+    """Apply the policy budget after HTTPX content decoding as well as before it."""
+
+    def __init__(
+        self, status_code: int, *, max_response_bytes: int, **kwargs
+    ) -> None:
+        """Initialize a normal HTTPX response with a decoded-byte budget."""
+        self._max_response_bytes = max_response_bytes
+        super().__init__(status_code, **kwargs)
+
+    def iter_bytes(self, chunk_size: int | None = None) -> Iterator[bytes]:
+        """Yield decoded sync chunks without allowing decompression amplification."""
+        consumed_bytes = 0
+        for chunk in super().iter_bytes(chunk_size=chunk_size):
+            consumed_bytes += len(chunk)
+            if consumed_bytes > self._max_response_bytes:
+                try:
+                    self.close()
+                finally:
+                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            yield chunk
+
+    async def aiter_bytes(
+        self, chunk_size: int | None = None
+    ) -> AsyncIterator[bytes]:
+        """Yield decoded async chunks without allowing decompression amplification."""
+        consumed_bytes = 0
+        async for chunk in super().aiter_bytes(chunk_size=chunk_size):
+            consumed_bytes += len(chunk)
+            if consumed_bytes > self._max_response_bytes:
+                try:
+                    await self.aclose()
+                finally:
+                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            yield chunk
