@@ -21,7 +21,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   TLS 1.2 compatibility with only forward-secret ECDHE AEAD cipher suites.
   Certificate and hostname verification cannot be disabled, custom-only trust
   requires an explicit authority source, incomplete client identities fail at
-  startup, and secret-bearing key passwords are excluded from representations.
+  startup, mutable password bytearrays are copied to immutable bytes, and
+  secret-bearing key passwords are excluded from representations.
 
 ## [0.3.0] - 2026-08-04
 
