@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "egressweave"
-version = "0.2.0"
+version = "0.3.0"
 description = "SSRF- and DNS-rebinding-safe outbound HTTP clients: exact egress authorities plus DNS-pinned httpx transports."
 readme = "README.md"
 requires-python = ">=3.10"
