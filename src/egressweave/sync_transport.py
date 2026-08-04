@@ -3,7 +3,8 @@
 This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
-and request authority drift is rejected before reaching the connection pool.
+request authority drift is rejected before reaching the connection pool, and
+identity-coded response bodies are bounded by the injected egress policy.
 """
 
 from __future__ import annotations
@@ -22,6 +23,11 @@ from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
     _enforce_allowed_http_method,
+)
+from egressweave.response_safety import (
+    _BoundedSyncResponseStream,
+    _enforce_declared_response_size,
+    _force_identity_accept_encoding,
 )
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
@@ -108,9 +114,6 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
                     socket_options=socket_options,
                 )
             except Exception as exc:  # noqa: BLE001
-                # Backends expose several connection exception classes. A
-                # failed address must not prevent a later validated candidate
-                # from succeeding, but the final backend error remains useful.
                 last_error = exc
 
         if last_error is not None:
@@ -130,8 +133,6 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
 class _PinnedEgressTransport(httpx.BaseTransport):
     """Synchronous HTTPX transport pinned to one validated URL authority."""
 
-    # A private transport allocated without ``__init__`` (for example by a
-    # low-level test double) still gets the secure default method policy.
     _policy = EgressPolicy(allowed_hosts=frozenset())
 
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
@@ -173,14 +174,16 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one request after restoring the validated authority and Host header."""
+        """Send one request and return a bounded identity-coded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         safe_extensions = _bind_validated_tls_server_name(
             request.extensions, self._validated.hostname
         )
-        safe_headers = _build_safe_request_headers(
-            request.headers.raw, parsed_url.netloc.encode("ascii")
+        safe_headers = _force_identity_accept_encoding(
+            _build_safe_request_headers(
+                request.headers.raw, parsed_url.netloc.encode("ascii")
+            )
         )
 
         core_request = httpcore.Request(
@@ -198,10 +201,25 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         with map_httpcore_exceptions():
             response = self._pool.handle_request(core_request)
 
+        try:
+            _enforce_declared_response_size(
+                request.method,
+                response.status,
+                response.headers,
+                self._policy.max_response_bytes,
+            )
+        except EgressNotAllowedError:
+            try:
+                response.stream.close()
+            finally:
+                raise
+
         return httpx.Response(
             status_code=response.status,
             headers=response.headers,
-            stream=ResponseStream(response.stream),
+            stream=_BoundedSyncResponseStream(
+                ResponseStream(response.stream), self._policy.max_response_bytes
+            ),
             extensions=response.extensions,
         )
 
@@ -218,7 +236,9 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`.
+    :class:`~egressweave.validation.EgressNotAllowedError`. Successful response
+    bodies are requested with identity coding and limited to
+    ``policy.max_response_bytes`` during streaming and buffered reads.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
@@ -246,8 +266,9 @@ def build_pinned_https_client(
     """Build a synchronous DNS-pinned HTTPX client from validated URL state.
 
     The supplied result is revalidated without another DNS lookup. Every
-    connection is then pinned to its addresses, and any forged result or
-    post-validation authority change is rejected before network I/O.
+    connection is pinned to its addresses, any forged result or authority change
+    is rejected before network I/O, and every identity-coded response body is
+    constrained by ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,

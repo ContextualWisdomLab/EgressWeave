@@ -9,7 +9,8 @@ This transport closes that gap. Every outbound connection is pinned to the exact
 addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
-(``trust_env=False``), and Unix sockets refused.
+(``trust_env=False``), Unix sockets refused, and identity-coded response bodies
+are bounded by the injected egress policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -33,6 +34,11 @@ from egressweave.request_safety import (
     _build_safe_request_headers,
     _enforce_allowed_http_method,
 )
+from egressweave.response_safety import (
+    _BoundedAsyncResponseStream,
+    _enforce_declared_response_size,
+    _force_identity_accept_encoding,
+)
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -42,8 +48,6 @@ from egressweave.validation import (
     validate_egress_url_details_async,
 )
 
-# RFC 8305 section 5 recommends 250 ms between Happy Eyeballs connection
-# attempts and explicitly advises against starting every candidate at once.
 _CONNECTION_ATTEMPT_DELAY_SECONDS = 0.25
 
 
@@ -59,6 +63,8 @@ class _DenyAllAsyncTransport(httpx.AsyncBaseTransport):
 
 
 class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Open asynchronous TCP connections only to prevalidated IP addresses."""
+
     def __init__(
         self,
         hostname: str,
@@ -66,13 +72,12 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         addresses: tuple[str, ...],
         policy: EgressPolicy,
     ) -> None:
+        """Store the validated authority and defensively recheck every address."""
         if not addresses:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
         self._hostname = hostname
         self._port = port
         self._policy = policy
-        # Re-validate each address; pass the hostname so allowlisted local
-        # container names are accepted under ``allow_local``.
         self._addresses = tuple(
             _validate_global_address(address, policy, hostname=hostname)
             for address in addresses
@@ -87,6 +92,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None,
         socket_options,
     ):
+        """Connect to one defensively revalidated pinned IP address."""
         pinned_address = _validate_global_address(
             address, self._policy, hostname=self._hostname
         )
@@ -99,12 +105,14 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         )
 
     def _verify_host_port(self, host: str | bytes, port: int) -> None:
+        """Reject any authority change after URL validation."""
         host_text = host.decode("ascii") if isinstance(host, bytes) else str(host)
         normalized_host = host_text.lower().rstrip(".")
         if normalized_host != self._hostname or int(port) != self._port:
             raise OSError("egress URL host changed after validation")
 
     async def _cancel_and_wait_tasks(self, tasks: set) -> None:
+        """Cancel and await every losing connection attempt."""
         for task in tasks:
             task.cancel()
         if tasks:
@@ -118,15 +126,8 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
-        """Race pinned addresses gradually within one connection-timeout budget.
-
-        RFC 8305 starts one candidate first and staggers later attempts to avoid
-        unreasonable network load. Each newly started task receives only the
-        timeout budget that remains, while the first successful stream wins and
-        every losing attempt is cancelled and awaited.
-        """
+        """Race pinned addresses gradually within one connection-timeout budget."""
         self._verify_host_port(host, port)
-
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
         address_iterator = iter(self._addresses)
@@ -142,7 +143,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
             except StopIteration:
                 more_addresses = False
                 return False
-
             remaining_timeout = None
             if deadline is not None:
                 remaining_timeout = max(0.0, deadline - loop.time())
@@ -173,7 +173,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                             wait_timeout = None
                         else:
                             wait_timeout = min(wait_timeout, remaining_budget)
-
                 done, pending = await asyncio.wait(
                     tasks,
                     timeout=wait_timeout,
@@ -181,30 +180,23 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 )
                 tasks.clear()
                 tasks.update(pending)
-
                 if not done:
                     if more_addresses:
                         start_next_attempt()
                     continue
-
                 successful_stream = None
                 for task in done:
                     try:
                         stream = task.result()
                     except Exception as exc:  # noqa: BLE001  # pragma: no cover
-                        # Backends expose different connection exception classes;
-                        # one failed address must not abort remaining candidates.
                         last_error = exc
                         continue
-
                     if successful_stream is None:
                         successful_stream = stream
                     else:
                         await stream.aclose()
-
                 if successful_stream is not None:
                     return successful_stream
-
                 if more_addresses and (not tasks or loop.time() >= next_attempt_at):
                     if deadline is None or loop.time() < deadline:
                         start_next_attempt()
@@ -212,7 +204,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                         more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
-
         if last_error is not None:
             raise last_error
         raise OSError(EGRESS_NOT_ALLOWED)
@@ -223,18 +214,21 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         timeout: float | None = None,
         socket_options=None,
     ):
+        """Refuse Unix sockets because they bypass hostname policy enforcement."""
         raise OSError("egress URL must not use Unix sockets")
 
     async def sleep(self, seconds: float) -> None:
+        """Delegate cooperative sleeping to the selected async backend."""
         await self._backend.sleep(seconds)
 
 
 class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
-    # A private transport allocated without ``__init__`` (for example by a
-    # low-level test double) still gets the secure default method policy.
+    """Asynchronous HTTPX transport pinned to one validated URL authority."""
+
     _policy = EgressPolicy(allowed_hosts=frozenset())
 
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
+        """Revalidate caller state and construct a pinned async connection pool."""
         self._validated = _revalidate_pinned_egress_url(validated, policy)
         self._policy = policy
         ssl_context = create_ssl_context(verify=True, trust_env=False)
@@ -262,7 +256,6 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         request_port = request.url.port
         if request_port is None:
             request_port = {"http": 80, "https": 443}.get(request_scheme)
-
         if (
             request.url.userinfo
             or request_scheme != parsed_url.scheme
@@ -272,23 +265,22 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        """Send one request and return a bounded identity-coded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
-        validated_scheme = parsed_url.scheme.encode("ascii")
-        validated_host = self._validated.hostname.encode("ascii")
-        validated_netloc = parsed_url.netloc.encode("ascii")
         safe_extensions = _bind_validated_tls_server_name(
             request.extensions, self._validated.hostname
         )
-        safe_headers = _build_safe_request_headers(
-            request.headers.raw, validated_netloc
+        safe_headers = _force_identity_accept_encoding(
+            _build_safe_request_headers(
+                request.headers.raw, parsed_url.netloc.encode("ascii")
+            )
         )
-
         req = httpcore.Request(
             method=request.method,
             url=httpcore.URL(
-                scheme=validated_scheme,
-                host=validated_host,
+                scheme=parsed_url.scheme.encode("ascii"),
+                host=self._validated.hostname.encode("ascii"),
                 port=self._validated.port,
                 target=request.url.raw_path,
             ),
@@ -298,15 +290,29 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         )
         with map_httpcore_exceptions():
             resp = await self._pool.handle_async_request(req)
-
+        try:
+            _enforce_declared_response_size(
+                request.method,
+                resp.status,
+                resp.headers,
+                self._policy.max_response_bytes,
+            )
+        except EgressNotAllowedError:
+            try:
+                await resp.stream.aclose()
+            finally:
+                raise
         return httpx.Response(
             status_code=resp.status,
             headers=resp.headers,
-            stream=AsyncResponseStream(resp.stream),
+            stream=_BoundedAsyncResponseStream(
+                AsyncResponseStream(resp.stream), self._policy.max_response_bytes
+            ),
             extensions=resp.extensions,
         )
 
     async def aclose(self) -> None:
+        """Close the underlying pinned asynchronous connection pool."""
         await self._pool.aclose()
 
 
@@ -315,10 +321,8 @@ async def build_egress_http_client(
 ) -> tuple[str | None, httpx.AsyncClient]:
     """Build a DNS-pinned, fail-closed client for ``base_url``.
 
-    Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
-    the normalized URL is ``None`` and the returned client rejects every
-    request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`.
+    Empty or absent URLs return a deny-all client. Successful response bodies are
+    requested with identity coding and limited to ``policy.max_response_bytes``.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
@@ -343,12 +347,7 @@ async def build_egress_http_client(
 def build_pinned_https_async_client(
     validated: ValidatedEgressURL, *, policy: EgressPolicy
 ) -> httpx.AsyncClient:
-    """Build a DNS-pinned ``httpx.AsyncClient`` for an already-validated URL.
-
-    The supplied result is revalidated without another DNS lookup, then every
-    outbound connection is pinned to its addresses. Any forged policy/URL/host/
-    port combination or post-validation host/port change is rejected.
-    """
+    """Build a bounded asynchronous client from validated URL state."""
     return httpx.AsyncClient(
         follow_redirects=False,
         trust_env=False,

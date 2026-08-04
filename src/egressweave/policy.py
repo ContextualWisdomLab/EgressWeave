@@ -2,10 +2,10 @@
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries the allowlists of hostnames, network
-ports, and HTTP methods that outbound requests may target, plus an
-``allow_local`` escape hatch for local development stacks: built-in local names
-are bound to loopback, while explicit Docker-container names may resolve to RFC
-1918 or RFC 4193 addresses.
+ports, and HTTP methods that outbound requests may target, a finite response-
+body budget, plus an ``allow_local`` escape hatch for local development stacks:
+built-in local names are bound to loopback, while explicit Docker-container
+names may resolve to RFC 1918 or RFC 4193 addresses.
 
 Construct it explicitly::
 
@@ -17,6 +17,7 @@ or, for a read-only integration on an explicit alternate TLS port::
         "api.example.com",
         allowed_ports={443, 8443},
         allowed_methods={"GET", "HEAD"},
+        max_response_bytes=4 * 1024 * 1024,
     )
 """
 
@@ -31,6 +32,7 @@ from numbers import Real
 import idna
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
 DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
@@ -167,9 +169,32 @@ def _normalize_allowed_method(value: object) -> str:
     return normalized
 
 
+def _normalize_max_response_bytes(value: object) -> int:
+    """Return one positive response-body byte budget.
+
+    Positive decimal strings are accepted for environment-variable ergonomics.
+    Empty, signed, non-ASCII, fractional, boolean, or non-integer values fail at
+    policy construction so a malformed deployment setting cannot silently
+    disable the resource-consumption boundary.
+    """
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or not normalized.isascii() or not normalized.isdigit():
+            raise ValueError("max_response_bytes must be a positive decimal byte count")
+        byte_count = int(normalized)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("max_response_bytes must be an integer byte count")
+        byte_count = value
+
+    if byte_count <= 0:
+        raise ValueError("max_response_bytes must be greater than zero")
+    return byte_count
+
+
 @dataclass(frozen=True)
 class EgressPolicy:
-    """Immutable outbound-egress allowlist policy.
+    """Immutable outbound-egress allowlist and resource policy.
 
     ``allowed_hosts`` is the exhaustive set of hostnames an outbound request
     may target. Values are normalized to lowercase ASCII A-labels using UTS #46
@@ -198,6 +223,13 @@ class EgressPolicy:
     excludes TRACE, WebDAV extension methods, and every other unrequested method.
     ``CONNECT`` is always invalid because it can ask an allowlisted proxy to open
     a tunnel to a second, unvalidated destination.
+
+    ``max_response_bytes`` is the largest decoded response body a returned
+    client will expose. The finite 16 MiB default protects ordinary JSON API
+    integrations from an allowlisted but compromised or attacker-controlled
+    authority returning an unbounded body. Operators can choose a smaller or
+    larger positive budget for a specific integration, but cannot disable the
+    boundary with zero, a negative value, a boolean, or malformed text.
     """
 
     allowed_hosts: frozenset[str]
@@ -205,6 +237,7 @@ class EgressPolicy:
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
     allowed_ports: frozenset[int] = DEFAULT_ALLOWED_EGRESS_PORTS
     allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
+    max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
 
     def __post_init__(self) -> None:
         if not isinstance(self.allow_local, bool):
@@ -249,13 +282,17 @@ class EgressPolicy:
         normalized_methods = frozenset(
             _normalize_allowed_method(method) for method in method_values
         )
+        normalized_max_response_bytes = _normalize_max_response_bytes(
+            self.max_response_bytes
+        )
 
-        # Frozen dataclass: bypass the immutability guard exactly once to store
-        # normalized caller input and a canonical float timeout.
+        # Frozen dataclass: bypass the immutability guard exactly once per field
+        # to store normalized caller input and canonical scalar values.
         object.__setattr__(self, "allowed_hosts", frozenset(normalized_hosts))
         object.__setattr__(self, "dns_timeout_seconds", float(timeout))
         object.__setattr__(self, "allowed_ports", frozenset(normalized_ports))
         object.__setattr__(self, "allowed_methods", normalized_methods)
+        object.__setattr__(self, "max_response_bytes", normalized_max_response_bytes)
 
     @classmethod
     def from_hosts(
@@ -266,8 +303,9 @@ class EgressPolicy:
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
         allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
-        """Build a policy from host, port, and HTTP-method strings or iterables."""
+        """Build a policy from normalized integration configuration values."""
         items: Iterable[str]
         if isinstance(hosts, str):
             items = hosts.split(",")
@@ -292,6 +330,7 @@ class EgressPolicy:
             dns_timeout_seconds=dns_timeout_seconds,
             allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
+            max_response_bytes=max_response_bytes,
         )
 
     def is_allowlisted_local_host(self, hostname: str) -> bool:
