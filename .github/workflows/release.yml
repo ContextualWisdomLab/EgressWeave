@@ -55,10 +55,7 @@ jobs:
       - name: Verify archives and bind them to the release tag
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python scripts/ci/verify_distribution.py \
-            --dist-dir dist \
-            --release-ref "$RELEASE_TAG"
+        run: python scripts/ci/verify_distribution.py --release-ref "$RELEASE_TAG" --dist-dir dist
       - name: Smoke-test the installed wheel outside the source tree
         run: |
           smoke_environment="${RUNNER_TEMP}/egressweave-release-smoke"
@@ -70,12 +67,13 @@ jobs:
           (
             cd "$RUNNER_TEMP"
             "$smoke_environment/bin/python" - <<'PY'
+          import os
           import pathlib
           import tomllib
 
           import egressweave
 
-          repository_root = pathlib.Path("${GITHUB_WORKSPACE}")
+          repository_root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
           with (repository_root / "pyproject.toml").open("rb") as pyproject_file:
               expected_version = tomllib.load(pyproject_file)["project"]["version"]
           if egressweave.__version__ != expected_version:
