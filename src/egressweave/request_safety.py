@@ -14,6 +14,16 @@ from egressweave.validation import (
 _HTTP_FIELD_NAME_OCTETS = frozenset(
     b"!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
+_FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES = frozenset(
+    {
+        b"connection",
+        b"keep-alive",
+        b"proxy-authenticate",
+        b"proxy-authorization",
+        b"proxy-connection",
+        b"upgrade",
+    }
+)
 
 
 def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
@@ -79,16 +89,19 @@ def _validate_http_message_framing(
 def _build_safe_request_headers(
     headers: Iterable[tuple[bytes, bytes]], validated_authority: bytes
 ) -> list[tuple[bytes, bytes]]:
-    """Validate field syntax, framing, and restore one trusted ``Host`` field.
+    """Validate fields, forbid protocol switching, and restore trusted ``Host``.
 
     HTTPX preserves raw byte headers until transport dispatch. Invalid field
     names, whitespace before the colon, control characters, duplicate or
-    ambiguous host spellings, and conflicting message-framing fields must not be
-    delegated to a downstream HTTP parser: parser differentials around those
-    forms have historically enabled request smuggling and routing confusion.
+    ambiguous host spellings, conflicting message-framing fields, connection
+    controls, protocol upgrades, and proxy credentials must not be delegated to
+    a downstream HTTP parser. Parser differentials around those forms have
+    historically enabled request smuggling and routing confusion, while an
+    Upgrade exchange can turn a validated HTTP connection into another protocol.
     Every caller-supplied field is therefore checked against RFC 9110 syntax,
-    HTTP/1.1 framing is reduced to one canonical signal, all case-insensitive
-    ``Host`` fields are removed, and one validated authority is appended.
+    HTTP/1.1 framing is reduced to one canonical signal, protocol-switching and
+    proxy-only fields are rejected, all case-insensitive ``Host`` fields are
+    removed, and one validated authority is appended.
     """
     safe_headers: list[tuple[bytes, bytes]] = []
     content_length_values: list[bytes] = []
@@ -105,6 +118,8 @@ def _build_safe_request_headers(
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
         normalized_name = name.lower()
+        if normalized_name in _FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
         if normalized_name == b"content-length":
             content_length_values.append(value)
         elif normalized_name == b"transfer-encoding":
