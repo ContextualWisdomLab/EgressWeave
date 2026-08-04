@@ -11,6 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
+README_PATH = REPOSITORY_ROOT / "README.md"
 CI_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
 RELEASE_REQUIREMENTS_PATH = REPOSITORY_ROOT / "requirements-release.txt"
@@ -105,6 +106,16 @@ def test_pypi_job_uploads_only_distribution_archives() -> None:
     assert "cp release-evidence/*.whl release-evidence/*.tar.gz dist/" in workflow
     assert "packages-dir: dist" in workflow
     assert "cp release-evidence/SHA256SUMS dist/" not in workflow
+
+
+def test_readme_distinguishes_release_readiness_from_pypi_availability() -> None:
+    """Do not present a future publishing path as evidence of current availability."""
+    readme = README_PATH.read_text(encoding="utf-8")
+
+    assert "## Publication status" in readme
+    assert "A bare `pip install egressweave` command is authoritative only" in readme
+    assert "verified PyPI project page" in readme
+    assert "install from a reviewed source checkout" in readme
 
 
 def test_distribution_verifier_and_release_runbook_are_present() -> None:
