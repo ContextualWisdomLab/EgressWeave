@@ -287,8 +287,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         except EgressNotAllowedError:
             try:
                 await request.stream.aclose()
-            finally:
-                raise
+            except Exception:  # noqa: BLE001
+                pass
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
         req = httpcore.Request(
             method=request.method,
