@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from egressweave.policy import EgressPolicy, _normalize_host
+from egressweave.policy import (
+    EgressPolicy,
+    _normalize_allowed_method,
+    _normalize_host,
+)
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -27,14 +31,24 @@ _FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES = frozenset(
 
 
 def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
-    """Reject request methods outside the policy before any network I/O.
+    """Reject malformed or unauthorized methods before any network I/O.
 
-    This is enforced at the transport boundary rather than only in a builder or
-    helper so a caller cannot bypass it by constructing an absolute request or
-    reusing a returned client directly. ``CONNECT`` always fails because it can
-    ask an otherwise allowlisted proxy to tunnel to an unvalidated destination.
+    RFC 9110 defines a request method as one case-sensitive ``token``. Policy
+    configuration is intentionally normalized for operator ergonomics, but a
+    request already at the transport boundary must be canonical: no leading or
+    trailing whitespace, control characters, non-token octets, or alternate
+    casing may be delegated to downstream HTTP parsers. This is enforced at the
+    transport boundary rather than only in a builder or helper so a caller
+    cannot bypass it by constructing an absolute request or reusing a returned
+    client directly. ``CONNECT`` always fails because it can ask an otherwise
+    allowlisted proxy to tunnel to an unvalidated destination.
     """
-    if not policy.allows_http_method(method):
+    try:
+        normalized_method = _normalize_allowed_method(method)
+    except (TypeError, ValueError) as exc:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+
+    if method != normalized_method or normalized_method not in policy.allowed_methods:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
