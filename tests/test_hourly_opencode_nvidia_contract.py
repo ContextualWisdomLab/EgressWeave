@@ -73,7 +73,7 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
 def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
     """Keep untrusted repository execution in the offline secret-free verifier."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
-    documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
+    documentation = " ".join(_read(MAINTENANCE_DOCUMENTATION_PATH).split())
 
     assert '"pytest *":"allow"' not in workflow
     assert '"python -m compileall *":"allow"' not in workflow
