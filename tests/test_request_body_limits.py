@@ -8,12 +8,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from egressweave import EgressNotAllowedError, EgressPolicy
 from egressweave.request_body_safety import (
     _BoundedAsyncRequestStream,
     _BoundedSyncRequestStream,
     _enforce_declared_request_size,
 )
+
+from egressweave import EgressNotAllowedError, EgressPolicy
 from egressweave.sync_transport import _PinnedEgressTransport
 from egressweave.transport import _PinnedEgressAsyncTransport
 from egressweave.validation import _make_validated_egress_url
