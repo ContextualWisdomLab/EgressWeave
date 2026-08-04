@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-04
+
 ### Added
 - Add pull-request package acceptance for wheel and source distributions,
   including SPDX license metadata, archive path validation, PEP 561 marker
