@@ -67,6 +67,18 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
     assert 'grep -R -F -- "$NVIDIA_API_KEY"' not in workflow
 
 
+def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
+    """Keep untrusted repository execution in the offline secret-free verifier."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
+
+    assert '"pytest *":"allow"' not in workflow
+    assert '"python -m compileall *":"allow"' not in workflow
+    assert '"lsp":"allow"' not in workflow
+    assert "Do not execute repository code in this credential-bearing step" in workflow
+    assert "does not execute model-modified repository code" in documentation
+
+
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
     """Do not repurpose the centrally managed review-agent credential path."""
     review_workflow = _read(REVIEW_WORKFLOW_PATH)
