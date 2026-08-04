@@ -197,7 +197,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         except EgressNotAllowedError:
             try:
                 request.stream.close()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110
                 pass
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
