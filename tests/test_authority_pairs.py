@@ -69,6 +69,26 @@ def test_authority_pairs_normalize_host_identity_and_decimal_ports() -> None:
     assert policy.allows_authority("bücher.example", 443) is True
 
 
+def test_from_authorities_normalizes_comma_separated_method_configuration() -> None:
+    """Preserve environment-variable ergonomics for exact-pair policies."""
+    policy = EgressPolicy.from_authorities(
+        [("api.example.com", 443)],
+        allowed_methods="get, head",
+    )
+
+    assert policy.allowed_methods == frozenset({"GET", "HEAD"})
+
+
+def test_empty_authority_collection_remains_fail_closed() -> None:
+    """Represent an empty explicit policy without inventing a destination."""
+    policy = EgressPolicy.from_authorities([])
+
+    assert policy.allowed_hosts == frozenset()
+    assert policy.allowed_ports == frozenset()
+    assert policy.allowed_authorities == frozenset()
+    assert policy.allows_authority("api.example.com", 443) is False
+
+
 @pytest.mark.parametrize(
     "invalid_authority",
     [
@@ -76,12 +96,16 @@ def test_authority_pairs_normalize_host_identity_and_decimal_ports() -> None:
         ("api.example.com",),
         ("api.example.com", 443, "GET"),
         ("", 443),
+        ("api.example.com", ""),
         ("api.example.com", 0),
     ],
 )
 def test_invalid_authority_pair_configuration_fails_fast(invalid_authority) -> None:
     """Reject malformed pair shapes, hosts, and ports during construction."""
-    with pytest.raises((TypeError, ValueError), match="authorit|allowed_ports|exact hostnames"):
+    with pytest.raises(
+        (TypeError, ValueError),
+        match="authorit|allowed_ports|exact hostnames",
+    ):
         EgressPolicy.from_authorities([invalid_authority])
 
 
@@ -93,6 +117,36 @@ def test_direct_authority_configuration_must_match_its_projections() -> None:
             allowed_ports=frozenset({443, 8443}),
             allowed_authorities=frozenset({("api.example.com", 443)}),
         )
+
+
+def test_direct_matching_authority_configuration_is_canonicalized() -> None:
+    """Keep direct dataclass projections and exact pairs on one canonical identity."""
+    policy = EgressPolicy(
+        allowed_hosts=frozenset({"BÜCHER.example."}),
+        allowed_ports=frozenset({"443"}),
+        allowed_authorities=frozenset({("xn--bcher-kva.example", 443)}),
+    )
+
+    assert policy.allowed_hosts == frozenset({"xn--bcher-kva.example"})
+    assert policy.allowed_ports == frozenset({443})
+    assert policy.allowed_authorities == frozenset(
+        {("xn--bcher-kva.example", 443)}
+    )
+
+
+@pytest.mark.parametrize(
+    ("hostname", "port"),
+    [
+        (None, 443),
+        ("api.example.com", None),
+        ("api.example.com", True),
+    ],
+)
+def test_allows_authority_rejects_noncanonical_input_types(hostname, port) -> None:
+    """Return denial instead of coercing invalid runtime authority values."""
+    policy = EgressPolicy.from_authorities([("api.example.com", 443)])
+
+    assert policy.allows_authority(hostname, port) is False
 
 
 def test_unlisted_host_port_pair_is_rejected_before_dns_resolution(monkeypatch) -> None:
