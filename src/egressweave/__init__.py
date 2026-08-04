@@ -23,6 +23,11 @@ Asynchronous usage::
     )
 """
 
+from egressweave.decision_evidence import (
+    DECISION_EVIDENCE_SCHEMA_VERSION,
+    EgressDecisionEvidence,
+    build_egress_decision_evidence,
+)
 from egressweave.policy import EgressPolicy
 from egressweave.sync_transport import (
     build_egress_sync_client,
@@ -45,10 +50,13 @@ from egressweave.validation import (
 __version__ = "0.3.0"
 
 __all__ = [
+    "DECISION_EVIDENCE_SCHEMA_VERSION",
     "EGRESS_NOT_ALLOWED",
+    "EgressDecisionEvidence",
     "EgressNotAllowedError",
     "EgressPolicy",
     "ValidatedEgressURL",
+    "build_egress_decision_evidence",
     "build_egress_http_client",
     "build_egress_sync_client",
     "build_pinned_https_async_client",
