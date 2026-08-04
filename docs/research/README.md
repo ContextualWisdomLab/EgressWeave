@@ -51,6 +51,20 @@ Primary references:
 - [OWASP Top 10 A10:2021 SSRF](https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/)
 - [CWE-918: Server-Side Request Forgery](https://cwe.mitre.org/data/definitions/918.html)
 
+## Protocol switching and proxy-only fields — RFC 9110
+
+A validated HTTP origin can still be abused as a long-lived channel if an
+untrusted request initiates a protocol upgrade. RFC 9110 also scopes proxy
+authentication fields to a proxy hop, while EgressWeave deliberately disables
+proxy discovery and connects directly to the pinned origin.
+
+EgressWeave therefore rejects caller-supplied `Connection`, `Keep-Alive`,
+`Upgrade`, `Proxy-Authenticate`, `Proxy-Authorization`, and `Proxy-Connection`
+fields immediately before dispatch. This prevents per-request protocol
+switching, connection-control ambiguity, and proxy-credential leakage while
+preserving ordinary origin `Authorization` and HTTPX's validated request-body
+framing. See [Protocol switching and proxy-only request fields](protocol-switching-request-fields.md).
+
 ## Secure defaults and fail-secure behavior — OWASP
 
 - **OWASP Secure Product Design Cheat Sheet.** Establish secure defaults,
