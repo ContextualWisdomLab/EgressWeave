@@ -80,9 +80,11 @@ a repository-secret fallback.
    installed wheel, and uploads two immutable artifact sets:
    - canonical wheel and sdist only for PyPI;
    - wheel, sdist, and `SHA256SUMS` as complete release evidence.
-4. A credential-separated tag job creates the lightweight `v<version>` tag at
-   the exact reviewed SHA. If the tag already exists at another commit, the run
-   fails rather than moving it.
+4. A credential-separated tag job rechecks that the live protected `main` head
+   still equals the accepted workflow SHA, then creates the lightweight
+   `v<version>` tag at that exact reviewed commit. If `main` advanced after
+   acceptance, or the tag already exists at another commit, the run fails
+   rather than publishing stale evidence or moving the tag.
 5. The `publish-to-pypi` job enters the protected `pypi` environment. Its only
    steps download the canonical distribution artifact and invoke the pinned
    PyPA Trusted Publishing action with attestations enabled. It receives no
@@ -95,6 +97,8 @@ a repository-secret fallback.
 ## Failure and retry semantics
 
 - A build or acceptance failure creates no tag, PyPI package, or GitHub Release.
+- If `main` changes before tag creation, start a fresh release run from the new
+  reviewed head rather than tagging the stale accepted artifact set.
 - If exact tag creation succeeds but PyPI publication is blocked, the immutable
   tag remains at the reviewed commit. Correct the external publisher or
   environment configuration and rerun the failed jobs; do not move the tag.
