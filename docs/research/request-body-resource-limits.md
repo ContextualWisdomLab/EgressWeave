@@ -66,6 +66,22 @@ not parse or reinterpret JSON, multipart, protobuf, or other application
 formats, so the control remains provider-neutral and reusable as a standalone
 library or an imported service module.
 
+## Operational boundary
+
+`max_request_bytes` is a per-request transport invariant, not a process-wide or
+tenant-wide admission controller. It prevents one request stream from exceeding
+its configured budget, but several concurrent requests can each consume their
+own budget. Applications embedding EgressWeave must therefore pair the transport
+bound with integration-appropriate concurrency limits, queue capacity,
+timeouts, tenant quotas, and cancellation. Those controls belong to the host
+service because only it knows workload priority and aggregate memory or network
+budgets.
+
+This separation keeps the library independently useful while avoiding a false
+assurance that a per-stream byte limit alone solves aggregate denial of service.
+Naruon and other CWL services can apply their own workload-level controls around
+the same provider-neutral pinned client.
+
 ## Security properties
 
 - **No authority-policy bypass:** request-size enforcement occurs only after the
