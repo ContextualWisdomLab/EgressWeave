@@ -29,6 +29,27 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 1
           persist-credentials: false
+      - name: Verify stable release and exact reviewed commit
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_IS_PRERELEASE" != "false" ]; then
+            echo "::error::Stable PyPI publication refuses a GitHub prerelease."
+            exit 1
+          fi
+          tagged_sha="$(git rev-parse HEAD)"
+          if [ "$tagged_sha" != "$EXPECTED_RELEASE_SHA" ]; then
+            echo "::error::Checked-out tag does not match the release event commit."
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [ "$tagged_sha" != "$main_sha" ]; then
+            echo "::error::Release tag must point to the exact protected main head."
+            exit 1
+          fi
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
