@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from egressweave import EgressPolicy, validate_egress_url
-from egressweave import transport as async_transport, validation
+from egressweave import EgressPolicy, validate_egress_url, validation
+from egressweave import transport as async_transport
 from egressweave.transport import _PinnedEgressNetworkBackend
 
 PUBLIC_ADDRESS = "93.184.216.34"
