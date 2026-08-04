@@ -96,6 +96,20 @@ def test_release_workflow_uses_credential_separated_trusted_publishing() -> None
     assert "sha256sum --check SHA256SUMS" in workflow
 
 
+def test_release_tag_is_bound_to_the_event_and_protected_main_head() -> None:
+    """Reject mutable, stale, off-branch, or prerelease publication targets."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "name: Verify stable release and exact reviewed commit" in workflow
+    assert "EXPECTED_RELEASE_SHA: ${{ github.sha }}" in workflow
+    assert "RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}" in workflow
+    assert "git fetch --no-tags origin main" in workflow
+    assert 'tagged_sha="$(git rev-parse HEAD)"' in workflow
+    assert 'main_sha="$(git rev-parse origin/main)"' in workflow
+    assert '"$tagged_sha" != "$EXPECTED_RELEASE_SHA"' in workflow
+    assert '"$tagged_sha" != "$main_sha"' in workflow
+
+
 def test_pypi_job_uploads_only_distribution_archives() -> None:
     """Keep checksum evidence available without presenting it as a PyPI package."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
