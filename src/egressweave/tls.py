@@ -16,7 +16,16 @@ from dataclasses import dataclass, field
 
 from httpx._config import create_ssl_context as _create_httpx_ssl_context
 
-_TLS12_FORWARD_SECRET_CIPHERS = "ECDHE+AESGCM:ECDHE+CHACHA20"
+_TLS12_FORWARD_SECRET_CIPHERS = ":".join(
+    (
+        "ECDHE-ECDSA-AES128-GCM-SHA256",
+        "ECDHE-ECDSA-AES256-GCM-SHA384",
+        "ECDHE-ECDSA-CHACHA20-POLY1305",
+        "ECDHE-RSA-AES128-GCM-SHA256",
+        "ECDHE-RSA-AES256-GCM-SHA384",
+        "ECDHE-RSA-CHACHA20-POLY1305",
+    )
+)
 _TLS_PROTOCOL_FLOORS = frozenset(
     {
         ssl.TLSVersion.TLSv1_2,
