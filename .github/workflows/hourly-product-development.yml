@@ -136,10 +136,15 @@ jobs:
         env:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           OPENCODE_MODEL: "nvidia/nemotron-3-super-120b-a12b"
+          HOME: "${{ runner.temp }}/opencode-home"
+          XDG_CONFIG_HOME: "${{ runner.temp }}/opencode-home/config"
+          XDG_DATA_HOME: "${{ runner.temp }}/opencode-home/data"
+          XDG_CACHE_HOME: "${{ runner.temp }}/opencode-home/cache"
           OPENCODE_DISABLE_AUTOUPDATE: "true"
           OPENCODE_DISABLE_MODELS_FETCH: "true"
           OPENCODE_DISABLE_DEFAULT_PLUGINS: "true"
           OPENCODE_DISABLE_LSP_DOWNLOAD: "true"
+          OPENCODE_DISABLE_PROJECT_CONFIG: "true"
           OPENCODE_DISABLE_CLAUDE_CODE: "true"
           OPENCODE_AUTO_SHARE: "false"
           OPENCODE_CONFIG_CONTENT: >-
@@ -147,6 +152,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "::add-mask::$NVIDIA_API_KEY"
+          mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
+          chmod 0700 "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
           prompt_file="${RUNNER_TEMP}/opencode-prompt.md"
           result_file="${RUNNER_TEMP}/opencode-result.ndjson"
           cat >"$prompt_file" <<'PROMPT'
