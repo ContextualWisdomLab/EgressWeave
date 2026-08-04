@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add pull-request package acceptance for wheel and source distributions,
+  including SPDX license metadata, archive path validation, PEP 561 marker
+  checks, installed-wheel smoke testing outside the source tree, and
+  deterministic `SHA256SUMS` evidence.
+- Add a credential-separated release workflow that rebuilds an immutable
+  published tag with hash-locked Hatchling tooling, verifies version and
+  dated changelog binding, publishes through PyPI Trusted Publishing with
+  attestations, and attaches checksummed artifacts to the GitHub Release.
 - Enforce 100% production statement and branch coverage on every supported
   Python 3.10–3.13 CI job with one canonical coverage.py configuration, a
   SHA-256-locked coverage artifact, and deterministic tests for defensive DNS,
