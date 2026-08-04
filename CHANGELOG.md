@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-04
+
 ### Added
 - Enforce 100% production statement and branch coverage on every supported
   Python 3.10–3.13 CI job with one canonical coverage.py configuration, a
