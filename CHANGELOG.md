@@ -37,6 +37,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Stagger asynchronous pinned TCP connection attempts using RFC 8305's 250 ms
+  default instead of launching every validated address simultaneously. Later
+  attempts receive only the remaining connection-timeout budget, the first
+  success cancels and awaits all losers, and immediate failures can advance the
+  next candidate without an idle delay. This preserves DNS pinning while
+  reducing avoidable task and network bursts (CWE-400).
 - Require every request method reaching a pinned transport to be the exact
   canonical uppercase RFC 9110 `token` authorized by policy. Leading or trailing
   whitespace, embedded separators or controls, non-ASCII spellings, and
