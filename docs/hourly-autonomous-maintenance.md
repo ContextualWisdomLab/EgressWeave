@@ -44,14 +44,25 @@ can write to GitHub but never executes modified package code.
 The development job has read-only GitHub permissions and checks out `main`
 without persisted credentials. It exits before model use whenever any pull
 request is open. It installs the trusted base toolchain, creates a root-owned
-read-only baseline outside the model workspace, and then runs the commit-pinned
-OpenAI Codex Action with:
+read-only baseline outside the model workspace, and then runs OpenCode 1.18.13 from the official Linux x64 release asset
+only after verifying SHA-256
+`8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937`.
+The repository secret `NVIDIA_NIM_API_KEY` is exposed only to that process
+through OpenCode's documented `NVIDIA_API_KEY` provider variable. The explicit
+model is `nvidia/nemotron-3-super-120b-a12b`.
 
-- the `:workspace` permission profile and `drop-sudo` safety strategy;
-- a static repository-specific maintenance prompt;
-- no repository write token;
-- no permission to edit workflows, guard scripts, dependencies, or build
-  configuration;
+The model execution boundary provides:
+
+- block-mode runner egress restricted to the reviewed package sources, GitHub,
+  and `integrate.api.nvidia.com:443`;
+- deny-by-default OpenCode permissions, with edits limited to the normal bounded
+  source, test, documentation, README, and CHANGELOG paths;
+- no model web tools, external-directory access, task delegation, skill loading,
+  shell network commands, repository write token, or workflow edits;
+- disabled OpenCode auto-update, remote model-list refresh, default plugins, and
+  LSP downloads;
+- an exact credential-disclosure scan that reports only affected paths and never
+  prints the secret value;
 - a maximum of ten files and 1,000 changed lines.
 
 After model execution, only the protected baseline copy of
@@ -118,7 +129,8 @@ larger than 1,000 changed lines.
 
 The scheduled product-development workflow requires:
 
-- `OPENAI_API_KEY` for the Codex Action's secured Responses API proxy;
+- `NVIDIA_NIM_API_KEY`, mapped only to OpenCode's `NVIDIA_API_KEY`
+  environment variable for the NVIDIA NIM endpoint;
 - either `PR_REVIEW_MERGE_TOKEN`, `OPENCODE_APPROVE_TOKEN`, or a working
   organization OpenCode App OIDC exchange for a write identity that triggers
   downstream pull-request events;
@@ -135,3 +147,14 @@ Both workflows support `workflow_dispatch`. Manual runs use the same checks,
 concurrency, permissions, patch boundary, container isolation, and publication
 gates as scheduled runs. A manual run cannot bypass the zero-open-PR condition
 or any repository policy.
+
+## Agent implementation references
+
+Anomaly. (2026). *OpenCode CLI documentation*.
+https://opencode.ai/docs/cli/
+
+Anomaly. (2026). *OpenCode providers: NVIDIA*.
+https://opencode.ai/docs/providers/
+
+NVIDIA Corporation. (2026). *NVIDIA Nemotron 3 Super 120B A12B model card*.
+https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard

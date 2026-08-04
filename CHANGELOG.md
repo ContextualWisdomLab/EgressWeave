@@ -16,6 +16,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rejection of values that could silently remove the outbound resource bound.
 
 ### Security
+- Replace the hourly product-development model executor with SHA-256-verified
+  OpenCode 1.18.13 using the existing `NVIDIA_NIM_API_KEY` secret through
+  OpenCode's `NVIDIA_API_KEY` contract. Block-mode runner egress, deny-by-default
+  tools, credential-disclosure detection, isolated reverification, and normal PR
+  protections remain mandatory; the central review scheduler and inherited review
+  agent identity contract are unchanged.
 - Bound outbound request-body consumption in both pinned transports. Oversized
   declared `Content-Length` values fail before connection-pool dispatch, while
   chunked, missing-length, and dishonestly under-declared bodies are counted as
