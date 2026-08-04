@@ -95,6 +95,18 @@ def test_release_workflow_uses_credential_separated_trusted_publishing() -> None
     assert "sha256sum --check SHA256SUMS" in workflow
 
 
+def test_pypi_job_uploads_only_distribution_archives() -> None:
+    """Keep checksum evidence available without presenting it as a PyPI package."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "path: release-evidence" in workflow
+    assert "working-directory: release-evidence" in workflow
+    assert "name: Prepare publish-only directory" in workflow
+    assert "cp release-evidence/*.whl release-evidence/*.tar.gz dist/" in workflow
+    assert "packages-dir: dist" in workflow
+    assert "cp release-evidence/SHA256SUMS dist/" not in workflow
+
+
 def test_distribution_verifier_and_release_runbook_are_present() -> None:
     """Require executable acceptance checks and operator-facing release guidance."""
     assert DISTRIBUTION_VERIFIER_PATH.is_file()
