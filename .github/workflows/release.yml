@@ -1,11 +1,15 @@
 name: release
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Stable release tag in v<version> form
+        required: true
+        type: string
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ inputs.release_tag }}
   cancel-in-progress: false
 
 permissions:
@@ -23,31 +27,36 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out the immutable release tag
+      - name: Check out the dispatched commit without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Verify stable release and exact reviewed commit
+      - name: Verify stable release input and exact reviewed commit
         env:
           EXPECTED_RELEASE_SHA: ${{ github.sha }}
-          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          if [ "$RELEASE_IS_PRERELEASE" != "false" ]; then
-            echo "::error::Stable PyPI publication refuses a GitHub prerelease."
-            exit 1
-          fi
-          tagged_sha="$(git rev-parse HEAD)"
-          if [ "$tagged_sha" != "$EXPECTED_RELEASE_SHA" ]; then
-            echo "::error::Checked-out tag does not match the release event commit."
+          if [ "$RELEASE_REF" != "refs/heads/main" ]; then
+            echo "::error::Stable publication must be dispatched from protected main."
             exit 1
           fi
           git fetch --no-tags origin main
+          checked_sha="$(git rev-parse HEAD)"
           main_sha="$(git rev-parse origin/main)"
-          if [ "$tagged_sha" != "$main_sha" ]; then
-            echo "::error::Release tag must point to the exact protected main head."
+          if [ "$checked_sha" != "$EXPECTED_RELEASE_SHA" ]; then
+            echo "::error::Checked-out source does not match the workflow event commit."
+            exit 1
+          fi
+          if [ "$checked_sha" != "$main_sha" ]; then
+            echo "::error::Release source must equal the exact protected main head."
+            exit 1
+          fi
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "::error::A stable v<version> release tag is required."
             exit 1
           fi
       - name: Set up Python
@@ -62,7 +71,7 @@ jobs:
         run: |
           python -m pip install --require-hashes -r requirements-ci.txt
           python -m pip install --require-hashes -r requirements-release.txt
-      - name: Re-run exact-tag quality gates
+      - name: Re-run exact-head quality gates
         run: |
           ruff check .
           coverage run -m pytest -q
@@ -71,11 +80,11 @@ jobs:
           python -m compileall -q src tests scripts
       - name: Build wheel and source distribution
         run: |
-          rm -rf dist
+          rm -rf dist publish-dist
           python -m hatchling build
-      - name: Verify archives and bind them to the release tag
+      - name: Verify archives and bind them to the requested release tag
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: python scripts/ci/verify_distribution.py --release-ref "$RELEASE_TAG" --dist-dir dist
       - name: Smoke-test the installed wheel outside the source tree
         run: |
@@ -105,17 +114,61 @@ jobs:
           print(egressweave.__version__)
           PY
           )
-      - name: Upload reviewed release evidence
+      - name: Prepare the canonical PyPI-only artifact set
+        run: |
+          mkdir publish-dist
+          cp dist/*.whl dist/*.tar.gz publish-dist/
+      - name: Upload complete checksummed release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-distributions-${{ github.event.release.tag_name }}
+          name: release-evidence-${{ github.sha }}
           path: dist/
           if-no-files-found: error
           retention-days: 14
+      - name: Upload canonical PyPI distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pypi-distributions-${{ github.sha }}
+          path: publish-dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  create-release-tag:
+    name: Create or verify immutable release tag
+    needs: build-distributions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the exact reviewed tag without moving an existing ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          existing_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+              --jq '.object.sha' 2>/dev/null || true
+          )"
+          if [ -n "$existing_sha" ]; then
+            if [ "$existing_sha" != "$RELEASE_SHA" ]; then
+              echo "::error::Existing release tag points to a different commit."
+              exit 1
+            fi
+            echo "Release tag already points to the exact reviewed commit."
+            exit 0
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${RELEASE_TAG}" \
+            -f sha="$RELEASE_SHA"
 
   publish-to-pypi:
     name: Publish to PyPI with OIDC
-    needs: build-distributions
+    needs:
+      - build-distributions
+      - create-release-tag
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
@@ -125,18 +178,11 @@ jobs:
       actions: read
       id-token: write
     steps:
-      - name: Download reviewed release evidence
+      - name: Download canonical reviewed distributions
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: release-distributions-${{ github.event.release.tag_name }}
-          path: release-evidence
-      - name: Verify artifact checksums before requesting OIDC
-        working-directory: release-evidence
-        run: sha256sum --check SHA256SUMS
-      - name: Prepare publish-only directory
-        run: |
-          mkdir -p dist
-          cp release-evidence/*.whl release-evidence/*.tar.gz dist/
+          name: pypi-distributions-${{ github.sha }}
+          path: dist
       - name: Publish release distributions and attestations
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
@@ -145,25 +191,69 @@ jobs:
           verbose: true
           print-hash: true
 
-  attach-github-release-assets:
-    name: Attach checksummed distributions to GitHub Release
-    needs: build-distributions
+  publish-github-release:
+    name: Publish checksummed GitHub Release after PyPI
+    needs:
+      - build-distributions
+      - create-release-tag
+      - publish-to-pypi
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Download reviewed release evidence
+      - name: Download complete reviewed release evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: release-distributions-${{ github.event.release.tag_name }}
+          name: release-evidence-${{ github.sha }}
           path: release-evidence
-      - name: Verify artifact checksums
-        working-directory: release-evidence
-        run: sha256sum --check SHA256SUMS
-      - name: Attach immutable release evidence
+      - name: Verify the immutable release tag
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" release-evidence/* --clobber
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          observed_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
+              --jq '.object.sha'
+          )"
+          if [ "$observed_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Release tag moved after artifact verification."
+            exit 1
+          fi
+      - name: Verify release evidence checksums
+        working-directory: release-evidence
+        run: sha256sum --check SHA256SUMS
+      - name: Replace only a recoverable draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          existing_release="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" \
+              --jq '[.id, .draft] | @tsv' 2>/dev/null || true
+          )"
+          if [ -n "$existing_release" ]; then
+            release_id="${existing_release%%$'\t'*}"
+            release_is_draft="${existing_release#*$'\t'}"
+            if [ "$release_is_draft" != "true" ]; then
+              echo "::error::A public GitHub Release already exists for this tag."
+              exit 1
+            fi
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          fi
+      - name: Create a complete draft and publish it atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release-evidence/* \
+            --verify-tag \
+            --draft \
+            --title "EgressWeave ${RELEASE_TAG#v}" \
+            --generate-notes
+          gh release edit "$RELEASE_TAG" --draft=false
