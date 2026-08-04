@@ -4,7 +4,7 @@ This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
-response bodies are bounded by the injected egress policy.
+raw plus decoded response bodies are bounded by the injected egress policy.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from egressweave.request_safety import (
     _enforce_allowed_http_method,
 )
 from egressweave.response_safety import (
+    _BoundedHTTPXResponse,
     _BoundedSyncResponseStream,
     _enforce_declared_response_size,
 )
@@ -179,7 +180,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one request and return a response bounded by policy bytes."""
+        """Send one request and return a raw and decoded policy-bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         safe_extensions = _bind_validated_tls_server_name(
@@ -217,8 +218,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             finally:
                 raise
 
-        return httpx.Response(
+        return _BoundedHTTPXResponse(
             status_code=response.status,
+            max_response_bytes=self._policy.max_response_bytes,
             headers=response.headers,
             stream=_BoundedSyncResponseStream(
                 ResponseStream(response.stream), self._policy.max_response_bytes
@@ -239,9 +241,9 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Successful response
-    bodies are limited to ``policy.max_response_bytes`` during streaming and
-    buffered reads.
+    :class:`~egressweave.validation.EgressNotAllowedError`. Successful raw and
+    decoded response bodies are limited to ``policy.max_response_bytes`` during
+    streaming and buffered reads.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
@@ -271,7 +273,8 @@ def build_pinned_https_client(
     The supplied result is revalidated without another DNS lookup. Every
     connection is then pinned to its addresses, any forged result or
     post-validation authority change is rejected before network I/O, and every
-    decoded response body is constrained by ``policy.max_response_bytes``.
+    raw and HTTPX-decoded response body is constrained by
+    ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
