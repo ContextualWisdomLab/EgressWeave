@@ -115,6 +115,19 @@ def test_release_source_is_bound_to_manual_input_and_protected_main_head() -> No
     assert '"$checked_sha" != "$main_sha"' in workflow
 
 
+def test_release_tag_creation_rechecks_the_current_main_head() -> None:
+    """Close the race between read-only acceptance and privileged tag creation."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    tag_job = workflow.split("  create-release-tag:", maxsplit=1)[1].split(
+        "  publish-to-pypi:", maxsplit=1
+    )[0]
+
+    assert 'repos/${GITHUB_REPOSITORY}/commits/main' in tag_job
+    assert "current_main_sha" in tag_job
+    assert '"$current_main_sha" != "$RELEASE_SHA"' in tag_job
+    assert "Protected main moved after artifact verification" in tag_job
+
+
 def test_pypi_job_receives_only_canonical_distribution_artifacts() -> None:
     """Limit the OIDC-enabled job to immutable artifact retrieval and publication."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
