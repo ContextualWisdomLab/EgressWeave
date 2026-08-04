@@ -37,6 +37,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Reject caller-supplied connection controls, protocol-upgrade fields, and
+  proxy-only authentication fields before synchronous or asynchronous HTTPCore
+  dispatch. `Connection`, `Keep-Alive`, `Upgrade`, `Proxy-Authenticate`,
+  `Proxy-Authorization`, and `Proxy-Connection` now fail with the generic policy
+  error, preventing an approved HTTP request from switching protocols or leaking
+  proxy credentials while preserving ordinary origin `Authorization`.
 - Reject ambiguous HTTP/1.1 request-body framing before synchronous or
   asynchronous connection-pool dispatch. Duplicate `Content-Length` or
   `Transfer-Encoding` fields, mixed framing fields, malformed decimal lengths,
