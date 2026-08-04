@@ -10,13 +10,13 @@ from types import SimpleNamespace
 import certifi
 import pytest
 
+from egressweave import sync_transport as sync_transport_module
+from egressweave import transport as async_transport_module
 from egressweave.tls import (
     TLSConfiguration,
     _load_client_identity,
     create_egress_ssl_context,
 )
-from egressweave import sync_transport as sync_transport_module
-from egressweave import transport as async_transport_module
 
 
 def _first_certifi_certificate() -> str:
@@ -388,7 +388,7 @@ def test_public_builders_accept_tls_configuration_keyword(monkeypatch) -> None:
         lambda value, policy, *, tls_configuration=None: observed.append(
             tls_configuration
         )
-        or object(),
+        or SimpleNamespace(close=lambda: None),
     )
     normalized_url, client = sync_transport_module.build_egress_sync_client(
         "https://api.example.com",
