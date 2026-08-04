@@ -35,17 +35,18 @@ branch.
 ## Zero-PR product-development loop
 
 `.github/workflows/hourly-product-development.yml` uses three fresh Ubuntu 24.04
-runners. The model job can only emit a bounded patch; the reverifier can execute
-that patch only inside an offline least-privilege container; and the publisher
-can write to GitHub but never executes modified package code.
+runners. The model job can only emit a bounded patch and does not execute
+model-modified repository code; the reverifier can execute that patch only
+inside an offline least-privilege container; and the publisher can write to
+GitHub but never executes modified package code.
 
 ### 1. Read-only development and patch capture
 
 The development job has read-only GitHub permissions and checks out `main`
 without persisted credentials. It exits before model use whenever any pull
 request is open. It installs the trusted base toolchain, creates a root-owned
-read-only baseline outside the model workspace, and then runs OpenCode 1.18.13 from the official Linux x64 release asset
-only after verifying SHA-256
+read-only baseline outside the model workspace, and then runs OpenCode 1.18.13
+from the official Linux x64 release asset only after verifying SHA-256
 `8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937`.
 The repository secret `NVIDIA_NIM_API_KEY` is exposed only to that process
 through OpenCode's documented `NVIDIA_API_KEY` provider variable. The explicit
@@ -58,12 +59,22 @@ The model execution boundary provides:
 - deny-by-default OpenCode permissions, with edits limited to the normal bounded
   source, test, documentation, README, and CHANGELOG paths;
 - no model web tools, external-directory access, task delegation, skill loading,
-  shell network commands, repository write token, or workflow edits;
+  language-server execution, shell network commands, repository write token, or
+  workflow edits;
+- no Ruff, pytest, compileall, Python-module, code-generation, or other
+  model-modified repository execution while the model credential is present;
+  only exact read-only Git diff/status shell commands are permitted;
 - disabled OpenCode auto-update, remote model-list refresh, default plugins, and
   LSP downloads;
 - an exact credential-disclosure scan that reports only affected paths and never
   prints the secret value;
 - a maximum of ten files and 1,000 changed lines.
+
+The model must place a focused regression test before its production change,
+but it cannot execute either one in the credential-bearing step. Executable
+validation is deliberately deferred to the fresh secret-free verifier so a
+repository prompt injection cannot turn a generated test, import hook, plugin,
+or language server into a credential-reading program.
 
 After model execution, only the protected baseline copy of
 `scripts/ci/hourly_product_guard.py` runs on the host. It uses an alternate Git
