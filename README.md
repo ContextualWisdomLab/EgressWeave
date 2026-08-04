@@ -48,10 +48,28 @@ unbounded or compressed response (CWE-400).
 - **Fail-closed optional configuration:** an empty or absent base URL returns a
   deny-all client rather than an unrestricted fallback transport.
 
+## Publication status
+
+Release automation and package acceptance establish that a commit is ready
+to publish; they do not establish that an artifact is already available.
+A bare `pip install egressweave` command is authoritative only after the
+exact version appears on a verified PyPI project page with its wheel, source
+distribution, and publish-attestation evidence. Until then, install from a
+reviewed source checkout and preserve the repository's hash-locked validation
+before promoting the package into another system.
+
 ## Install
+
+After the target version is verified on PyPI:
 
 ```bash
 pip install egressweave
+```
+
+From a reviewed local checkout before the first public release:
+
+```bash
+python -m pip install .
 ```
 
 ## Quickstart
