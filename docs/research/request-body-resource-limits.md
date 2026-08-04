@@ -18,6 +18,11 @@ This preserves non-leaking runtime behavior while preventing an accidental or
 adversarial producer from turning an approved authority into an unbounded
 outbound resource sink.
 
+The byte counter belongs to the bounded wrapper rather than an individual
+iterator. Repeated iteration, partial re-consumption, or transport retry of a
+replayable source therefore shares one cumulative budget instead of granting a
+fresh allowance each time the stream is consumed.
+
 ## Why declared length is not sufficient
 
 HTTP content is a stream of octets after message framing is removed. A sender
@@ -55,6 +60,8 @@ library or an imported service module.
   framing checks and immediately before HTTPCore dispatch.
 - **No partial over-budget chunk:** a chunk is counted before it is yielded to
   HTTPCore; the chunk that crosses the limit is never forwarded.
+- **No retry reset:** all iterations of one bounded stream share the same byte
+  counter, preventing replayable sources from multiplying the configured limit.
 - **Resource release:** synchronous and asynchronous source streams are closed
   on declared-length denial and actual-byte overrun.
 - **Generic failure:** runtime errors do not disclose the configured limit,
