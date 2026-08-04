@@ -40,13 +40,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
-- Bound decoded response-body consumption in both pinned transports. Unsafe
-  duplicate, malformed, or over-budget `Content-Length` values now fail before
-  a caller-visible response is returned, while chunked, close-delimited,
-  missing-length, and dishonestly under-declared bodies are counted during
-  streaming. The first over-budget chunk is withheld, the source stream is
-  closed, and the generic policy error is raised, limiting CWE-400 resource
-  exhaustion without misinterpreting RFC 9112 bodyless response metadata.
+- Bound response-body consumption in both pinned transports. Requests now force
+  one trusted `Accept-Encoding: identity` field, and body-bearing responses that
+  nevertheless apply a content coding are closed and rejected before HTTPX can
+  allocate decompressed output. Unsafe duplicate, malformed, or over-budget
+  `Content-Length` values fail before a caller-visible response is returned,
+  while chunked, close-delimited, missing-length, and dishonestly under-declared
+  identity bodies are counted during streaming. The first over-budget chunk is
+  withheld, the source stream is closed, and the generic policy error is raised,
+  limiting CWE-400 resource exhaustion without misinterpreting RFC 9112 bodyless
+  response metadata.
 - Stagger asynchronous pinned TCP connection attempts using RFC 8305's 250 ms
   default instead of launching every validated address simultaneously. Later
   attempts receive only the remaining connection-timeout budget, the first
