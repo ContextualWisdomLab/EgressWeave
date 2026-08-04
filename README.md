@@ -2,9 +2,9 @@
 
 **SSRF- and DNS-rebinding-safe outbound HTTP for Python.**
 
-`egressweave` validates an outbound URL against explicit hostname, destination-
-port, and HTTP-method allowlists, refuses any target that resolves to a non-
-globally-routable address, and hands back a synchronous `httpx.Client` or
+`egressweave` validates an outbound URL against exact host-and-port
+authority pairs and an HTTP-method allowlist, refuses any target that resolves
+to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
 validated addresses—rejecting authority drift and bounding every identity-coded
 response body.
@@ -39,8 +39,9 @@ unbounded or compressed response (CWE-400).
 - **Bounded DNS resolution:** synchronous and asynchronous validation apply the
   same finite positive `dns_timeout_seconds` deadline. Resolver workers are
   concurrency-bounded and failures remain generic.
-- **Exact egress allowlist:** only hostnames and ports explicitly present in the
-  policy are reachable; wildcards are refused.
+- **Exact egress allowlist:** only normalized `(hostname, port)` pairs explicitly
+  present in the policy are reachable; wildcards and accidental cross-pair
+  combinations are refused.
 - Redirects are disabled and environment proxies ignored (`trust_env=False`),
   so a `302` cannot bounce a request to an unvalidated host, and Unix sockets
   are refused.
@@ -101,6 +102,18 @@ alternate_port_policy = EgressPolicy.from_hosts(
 )
 ```
 
+When several hosts use different ports, enumerate the exact authority pairs
+instead of authorizing their Cartesian product:
+
+```python
+split_service_policy = EgressPolicy.from_authorities(
+    [
+        ("api.example.com", 443),
+        ("admin.example.com", 8443),
+    ]
+)
+```
+
 Set an integration-specific identity response budget when the 16 MiB default is
 not appropriate:
 
@@ -111,12 +124,15 @@ artifact_policy = EgressPolicy.from_hosts(
 )
 ```
 
-The default port set is `{443}`. Port values may be supplied as integers or
-comma-separated decimal strings, are normalized at policy construction, and
-must fall between 1 and 65535. Empty port segments are ignored for environment-
-variable ergonomics. Port zero, booleans, floats, malformed text, and out-of-
-range values fail fast. The URL's effective port is checked before DNS
-resolution.
+The default authority projection uses port `{443}`. `from_hosts(...)` remains
+concise when several hosts share one port or one host intentionally exposes
+several ports. Supplying several hosts and several ports is rejected as
+ambiguous; use `from_authorities(...)` to enumerate the exact permitted pairs.
+Hostnames use the same UTS #46 normalization as URL validation, and ports may be
+integers or ASCII decimal strings between 1 and 65535. Empty port segments are
+ignored for environment-variable ergonomics. Port zero, booleans, floats,
+malformed text, and out-of-range values fail fast. The exact normalized pair is
+checked before DNS resolution.
 
 The default method set is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and
 `OPTIONS`. Method names are validated and normalized at policy construction.
@@ -179,7 +195,7 @@ policy = EgressPolicy.from_hosts(
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact-host, destination-port, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy. |
+| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy; use `from_authorities(...)` when both host and port axes vary. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
@@ -189,13 +205,14 @@ policy = EgressPolicy.from_hosts(
 
 ## Compatibility note
 
-Destination-port allowlisting, finite response-body limits, and identity-only
-response coding are intentional pre-1.0 secure-default tightenings. Applications
-that use alternate HTTPS or local-development ports must add those exact ports
-to `allowed_ports`. Integrations that legitimately consume more than 16 MiB per
-response must set a larger, still-finite `max_response_bytes` value. Integrations
-that require compressed response content need a separately reviewed client with
-a bounded streaming decoder; EgressWeave does not silently accept compression.
+Exact authority-pair allowlisting, finite response-body limits, and identity-
+only response coding are intentional pre-1.0 secure-default tightenings.
+Applications with several hosts and several ports must migrate ambiguous
+`from_hosts(...)` configuration to explicit `from_authorities(...)` pairs.
+Integrations that legitimately consume more than 16 MiB per response must set a
+larger, still-finite `max_response_bytes` value. Integrations that require
+compressed response content need a separately reviewed client with a bounded
+streaming decoder; EgressWeave does not silently accept compression.
 
 ## One source, multi use (OSMU)
 
@@ -241,8 +258,9 @@ positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
 consumption), RFC 9110 (origin authority, content coding, and `CONNECT`), RFC
 9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
-connect across asynchronously pinned addresses). The response-resource decision
-is specified in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+connect across asynchronously pinned addresses). The exact authority decision is
+specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
+and response limits in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
 
 ## License
 

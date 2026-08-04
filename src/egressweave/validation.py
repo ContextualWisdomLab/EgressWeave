@@ -327,16 +327,17 @@ def _validate_url_components(
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or not policy.allows_port(port)
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
-def _validate_remote_host_is_allowed(hostname: str, policy: EgressPolicy) -> None:
-    allowed_hosts = policy.allowed_hosts
-    if not allowed_hosts or any("*" in allowed_host for allowed_host in allowed_hosts):
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-    if hostname not in allowed_hosts:
+def _validate_remote_authority_is_allowed(
+    hostname: str, port: int, policy: EgressPolicy
+) -> None:
+    """Reject any hostname and port pair absent from the exact policy."""
+    if not policy.allowed_authorities or not policy.allows_authority(
+        hostname, port
+    ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
     if _is_ip_literal(hostname) or _looks_like_ip_literal(hostname):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
@@ -354,7 +355,7 @@ def _normalize_egress_url(
 
     _validate_url_components(parsed, hostname, port, is_local_dev_host, policy)
 
-    _validate_remote_host_is_allowed(hostname, policy)
+    _validate_remote_authority_is_allowed(hostname, port, policy)
 
     netloc = _format_normalized_netloc(
         hostname, port, explicit_port=parsed.port is not None

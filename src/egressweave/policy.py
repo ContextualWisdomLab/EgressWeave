@@ -1,21 +1,23 @@
 """Egress policy — the single injected dependency for egressweave.
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
-application's settings object. It carries the allowlists of hostnames, network
-ports, and HTTP methods that outbound requests may target, a finite response-
-body budget, plus an ``allow_local`` escape hatch for local development stacks:
-built-in local names are bound to loopback, while explicit Docker-container
-names may resolve to RFC 1918 or RFC 4193 addresses.
+application's settings object. It carries exact host-and-port authorities, the
+HTTP methods those authorities may receive, a finite response-body budget, and
+an ``allow_local`` escape hatch for local development stacks: built-in local
+names are bound to loopback, while explicit Docker-container names may resolve
+to RFC 1918 or RFC 4193 addresses.
 
-Construct it explicitly::
+Construct a concise one-port policy explicitly::
 
     policy = EgressPolicy.from_hosts("api.openai.com, api.anthropic.com")
 
-or, for a read-only integration on an explicit alternate TLS port::
+Use exact pairs whenever both the host and port axes vary::
 
-    policy = EgressPolicy.from_hosts(
-        "api.example.com",
-        allowed_ports={443, 8443},
+    policy = EgressPolicy.from_authorities(
+        [
+            ("api.example.com", 443),
+            ("admin.example.com", 8443),
+        ],
         allowed_methods={"GET", "HEAD"},
         max_response_bytes=4 * 1024 * 1024,
     )
@@ -147,6 +149,28 @@ def _normalize_allowed_port(value: object) -> int | None:
     return port
 
 
+def _normalize_allowed_authority(value: object) -> tuple[str, int]:
+    """Normalize one exact ``(hostname, port)`` policy pair.
+
+    Authority entries deliberately use a two-item tuple instead of parsing a
+    colon-delimited string. This keeps hostname and port validation independent,
+    avoids authority-parser ambiguity, and ensures Unicode hostnames and decimal
+    environment ports pass through the same canonicalizers as ``from_hosts``.
+    """
+    if not isinstance(value, tuple) or len(value) != 2:
+        raise TypeError(
+            "allowed_authorities entries must be (hostname, port) tuples"
+        )
+
+    hostname = _normalize_allowed_host(value[0])
+    if hostname is None:
+        raise ValueError("allowed_authorities hostnames must not be empty")
+    port = _normalize_allowed_port(value[1])
+    if port is None:
+        raise ValueError("allowed_authorities ports must not be empty")
+    return hostname, port
+
+
 def _normalize_allowed_method(value: object) -> str:
     """Return one canonical HTTP method token or reject unsafe configuration.
 
@@ -196,22 +220,22 @@ def _normalize_max_response_bytes(value: object) -> int:
 class EgressPolicy:
     """Immutable outbound-egress allowlist and resource policy.
 
-    ``allowed_hosts`` is the exhaustive set of hostnames an outbound request
-    may target. Values are normalized to lowercase ASCII A-labels using UTS #46
+    ``allowed_authorities`` is the authoritative set of normalized hostname and
+    TCP-port pairs an outbound request may target. ``allowed_hosts`` and
+    ``allowed_ports`` remain exposed as projections for compatibility and
+    operator inspection, but runtime authorization always checks the complete
+    pair. ``from_hosts`` derives exact pairs when either only one host or only one
+    port axis varies; supplying several hosts and several ports is rejected as
+    ambiguous, because silently taking their Cartesian product can authorize an
+    unintended service. Use :meth:`from_authorities` for that case.
+
+    Hostnames are normalized to lowercase ASCII A-labels using UTS #46
     non-transitional IDNA processing and STD3 hostname rules. Invalid entries
     that can never be authorized—such as wildcards, URLs, malformed DNS labels,
-    ports, credentials, or IP literals—fail fast during policy construction
-    rather than on the first request. ``allow_local`` widens the guard only for
-    hostname-bound local development: built-in local names accept loopback,
-    while single-label allowlisted container names accept loopback, RFC 1918
-    IPv4, or RFC 4193 IPv6 unique-local addresses. It must be an actual boolean;
-    truthy strings or integers are rejected so configuration parsing cannot
-    accidentally enable the local-network escape hatch.
-
-    ``allowed_ports`` is the exhaustive set of destination TCP ports. The
-    secure default authorizes only the standard HTTPS port, 443. Alternate TLS
-    ports and local-development HTTP ports require explicit opt-in because RFC
-    9110 defines scheme, host, and port together as the request origin.
+    ports, credentials, or IP literals—fail fast during policy construction.
+    ``allow_local`` widens the address class only for an already allowlisted
+    local authority. It must be an actual boolean so truthy deployment strings
+    cannot accidentally enable access to loopback or private networks.
 
     ``dns_timeout_seconds`` is a finite positive deadline applied to both
     synchronous and asynchronous DNS resolution. Invalid timeout values are
@@ -238,6 +262,7 @@ class EgressPolicy:
     allowed_ports: frozenset[int] = DEFAULT_ALLOWED_EGRESS_PORTS
     allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
+    allowed_authorities: frozenset[tuple[str, int]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.allow_local, bool):
@@ -274,6 +299,35 @@ class EgressPolicy:
             if normalized_port is not None:
                 normalized_ports.add(normalized_port)
 
+        if self.allowed_authorities is None:
+            if len(normalized_hosts) > 1 and len(normalized_ports) > 1:
+                raise ValueError(
+                    "multiple hosts and ports require exact authority pairs via "
+                    "EgressPolicy.from_authorities"
+                )
+            normalized_authorities = frozenset(
+                (hostname, port)
+                for hostname in normalized_hosts
+                for port in normalized_ports
+            )
+        else:
+            normalized_authorities = frozenset(
+                _normalize_allowed_authority(authority)
+                for authority in self.allowed_authorities
+            )
+            authority_hosts = frozenset(
+                hostname for hostname, _ in normalized_authorities
+            )
+            authority_ports = frozenset(port for _, port in normalized_authorities)
+            if (
+                authority_hosts != frozenset(normalized_hosts)
+                or authority_ports != frozenset(normalized_ports)
+            ):
+                raise ValueError(
+                    "allowed_authorities must match allowed_hosts and allowed_ports "
+                    "projections"
+                )
+
         method_values: Iterable[object]
         if isinstance(self.allowed_methods, str):
             method_values = self.allowed_methods.split(",")
@@ -293,6 +347,7 @@ class EgressPolicy:
         object.__setattr__(self, "allowed_ports", frozenset(normalized_ports))
         object.__setattr__(self, "allowed_methods", normalized_methods)
         object.__setattr__(self, "max_response_bytes", normalized_max_response_bytes)
+        object.__setattr__(self, "allowed_authorities", normalized_authorities)
 
     @classmethod
     def from_hosts(
@@ -305,7 +360,14 @@ class EgressPolicy:
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
-        """Build a policy from normalized integration configuration values."""
+        """Build an unambiguous policy from host and port projections.
+
+        The concise constructor remains appropriate when all configured hosts
+        share one port or one host intentionally exposes several ports. Several
+        hosts plus several ports is rejected; use :meth:`from_authorities` to
+        enumerate the exact permitted pairs instead of authorizing a Cartesian
+        product accidentally.
+        """
         items: Iterable[str]
         if isinstance(hosts, str):
             items = hosts.split(",")
@@ -333,6 +395,44 @@ class EgressPolicy:
             max_response_bytes=max_response_bytes,
         )
 
+    @classmethod
+    def from_authorities(
+        cls,
+        authorities: Iterable[tuple[str, int | str]],
+        *,
+        allow_local: bool = False,
+        dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+        allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> EgressPolicy:
+        """Build a policy from exact normalized ``(hostname, port)`` pairs.
+
+        Duplicate pairs collapse after hostname IDNA and decimal-port
+        normalization. The resulting host and port projections remain available
+        through ``allowed_hosts`` and ``allowed_ports``, while runtime decisions
+        use ``allowed_authorities`` exclusively.
+        """
+        normalized_authorities = frozenset(
+            _normalize_allowed_authority(authority) for authority in authorities
+        )
+        method_items: Iterable[str]
+        if isinstance(allowed_methods, str):
+            method_items = allowed_methods.split(",")
+        else:
+            method_items = allowed_methods
+
+        return cls(
+            allowed_hosts=frozenset(
+                hostname for hostname, _ in normalized_authorities
+            ),
+            allow_local=allow_local,
+            dns_timeout_seconds=dns_timeout_seconds,
+            allowed_ports=frozenset(port for _, port in normalized_authorities),
+            allowed_methods=frozenset(method_items),
+            max_response_bytes=max_response_bytes,
+            allowed_authorities=normalized_authorities,
+        )
+
     def is_allowlisted_local_host(self, hostname: str) -> bool:
         """Whether ``hostname`` is an allowlisted single-label local host.
 
@@ -349,12 +449,28 @@ class EgressPolicy:
         )
 
     def allows_port(self, port: int) -> bool:
-        """Return whether the effective destination port is authorized."""
+        """Return whether any configured authority uses ``port``.
+
+        This projection helper remains for compatibility and operator
+        introspection. Runtime URL authorization must use :meth:`allows_authority`
+        so a port intended for one host cannot be reused with another.
+        """
         return (
             isinstance(port, int)
             and not isinstance(port, bool)
             and port in self.allowed_ports
         )
+
+    def allows_authority(self, hostname: str, port: int) -> bool:
+        """Return whether the exact canonical hostname and TCP port are allowed."""
+        if (
+            not isinstance(hostname, str)
+            or not isinstance(port, int)
+            or isinstance(port, bool)
+        ):
+            return False
+        normalized_hostname = _normalize_host(hostname)
+        return (normalized_hostname, port) in self.allowed_authorities
 
     def allows_http_method(self, method: str) -> bool:
         """Return whether ``method`` is authorized by this policy."""

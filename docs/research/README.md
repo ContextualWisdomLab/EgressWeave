@@ -15,7 +15,7 @@ rather than an ad-hoc heuristic. The primary sources follow.
   URL scheme, port, and destination, with deny-by-default network controls.
 
 EgressWeave applies those controls as one origin-oriented policy: exact
-hostnames, explicit destination ports, allowed HTTP methods, checked resolved
+`(hostname, port)` authority pairs, allowed HTTP methods, checked resolved
 addresses, and a pinned transport that cannot silently re-resolve elsewhere.
 
 ## Origin authority and ports — RFC 9110
@@ -25,12 +25,15 @@ and port**. Two URLs with the same hostname but different ports are distinct
 origins and can identify different services. A hostname-only allowlist therefore
 leaves a meaningful authority dimension uncontrolled.
 
-EgressWeave defaults `allowed_ports` to `{443}` and rejects a candidate URL when
-its effective destination port is not explicitly authorized. Alternate TLS
-ports and local-development ports require opt-in. Port validation happens before
-DNS resolution, so a denied port cannot be used as a resolver-triggered scan or
-reach transport setup. Explicit port zero is rejected rather than being
-silently replaced by the scheme default.
+EgressWeave authorizes complete normalized authority pairs rather than separate
+host and port sets. `from_hosts(...)` derives exact pairs only when several hosts
+share one port or one host intentionally exposes several ports. Several hosts
+plus several ports is ambiguous and fails at construction; callers enumerate
+those destinations with `from_authorities(...)`. The complete pair is checked
+before DNS resolution, so a port intended for one allowlisted host cannot be
+combined with another host to reach an unintended listener. Explicit port zero
+is rejected rather than being silently replaced by the scheme default. See
+[Exact host-and-port authority pairs](exact-authority-pairs.md).
 
 ## HTTP method authority — RFC 9110
 
