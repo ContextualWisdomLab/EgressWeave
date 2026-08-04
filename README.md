@@ -7,7 +7,9 @@ authority pairs and an HTTP-method allowlist, refuses any target that resolves
 to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
 validated addresses—rejecting authority drift and bounding every identity-coded
-response body.
+response body. An optional immutable TLS configuration adds private trust stores,
+mutual-TLS client identities, and explicit protocol floors without allowing a
+caller-owned mutable `SSLContext` to weaken the transport later.
 
 It exists because the naive pattern—resolve, check the IP, then
 `httpx.get(url)`—is unsafe. An attacker-controlled DNS answer can change between
@@ -31,6 +33,10 @@ unbounded or compressed response (CWE-400).
 - **Application-layer tunnelling:** a positive HTTP-method allowlist is enforced
   at the transport boundary. Common API methods are enabled by default, unusual
   methods require explicit opt-in, and `CONNECT` can never be authorized.
+- **Mutable or weak TLS configuration:** configured integrations default to TLS
+  1.3, allow only explicit TLS 1.2 compatibility, always verify certificates and
+  hostnames, and create a fresh context from an immutable value object. Private
+  trust and mTLS identities never bypass exact authority or DNS-pinning policy.
 - **Unbounded response consumption (CWE-400):** both transports force
   `Accept-Encoding: identity`, reject body-bearing content-coded responses and
   unsafe declared lengths before returning a response, and count every
@@ -132,6 +138,36 @@ split_service_policy = EgressPolicy.from_authorities(
 )
 ```
 
+Configure private trust and mutual TLS without passing a mutable context:
+
+```python
+import ssl
+
+from egressweave import TLSConfiguration, build_egress_sync_client
+
+enterprise_tls = TLSConfiguration(
+    minimum_version=ssl.TLSVersion.TLSv1_3,
+    ca_file="/run/secrets/enterprise-roots.pem",
+    client_certificate_file="/run/secrets/client-chain.pem",
+    client_private_key_file="/run/secrets/client-key.pem",
+    client_private_key_password=lambda: read_client_key_password(),
+)
+
+normalized_url, client = build_egress_sync_client(
+    "https://partner.example.com/v1",
+    policy=EgressPolicy.from_hosts("partner.example.com"),
+    tls_configuration=enterprise_tls,
+)
+```
+
+`TLSConfiguration()` defaults to TLS 1.3, public trust, certificate validation,
+and hostname verification. Existing peers that cannot yet negotiate TLS 1.3 can
+explicitly select `ssl.TLSVersion.TLSv1_2`; that compatibility mode offers only
+forward-secret ECDHE AEAD cipher suites. Set
+`include_default_trust_store=False` only with an explicit `ca_file`, `ca_path`,
+or `ca_data` value to create a private-only trust store. A client key or password
+without `client_certificate_file` fails at startup.
+
 Set an integration-specific identity response budget when the 16 MiB default is
 not appropriate:
 
@@ -214,11 +250,12 @@ policy = EgressPolicy.from_hosts(
 | Symbol | Purpose |
 |---|---|
 | `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `TLSConfiguration` | Immutable TLS 1.3-by-default trust and mutual-TLS identity configuration; explicit TLS 1.2 compatibility remains verified and forward-secret. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
-| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
-| `build_pinned_https_client(validated, *, policy)` | Build a bounded synchronous client from an already-validated URL. |
-| `build_pinned_https_async_client(validated, *, policy)` | Build a bounded asynchronous client from an already-validated URL. |
+| `build_egress_sync_client(url, *, policy, tls_configuration=None)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
+| `build_egress_http_client(url, *, policy, tls_configuration=None)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
+| `build_pinned_https_client(validated, *, policy, tls_configuration=None)` | Build a bounded synchronous client from an already-validated URL. |
+| `build_pinned_https_async_client(validated, *, policy, tls_configuration=None)` | Build a bounded asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
 ## Compatibility note
@@ -231,6 +268,12 @@ Integrations that legitimately consume more than 16 MiB per response must set a
 larger, still-finite `max_response_bytes` value. Integrations that require
 compressed response content need a separately reviewed client with a bounded
 streaming decoder; EgressWeave does not silently accept compression.
+
+Omitting `tls_configuration` preserves the existing verified HTTPX trust
+behavior. Supplying it changes trust roots, client identity, and protocol floor
+only; it cannot disable verification or alter authority, DNS pinning, proxy,
+request, or response policy. New configured integrations should keep the TLS 1.3
+default. Explicit TLS 1.2 is a migration exception for an existing peer.
 
 ## One source, multi use (OSMU)
 
@@ -275,10 +318,13 @@ See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention and
 positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
 consumption), RFC 9110 (origin authority, content coding, and `CONNECT`), RFC
-9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
-connect across asynchronously pinned addresses). The exact authority decision is
-specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
-and response limits in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+9112 (response body length), RFC 8305 (Happy Eyeballs-style concurrent connect
+across asynchronously pinned addresses), and current BCP 195 TLS guidance. The
+exact authority decision is specified in
+[`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md), enterprise
+TLS and mTLS in [`tls-configuration.md`](docs/research/tls-configuration.md), and
+response limits in
+[`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
 
 ## License
 
