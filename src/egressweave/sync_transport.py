@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import httpcore
 import httpx
-from httpx._config import DEFAULT_LIMITS, create_ssl_context
+from httpx._config import DEFAULT_LIMITS
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
@@ -34,6 +34,7 @@ from egressweave.response_safety import (
     _enforce_declared_response_size,
     _force_identity_accept_encoding,
 )
+from egressweave.tls import TLSConfiguration, create_egress_ssl_context
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -140,11 +141,17 @@ class _PinnedEgressTransport(httpx.BaseTransport):
 
     _policy = EgressPolicy(allowed_hosts=frozenset())
 
-    def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
-        """Revalidate caller-supplied state and construct a pinned connection pool."""
+    def __init__(
+        self,
+        validated: ValidatedEgressURL,
+        policy: EgressPolicy,
+        *,
+        tls_configuration: TLSConfiguration | None = None,
+    ) -> None:
+        """Revalidate state and build a pinned pool with a fresh TLS context."""
         self._validated = _revalidate_pinned_egress_url(validated, policy)
         self._policy = policy
-        ssl_context = create_ssl_context(verify=True, trust_env=False)
+        ssl_context = create_egress_ssl_context(tls_configuration)
         self._pool = httpcore.ConnectionPool(
             ssl_context=ssl_context,
             max_connections=DEFAULT_LIMITS.max_connections,
@@ -248,7 +255,10 @@ class _PinnedEgressTransport(httpx.BaseTransport):
 
 
 def build_egress_sync_client(
-    base_url: str | None, *, policy: EgressPolicy
+    base_url: str | None,
+    *,
+    policy: EgressPolicy,
+    tls_configuration: TLSConfiguration | None = None,
 ) -> tuple[str | None, httpx.Client]:
     """Validate ``base_url`` and return a synchronous fail-closed HTTPX client.
 
@@ -276,13 +286,18 @@ def build_egress_sync_client(
         httpx.Client(
             follow_redirects=False,
             trust_env=False,
-            transport=_PinnedEgressTransport(validated, policy),
+            transport=_PinnedEgressTransport(
+                validated, policy, tls_configuration=tls_configuration
+            ),
         ),
     )
 
 
 def build_pinned_https_client(
-    validated: ValidatedEgressURL, *, policy: EgressPolicy
+    validated: ValidatedEgressURL,
+    *,
+    policy: EgressPolicy,
+    tls_configuration: TLSConfiguration | None = None,
 ) -> httpx.Client:
     """Build a synchronous DNS-pinned HTTPX client from validated URL state.
 
@@ -296,5 +311,7 @@ def build_pinned_https_client(
     return httpx.Client(
         follow_redirects=False,
         trust_env=False,
-        transport=_PinnedEgressTransport(validated, policy),
+        transport=_PinnedEgressTransport(
+            validated, policy, tls_configuration=tls_configuration
+        ),
     )
