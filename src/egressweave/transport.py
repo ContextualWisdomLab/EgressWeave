@@ -9,8 +9,8 @@ This transport closes that gap. Every outbound connection is pinned to the exact
 addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
-(``trust_env=False``), Unix sockets refused, and identity-coded response bodies
-are bounded by the injected egress policy.
+(``trust_env=False``), Unix sockets refused, outbound request streams are
+bounded, and identity-coded response bodies are bounded by the injected policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -29,6 +29,10 @@ from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
+from egressweave.request_body_safety import (
+    _BoundedAsyncRequestStream,
+    _enforce_declared_request_size,
+)
 from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
@@ -265,7 +269,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one request and return a bounded identity-coded response."""
+        """Send one bounded request and return a bounded identity response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         safe_extensions = _bind_validated_tls_server_name(
@@ -276,6 +280,16 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 request.headers.raw, parsed_url.netloc.encode("ascii")
             )
         )
+        try:
+            _enforce_declared_request_size(
+                safe_headers, self._policy.max_request_bytes
+            )
+        except EgressNotAllowedError:
+            try:
+                await request.stream.aclose()
+            finally:
+                raise
+
         req = httpcore.Request(
             method=request.method,
             url=httpcore.URL(
@@ -285,7 +299,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 target=request.url.raw_path,
             ),
             headers=safe_headers,
-            content=request.stream,
+            content=_BoundedAsyncRequestStream(
+                request.stream, self._policy.max_request_bytes
+            ),
             extensions=safe_extensions,
         )
         with map_httpcore_exceptions():
@@ -321,8 +337,9 @@ async def build_egress_http_client(
 ) -> tuple[str | None, httpx.AsyncClient]:
     """Build a DNS-pinned, fail-closed client for ``base_url``.
 
-    Empty or absent URLs return a deny-all client. Successful response bodies are
-    requested with identity coding and limited to ``policy.max_response_bytes``.
+    Empty or absent URLs return a deny-all client. Request bodies are limited to
+    ``policy.max_request_bytes``. Successful response bodies are requested with
+    identity coding and limited to ``policy.max_response_bytes``.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
@@ -347,7 +364,7 @@ async def build_egress_http_client(
 def build_pinned_https_async_client(
     validated: ValidatedEgressURL, *, policy: EgressPolicy
 ) -> httpx.AsyncClient:
-    """Build a bounded asynchronous client from validated URL state."""
+    """Build an async client with bounded request and response bodies."""
     return httpx.AsyncClient(
         follow_redirects=False,
         trust_env=False,
