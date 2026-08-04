@@ -79,13 +79,16 @@ def test_ci_builds_and_validates_wheel_and_sdist() -> None:
 
 
 def test_release_workflow_uses_credential_separated_trusted_publishing() -> None:
-    """Keep build execution separate from the OIDC-enabled publishing job."""
+    """Keep build, tag, OIDC publication, and GitHub Release identities separate."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "release:" in workflow
-    assert "types: [published]" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "release_tag:" in workflow
+    assert "types: [published]" not in workflow
     assert "build-distributions:" in workflow
+    assert "create-release-tag:" in workflow
     assert "publish-to-pypi:" in workflow
+    assert "publish-github-release:" in workflow
     assert "environment:" in workflow
     assert "name: pypi" in workflow
     assert "id-token: write" in workflow
@@ -96,30 +99,50 @@ def test_release_workflow_uses_credential_separated_trusted_publishing() -> None
     assert "sha256sum --check SHA256SUMS" in workflow
 
 
-def test_release_tag_is_bound_to_the_event_and_protected_main_head() -> None:
-    """Reject mutable, stale, off-branch, or prerelease publication targets."""
+def test_release_source_is_bound_to_manual_input_and_protected_main_head() -> None:
+    """Reject mutable, stale, off-branch, or malformed publication targets."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "name: Verify stable release and exact reviewed commit" in workflow
+    assert "name: Verify stable release input and exact reviewed commit" in workflow
     assert "EXPECTED_RELEASE_SHA: ${{ github.sha }}" in workflow
-    assert "RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}" in workflow
+    assert "RELEASE_REF: ${{ github.ref }}" in workflow
+    assert "RELEASE_TAG: ${{ inputs.release_tag }}" in workflow
+    assert '"$RELEASE_REF" != "refs/heads/main"' in workflow
     assert "git fetch --no-tags origin main" in workflow
-    assert 'tagged_sha="$(git rev-parse HEAD)"' in workflow
+    assert 'checked_sha="$(git rev-parse HEAD)"' in workflow
     assert 'main_sha="$(git rev-parse origin/main)"' in workflow
-    assert '"$tagged_sha" != "$EXPECTED_RELEASE_SHA"' in workflow
-    assert '"$tagged_sha" != "$main_sha"' in workflow
+    assert '"$checked_sha" != "$EXPECTED_RELEASE_SHA"' in workflow
+    assert '"$checked_sha" != "$main_sha"' in workflow
 
 
-def test_pypi_job_uploads_only_distribution_archives() -> None:
-    """Keep checksum evidence available without presenting it as a PyPI package."""
+def test_pypi_job_receives_only_canonical_distribution_artifacts() -> None:
+    """Limit the OIDC-enabled job to immutable artifact retrieval and publication."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    publish_job = workflow.split("  publish-to-pypi:", maxsplit=1)[1].split(
+        "  publish-github-release:", maxsplit=1
+    )[0]
 
-    assert "path: release-evidence" in workflow
-    assert "working-directory: release-evidence" in workflow
-    assert "name: Prepare publish-only directory" in workflow
-    assert "cp release-evidence/*.whl release-evidence/*.tar.gz dist/" in workflow
-    assert "packages-dir: dist" in workflow
-    assert "cp release-evidence/SHA256SUMS dist/" not in workflow
+    assert "name: pypi-distributions-${{ github.sha }}" in publish_job
+    assert "path: dist" in publish_job
+    assert "packages-dir: dist" in publish_job
+    assert PYPI_PUBLISH_ACTION in publish_job
+    assert "run:" not in publish_job
+    assert "SHA256SUMS" not in publish_job
+
+
+def test_github_release_is_created_only_after_pypi_publication() -> None:
+    """Do not expose a public GitHub Release before exact artifacts reach PyPI."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    release_job = workflow.split("  publish-github-release:", maxsplit=1)[1]
+
+    assert "needs:" in release_job
+    assert "- build-distributions" in release_job
+    assert "- create-release-tag" in release_job
+    assert "- publish-to-pypi" in release_job
+    assert "Verify the immutable release tag" in release_job
+    assert "gh release create" in release_job
+    assert "--verify-tag" in release_job
+    assert "sha256sum --check SHA256SUMS" in release_job
 
 
 def test_readme_distinguishes_release_readiness_from_pypi_availability() -> None:
@@ -142,3 +165,5 @@ def test_distribution_verifier_and_release_runbook_are_present() -> None:
     assert "environment named `pypi`" in runbook
     assert "v<version>" in runbook
     assert "SHA256SUMS" in runbook
+    assert "Run workflow" in runbook
+    assert "only after PyPI publication succeeds" in runbook
