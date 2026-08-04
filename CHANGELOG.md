@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Enforce 100% production statement and branch coverage on every supported
+  Python 3.10–3.13 CI job with one canonical coverage.py configuration, a
+  SHA-256-locked coverage artifact, and deterministic tests for defensive DNS,
+  policy, synchronous transport, and asynchronous connection-race branches.
+- Require useful docstrings on every shipped module, class, function, and
+  method through an AST-based repository contract, keeping security-sensitive
+  internals readable without source-code archaeology.
 - Add `EgressPolicy.max_response_bytes` with a secure finite 16 MiB default,
   positive integer or ASCII decimal-string configuration, and fail-fast
   rejection of values that could silently remove the response resource bound.

@@ -36,6 +36,7 @@ jobs:
           cache-dependency-path: requirements-ci.txt
       - run: python -m pip install --require-hashes -r requirements-ci.txt
       - run: ruff check .
-      - run: pytest -q
+      - run: coverage run -m pytest -q
+      - run: coverage report -m
       - run: python scripts/ci/hourly_product_guard.py self-test
       - run: python -m compileall -q src tests scripts

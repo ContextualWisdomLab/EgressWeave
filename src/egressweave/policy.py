@@ -265,6 +265,7 @@ class EgressPolicy:
     allowed_authorities: frozenset[tuple[str, int]] | None = None
 
     def __post_init__(self) -> None:
+        """Validate and canonicalize every immutable policy field."""
         if not isinstance(self.allow_local, bool):
             raise TypeError("allow_local must be a boolean")
 
