@@ -63,18 +63,22 @@ def _normalized_distribution_stem(name: str) -> str:
 
 
 def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Path]:
-    """Select exactly one correctly named wheel and source distribution."""
+    """Select only the canonical wheel and source distribution for publication."""
     normalized_name = _normalized_distribution_stem(name)
-    wheel_candidates = sorted(
-        dist_dir.glob(f"{normalized_name}-{version}-py3-none-any.whl")
+    wheel_path = dist_dir / f"{normalized_name}-{version}-py3-none-any.whl"
+    sdist_path = dist_dir / f"{name}-{version}.tar.gz"
+    publishable_archives = sorted(
+        [*dist_dir.glob("*.whl"), *dist_dir.glob("*.tar.gz")],
+        key=lambda path: path.name,
     )
-    sdist_candidates = sorted(dist_dir.glob(f"{name}-{version}.tar.gz"))
-    if len(wheel_candidates) != 1 or len(sdist_candidates) != 1:
+    expected_archives = {wheel_path, sdist_path}
+    if len(publishable_archives) != 2 or set(publishable_archives) != expected_archives:
         raise SystemExit(
-            "expected exactly one canonical wheel and source distribution; "
-            f"found wheels={wheel_candidates}, sdists={sdist_candidates}"
+            "unexpected distribution archives; expected exactly "
+            f"{sorted(path.name for path in expected_archives)}, observed "
+            f"{[path.name for path in publishable_archives]}"
         )
-    return wheel_candidates[0], sdist_candidates[0]
+    return wheel_path, sdist_path
 
 
 def _safe_archive_names(names: list[str]) -> set[str]:
