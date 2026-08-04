@@ -61,7 +61,8 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
     assert '"task":"deny"' in workflow
     assert '"skill":"deny"' in workflow
     assert "Reject model credential disclosure" in workflow
-    assert 'grep -R -F -- "$NVIDIA_API_KEY"' in workflow
+    assert 'grep -R -F -l -- "$NVIDIA_API_KEY"' in workflow
+    assert 'grep -R -F -- "$NVIDIA_API_KEY"' not in workflow
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
