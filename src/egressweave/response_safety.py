@@ -106,8 +106,15 @@ def _enforce_declared_response_size(
         octet < ord("0") or octet > ord("9") for octet in content_length
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-    if int(content_length) > max_response_bytes:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+    significant_length = content_length.lstrip(b"0")
+    if significant_length:
+        budget_text = str(max_response_bytes).encode("ascii")
+        if len(significant_length) > len(budget_text) or (
+            len(significant_length) == len(budget_text)
+            and significant_length > budget_text
+        ):
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
