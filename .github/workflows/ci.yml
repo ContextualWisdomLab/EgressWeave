@@ -131,7 +131,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - name: Verify exact source binding
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
@@ -179,8 +179,15 @@ jobs:
           python -m compileall -q src tests scripts
           git diff --check
       - name: Commit and push only the verified final migration
+        env:
+          WORKFLOW_WRITE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN || secrets.OPENCODE_APPROVE_TOKEN || '' }}
         run: |
           set -euo pipefail
+          if [ -z "${WORKFLOW_WRITE_TOKEN:-}" ]; then
+            echo "::error::A workflow-capable external write token is required."
+            exit 1
+          fi
+          echo "::add-mask::$WORKFLOW_WRITE_TOKEN"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- .github/workflows CHANGELOG.md docs/hourly-autonomous-maintenance.md
@@ -189,4 +196,5 @@ jobs:
             exit 1
           fi
           git commit -m "ci: migrate hourly product development to NVIDIA OpenCode"
+          git remote set-url origin "https://x-access-token:${WORKFLOW_WRITE_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin HEAD:ci/opencode-nvidia-hourly-agent
