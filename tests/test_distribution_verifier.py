@@ -70,3 +70,16 @@ def test_release_ref_accepts_an_empty_unreleased_section(tmp_path: Path) -> None
     )
 
     verifier._verify_release_ref("v0.3.0", "0.3.0", changelog)
+
+
+def test_archive_selection_rejects_additional_publishable_files(tmp_path: Path) -> None:
+    """Prevent an unreviewed second distribution from reaching the publisher glob."""
+    verifier = _load_verifier()
+    canonical_wheel = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    canonical_sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    canonical_wheel.touch()
+    canonical_sdist.touch()
+    (tmp_path / "unexpected-9.9.9-py3-none-any.whl").touch()
+
+    with pytest.raises(SystemExit, match="unexpected distribution archives"):
+        verifier._select_archives(tmp_path, "egressweave", "0.3.0")
