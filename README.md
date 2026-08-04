@@ -31,11 +31,13 @@ unbounded request producer or an unbounded or compressed response (CWE-400).
 - **Application-layer tunnelling:** a positive HTTP-method allowlist is enforced
   at the transport boundary. Common API methods are enabled by default, unusual
   methods require explicit opt-in, and `CONNECT` can never be authorized.
-- **Unbounded request production (CWE-400):** both transports reject a declared
-  `Content-Length` beyond the finite policy budget before pool dispatch and
-  count actual synchronous or asynchronous stream bytes. Chunked,
-  missing-length, and dishonestly under-declared request bodies cannot exceed
-  the same limit; the first over-budget chunk is withheld and its source closed.
+- **Unbounded or ambiguously framed requests (CWE-400, CWE-444):** both
+  transports reject a declared `Content-Length` beyond the finite policy budget
+  before pool dispatch and count actual synchronous or asynchronous stream
+  bytes. A valid declared length must equal the bytes consumed exactly; excess,
+  truncation, chunked overruns, and retry-based budget resets fail closed. The
+  first chunk crossing a policy or declared boundary is withheld and its source
+  is closed without replacing the generic policy error.
 - **Unbounded response consumption (CWE-400):** both transports force
   `Accept-Encoding: identity`, reject body-bearing content-coded responses and
   unsafe declared lengths before returning a response, and count every
@@ -59,9 +61,9 @@ Release automation and package acceptance establish that a commit is ready
 to publish; they do not establish that an artifact is already available.
 A bare `pip install egressweave` command is authoritative only after the
 exact version appears on a verified PyPI project page with its wheel, source
-distribution, and publish-attestation evidence. Until then, install from a reviewed source checkout
-and preserve the repository's hash-locked validation before promoting the
-package into another system.
+distribution, and publish-attestation evidence. Until then, install from a
+reviewed source checkout and preserve the repository's hash-locked validation
+before promoting the package into another system.
 
 ## Install
 
@@ -167,11 +169,14 @@ The default request-body budget is 16 MiB. `max_request_bytes` accepts a
 positive integer or an ASCII decimal string for environment-variable use. Zero,
 negative, boolean, fractional, empty, signed, non-ASCII, or malformed values
 fail at policy construction. A single declared `Content-Length` greater than
-the budget is rejected before connection-pool dispatch. The actual byte stream
-is also counted, so chunked, missing-length, and under-declared request bodies
-cannot bypass the limit. The first chunk that would cross the budget is not
-sent, the source stream is closed, and the generic `EgressNotAllowedError` is
-raised without disclosing the configured threshold or consumed size.
+the budget is rejected before connection-pool dispatch. When a valid declared
+length is present, the actual body must contain exactly that many bytes: excess
+and truncated streams both fail closed. Chunked and missing-length streams are
+still counted against the policy limit. The byte counter remains cumulative
+across repeated iteration or retry of a replayable source, so re-consumption
+does not grant another allowance. The first chunk crossing a policy or declared
+boundary is not sent, the source stream is closed, and the generic
+`EgressNotAllowedError` is raised without disclosing thresholds or byte counts.
 
 The default response-body budget is 16 MiB. `max_response_bytes` accepts a
 positive integer or an ASCII decimal string for environment-variable use. Zero,
@@ -291,8 +296,9 @@ synchronous and asynchronous transports.
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention and
 positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
-consumption), RFC 9110 (origin authority, content coding, and `CONNECT`), RFC
-9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
+consumption), CWE-444 (HTTP request interpretation differentials), RFC 9110
+(origin authority, content coding, and `CONNECT`), RFC 9112 (HTTP/1.1 message
+framing and response body length), and RFC 8305 (Happy Eyeballs-style concurrent
 connect across asynchronously pinned addresses). The exact authority decision is
 specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
 outbound request limits in
