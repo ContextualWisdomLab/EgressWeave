@@ -1,0 +1,220 @@
+name: Exact Authority Pair Documentation
+
+on:
+  push:
+    branches: [security/exact-authority-pairs]
+
+concurrency:
+  group: exact-authority-pair-documentation
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONPATH: src
+
+jobs:
+  document-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: security/exact-authority-pairs
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+      - run: python -m pip install --require-hashes -r requirements-ci.txt
+      - name: Document exact authority-pair semantics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file_path = Path(path)
+              text = file_path.read_text(encoding="utf-8")
+              if text.count(old) != 1:
+                  raise SystemExit(
+                      f"{path} changed; refusing an ambiguous documentation replacement"
+                  )
+              file_path.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_once(
+              "README.md",
+              """`egressweave` validates an outbound URL against explicit hostname, destination-
+          port, and HTTP-method allowlists, refuses any target that resolves to a non-
+          globally-routable address, and hands back a synchronous `httpx.Client` or
+          """,
+              """`egressweave` validates an outbound URL against exact host-and-port
+          authority pairs and an HTTP-method allowlist, refuses any target that resolves
+          to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
+          """,
+          )
+          replace_once(
+              "README.md",
+              """- **Exact egress allowlist:** only hostnames and ports explicitly present in the
+            policy are reachable; wildcards are refused.
+          """,
+              """- **Exact egress allowlist:** only normalized `(hostname, port)` pairs explicitly
+            present in the policy are reachable; wildcards and accidental cross-pair
+            combinations are refused.
+          """,
+          )
+          replace_once(
+              "README.md",
+              """alternate_port_policy = EgressPolicy.from_hosts(
+              "api.example.com",
+              allowed_ports={443, 8443},
+          )
+          ```
+          """,
+              """alternate_port_policy = EgressPolicy.from_hosts(
+              "api.example.com",
+              allowed_ports={443, 8443},
+          )
+          ```
+
+          When several hosts use different ports, enumerate the exact authority pairs
+          instead of authorizing their Cartesian product:
+
+          ```python
+          split_service_policy = EgressPolicy.from_authorities(
+              [
+                  ("api.example.com", 443),
+                  ("admin.example.com", 8443),
+              ]
+          )
+          ```
+          """,
+          )
+          replace_once(
+              "README.md",
+              """The default port set is `{443}`. Port values may be supplied as integers or
+          comma-separated decimal strings, are normalized at policy construction, and
+          must fall between 1 and 65535. Empty port segments are ignored for environment-
+          variable ergonomics. Port zero, booleans, floats, malformed text, and out-of-
+          range values fail fast. The URL's effective port is checked before DNS
+          resolution.
+          """,
+              """The default authority projection uses port `{443}`. `from_hosts(...)` remains
+          concise when several hosts share one port or one host intentionally exposes
+          several ports. Supplying several hosts and several ports is rejected as
+          ambiguous; use `from_authorities(...)` to enumerate the exact permitted pairs.
+          Hostnames use the same UTS #46 normalization as URL validation, and ports may be
+          integers or ASCII decimal strings between 1 and 65535. Empty port segments are
+          ignored for environment-variable ergonomics. Port zero, booleans, floats,
+          malformed text, and out-of-range values fail fast. The exact normalized pair is
+          checked before DNS resolution.
+          """,
+          )
+          replace_once(
+              "README.md",
+              """| `EgressPolicy` | Injected exact-host, destination-port, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy. |
+          """,
+              """| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+          """,
+          )
+          replace_once(
+              "README.md",
+              """Destination-port allowlisting, finite response-body limits, and identity-only
+          response coding are intentional pre-1.0 secure-default tightenings. Applications
+          that use alternate HTTPS or local-development ports must add those exact ports
+          to `allowed_ports`. Integrations that legitimately consume more than 16 MiB per
+          response must set a larger, still-finite `max_response_bytes` value. Integrations
+          that require compressed response content need a separately reviewed client with
+          a bounded streaming decoder; EgressWeave does not silently accept compression.
+          """,
+              """Exact authority-pair allowlisting, finite response-body limits, and identity-
+          only response coding are intentional pre-1.0 secure-default tightenings.
+          Applications with several hosts and several ports must migrate ambiguous
+          `from_hosts(...)` configuration to explicit `from_authorities(...)` pairs.
+          Integrations that legitimately consume more than 16 MiB per response must set a
+          larger, still-finite `max_response_bytes` value. Integrations that require
+          compressed response content need a separately reviewed client with a bounded
+          streaming decoder; EgressWeave does not silently accept compression.
+          """,
+          )
+          replace_once(
+              "README.md",
+              """9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
+          connect across asynchronously pinned addresses). The response-resource decision
+          is specified in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+          """,
+              """9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
+          connect across asynchronously pinned addresses). The exact authority decision is
+          specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
+          and response limits in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+          """,
+          )
+
+          replace_once(
+              "CHANGELOG.md",
+              """### Security
+          - Bound response-body consumption in both pinned transports. Requests now force
+          """,
+              """### Security
+          - Bind every permitted destination port to its exact normalized hostname through
+            `allowed_authorities` and `EgressPolicy.from_authorities(...)`. Ambiguous
+            many-host by many-port `from_hosts(...)` configuration now fails at policy
+            construction, and unlisted cross-pairs fail before DNS resolution instead of
+            inheriting a port intended for another service on the allowlist.
+          - Bound response-body consumption in both pinned transports. Requests now force
+          """,
+          )
+
+          replace_once(
+              "docs/research/README.md",
+              """EgressWeave applies those controls as one origin-oriented policy: exact
+          hostnames, explicit destination ports, allowed HTTP methods, checked resolved
+          addresses, and a pinned transport that cannot silently re-resolve elsewhere.
+          """,
+              """EgressWeave applies those controls as one origin-oriented policy: exact
+          `(hostname, port)` authority pairs, allowed HTTP methods, checked resolved
+          addresses, and a pinned transport that cannot silently re-resolve elsewhere.
+          """,
+          )
+          replace_once(
+              "docs/research/README.md",
+              """EgressWeave defaults `allowed_ports` to `{443}` and rejects a candidate URL when
+          its effective destination port is not explicitly authorized. Alternate TLS
+          ports and local-development ports require opt-in. Port validation happens before
+          DNS resolution, so a denied port cannot be used as a resolver-triggered scan or
+          reach transport setup. Explicit port zero is rejected rather than being
+          silently replaced by the scheme default.
+          """,
+              """EgressWeave authorizes complete normalized authority pairs rather than separate
+          host and port sets. `from_hosts(...)` derives exact pairs only when several hosts
+          share one port or one host intentionally exposes several ports. Several hosts
+          plus several ports is ambiguous and fails at construction; callers enumerate
+          those destinations with `from_authorities(...)`. The complete pair is checked
+          before DNS resolution, so a port intended for one allowlisted host cannot be
+          combined with another host to reach an unintended listener. Explicit port zero
+          is rejected rather than being silently replaced by the scheme default. See
+          [Exact host-and-port authority pairs](exact-authority-pairs.md).
+          """,
+          )
+          PY
+      - run: ruff check .
+      - run: pytest -q
+      - run: python scripts/ci/hourly_product_guard.py self-test
+      - run: python -m compileall -q src tests scripts
+      - name: Commit verified documentation and remove this one-shot workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm .github/workflows/authority-pair-documentation.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md CHANGELOG.md docs/research/README.md .github/workflows/authority-pair-documentation.yml
+          if git diff --cached --quiet; then
+            echo "::error::No verified documentation change was produced."
+            exit 1
+          fi
+          git commit -m "docs: explain exact authority-pair policy"
+          git push origin HEAD:security/exact-authority-pairs
