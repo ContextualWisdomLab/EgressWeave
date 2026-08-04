@@ -143,7 +143,7 @@ jobs:
           OPENCODE_DISABLE_CLAUDE_CODE: "true"
           OPENCODE_AUTO_SHARE: "false"
           OPENCODE_CONFIG_CONTENT: >-
-            {"$schema":"https://opencode.ai/config.json","model":"nvidia/nemotron-3-super-120b-a12b","small_model":"nvidia/nemotron-3-super-120b-a12b","share":"disabled","autoupdate":false,"provider":{"nvidia":{"options":{"baseURL":"https://integrate.api.nvidia.com/v1","apiKey":"{env:NVIDIA_API_KEY}"},"models":{"nemotron-3-super-120b-a12b":{"name":"NVIDIA Nemotron 3 Super 120B A12B","limit":{"context":1000000,"output":32768}}}}},"permission":{"*":"deny","read":{"*":"allow",".git/**":"deny","*.env":"deny","*.env.*":"deny"},"edit":{"*":"deny","src/egressweave/**":"allow","tests/**":"allow","docs/**":"allow","README.md":"allow","CHANGELOG.md":"allow"},"glob":"allow","grep":"allow","bash":{"*":"deny","ruff check *":"allow","pytest *":"allow","python -m compileall *":"allow","git diff *":"allow","git status *":"allow"},"lsp":"allow","external_directory":"deny","webfetch":"deny","websearch":"deny","question":"deny","task":"deny","skill":"deny"}}
+            {"$schema":"https://opencode.ai/config.json","model":"nvidia/nemotron-3-super-120b-a12b","small_model":"nvidia/nemotron-3-super-120b-a12b","share":"disabled","autoupdate":false,"provider":{"nvidia":{"options":{"baseURL":"https://integrate.api.nvidia.com/v1","apiKey":"{env:NVIDIA_API_KEY}"},"models":{"nemotron-3-super-120b-a12b":{"name":"NVIDIA Nemotron 3 Super 120B A12B","limit":{"context":1000000,"output":32768}}}}},"permission":{"*":"deny","read":{"*":"allow",".git/**":"deny","*.env":"deny","*.env.*":"deny"},"edit":{"*":"deny","src/egressweave/**":"allow","tests/**":"allow","docs/**":"allow","README.md":"allow","CHANGELOG.md":"allow"},"glob":"allow","grep":"allow","bash":{"*":"deny","git diff --check":"allow","git diff --stat":"allow","git status --short":"allow"},"external_directory":"deny","webfetch":"deny","websearch":"deny","question":"deny","task":"deny","skill":"deny"}}
         run: |
           set -euo pipefail
           echo "::add-mask::$NVIDIA_API_KEY"
@@ -153,14 +153,15 @@ jobs:
           Maintain ContextualWisdomLab/EgressWeave as a production-grade security library.
 
           Work only when there are no open pull requests; the workflow has already verified that condition.
-          Inspect README.md, AGENTS.md, CHANGELOG.md, src/, tests/, and docs/. Run the existing Ruff and pytest
-          suites. Select exactly one highest-value buyer-visible product, security, reliability, compatibility,
-          documentation, or release-readiness gap that can be completed safely in this run. If the protected
-          branch is not green, restoring it is the only permitted objective.
+          Inspect README.md, AGENTS.md, CHANGELOG.md, src/, tests/, and docs/. Select exactly one highest-value
+          buyer-visible product, security, reliability, compatibility, documentation, or release-readiness gap
+          that can be completed safely in this run. If the protected branch is not green, restoring it is the only
+          permitted objective.
 
           Requirements:
-          - Use test-driven development: add or change a focused test, observe the relevant failure, then
-            implement the smallest coherent fix and rerun the focused and full suites.
+          - Use test-first ordering: add or change a focused regression test before changing production code, then
+            implement the smallest coherent fix. Do not execute repository code in this credential-bearing step;
+            the credential-free offline verifier will run Ruff, pytest, compileall, and the full coverage contract.
           - Preserve fail-closed SSRF and DNS-rebinding invariants. Never weaken validation to make a test pass.
           - Add precise docstrings to every added or modified function, class, and method.
           - Keep production statement and branch coverage at 100%.
@@ -182,10 +183,13 @@ jobs:
           - Do not add dependencies, change build configuration, delete or rename files, or create symlinks or binaries.
           - Touch at most 10 files and keep the total diff below 1,000 changed lines.
           - Make one cohesive change; do not perform opportunistic refactoring.
+          - Do not execute repository code in this credential-bearing step. Do not invoke pytest, compileall,
+            Python modules, language servers, code-generation hooks, or any command that imports project code.
 
-          Do not stage or commit changes and do not modify `.git`. Before finishing, run `ruff check .`,
-          `pytest -q`, `python -m compileall -q src tests`, and `git diff --check`. Leave the working tree
-          unchanged if no safe, material improvement is available.
+          Do not stage or commit changes and do not modify `.git`. Before finishing, inspect only
+          `git status --short`, `git diff --stat`, and `git diff --check`. The separate secret-free verifier runs
+          every executable quality and security test. Leave the working tree unchanged if no safe, material
+          improvement is available.
           PROMPT
           opencode run --auto --model "$OPENCODE_MODEL" --format json \
             "$(cat "$prompt_file")" >"$result_file"
