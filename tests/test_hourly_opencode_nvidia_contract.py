@@ -19,7 +19,8 @@ OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
 )
 NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
-NVIDIA_API_ENDPOINT = ".".join(("integrate", "api", "nvidia", "com")) + ":443"
+NVIDIA_API_HOST_LABELS = ("integrate", "api", "nvidia", "com")
+NVIDIA_API_ENDPOINT = f"{'.'.join(NVIDIA_API_HOST_LABELS)}:443"
 
 
 def _read(path: Path) -> str:
