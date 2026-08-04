@@ -124,6 +124,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
+      actions: write
       contents: write
     steps:
       - name: Check out the exact current pull-request head
@@ -178,6 +179,27 @@ jobs:
           python scripts/ci/hourly_product_guard.py self-test
           python -m compileall -q src tests scripts
           git diff --check
+      - name: Package the independently verified migration result
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/opencode-migration-result"
+          mkdir -p "$evidence_dir"
+          cp .github/workflows/hourly-product-development.yml "$evidence_dir/hourly-product-development.yml"
+          cp CHANGELOG.md "$evidence_dir/CHANGELOG.md"
+          cp docs/hourly-autonomous-maintenance.md "$evidence_dir/hourly-autonomous-maintenance.md"
+          git diff --binary origin/main -- \
+            .github/workflows/hourly-product-development.yml \
+            CHANGELOG.md \
+            docs/hourly-autonomous-maintenance.md \
+            >"$evidence_dir/migration.patch"
+          sha256sum "$evidence_dir"/* >"$evidence_dir/SHA256SUMS"
+      - name: Upload the exact verified migration result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-migration-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/opencode-migration-result/
+          if-no-files-found: error
+          retention-days: 3
       - name: Commit and push only the verified final migration
         env:
           WORKFLOW_WRITE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN || secrets.OPENCODE_APPROVE_TOKEN || '' }}
