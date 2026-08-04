@@ -91,8 +91,10 @@ class TLSConfiguration:
     ``client_certificate_file`` enables mutual TLS. The private key can be in
     that PEM file or supplied separately through ``client_private_key_file``.
     An optional password may be text, bytes, a bytearray, or a zero-argument
-    callable accepted by :meth:`ssl.SSLContext.load_cert_chain`. Password values
-    are deliberately excluded from representations and equality comparisons.
+    callable accepted by :meth:`ssl.SSLContext.load_cert_chain`. Mutable
+    bytearrays are copied to immutable bytes during construction. Password
+    values are deliberately excluded from representations and equality
+    comparisons.
     """
 
     minimum_version: ssl.TLSVersion = ssl.TLSVersion.TLSv1_3
@@ -130,6 +132,12 @@ class TLSConfiguration:
             )
         object.__setattr__(self, "ca_data", _normalize_ca_data(self.ca_data))
         _validate_private_key_password(self.client_private_key_password)
+        if isinstance(self.client_private_key_password, bytearray):
+            object.__setattr__(
+                self,
+                "client_private_key_password",
+                bytes(self.client_private_key_password),
+            )
 
         if not self.include_default_trust_store and not any(
             (self.ca_file, self.ca_path, self.ca_data)
