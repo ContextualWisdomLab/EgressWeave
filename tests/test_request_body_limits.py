@@ -13,7 +13,6 @@ from egressweave.request_body_safety import (
     _BoundedSyncRequestStream,
     _enforce_declared_request_size,
 )
-
 from egressweave import EgressNotAllowedError, EgressPolicy
 from egressweave.sync_transport import _PinnedEgressTransport
 from egressweave.transport import _PinnedEgressAsyncTransport
