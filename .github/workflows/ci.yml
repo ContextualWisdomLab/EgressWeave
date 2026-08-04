@@ -16,6 +16,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PYTHONPATH: src
+  CI_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   test:
@@ -28,7 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.CI_SOURCE_SHA }}
           persist-credentials: false
+      - name: Verify exact workflow source checkout
+        env:
+          EXPECTED_SOURCE_SHA: ${{ env.CI_SOURCE_SHA }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -50,7 +56,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.CI_SOURCE_SHA }}
           persist-credentials: false
+      - name: Verify exact workflow source checkout
+        env:
+          EXPECTED_SOURCE_SHA: ${{ env.CI_SOURCE_SHA }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -99,7 +110,7 @@ jobs:
       - name: Upload package-acceptance evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: package-acceptance-${{ github.sha }}
+          name: package-acceptance-${{ env.CI_SOURCE_SHA }}
           path: dist/
           if-no-files-found: error
           retention-days: 3
