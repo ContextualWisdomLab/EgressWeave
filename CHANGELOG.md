@@ -57,6 +57,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Bind every pull-request quality and package-acceptance job to the immutable
+  event head SHA, verify the checked-out commit before executing repository
+  code, and name release evidence with that source SHA so a synthetic merge or
+  stale revision cannot be mistaken for exact-current-head validation.
 - Gate stable publication through a protected-main manual dispatch and separate
   build, tag, PyPI OIDC, and GitHub Release identities. The public GitHub Release
   is now created from a complete draft only after PyPI publication succeeds,
