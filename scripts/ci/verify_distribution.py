@@ -28,6 +28,10 @@ CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
     flags=re.MULTILINE,
 )
+CHANGELOG_UNRELEASED_PATTERN = re.compile(
+    r"^## \[Unreleased\]\s*\n(?P<body>.*?)(?=^## \[)",
+    flags=re.MULTILINE | re.DOTALL,
+)
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -178,6 +182,14 @@ def _verify_release_ref(
     if version not in released_versions:
         raise SystemExit(
             f"CHANGELOG.md lacks a dated release section for version {version}"
+        )
+    unreleased_match = CHANGELOG_UNRELEASED_PATTERN.search(changelog)
+    if unreleased_match is None:
+        raise SystemExit("CHANGELOG.md lacks the required Unreleased section")
+    if unreleased_match.group("body").strip():
+        raise SystemExit(
+            "CHANGELOG.md Unreleased section is not empty; move every entry into "
+            "the dated release section before publishing"
         )
 
 
