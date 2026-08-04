@@ -179,7 +179,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one bounded request and return a bounded identity response."""
+        """Send one framing-exact bounded request and return a bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         safe_extensions = _bind_validated_tls_server_name(
@@ -191,7 +191,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             )
         )
         try:
-            _enforce_declared_request_size(
+            declared_request_bytes = _enforce_declared_request_size(
                 safe_headers, self._policy.max_request_bytes
             )
         except EgressNotAllowedError:
@@ -211,7 +211,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             ),
             headers=safe_headers,
             content=_BoundedSyncRequestStream(
-                request.stream, self._policy.max_request_bytes
+                request.stream,
+                self._policy.max_request_bytes,
+                declared_request_bytes,
             ),
             extensions=safe_extensions,
         )
@@ -254,9 +256,10 @@ def build_egress_sync_client(
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
     :class:`~egressweave.validation.EgressNotAllowedError`. Request bodies are
-    limited to ``policy.max_request_bytes``. Successful response bodies are
-    requested with identity coding and limited to ``policy.max_response_bytes``
-    during streaming and buffered reads.
+    limited to ``policy.max_request_bytes`` and must match a supplied
+    ``Content-Length`` exactly. Successful response bodies are requested with
+    identity coding and limited to ``policy.max_response_bytes`` during
+    streaming and buffered reads.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
@@ -286,8 +289,9 @@ def build_pinned_https_client(
     The supplied result is revalidated without another DNS lookup. Every
     connection is pinned to its addresses, any forged result or authority change
     is rejected before network I/O, every outbound request body is constrained
-    by ``policy.max_request_bytes``, and every identity-coded response body is
-    constrained by ``policy.max_response_bytes``.
+    by ``policy.max_request_bytes`` and exact declared framing, and every
+    identity-coded response body is constrained by
+    ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
