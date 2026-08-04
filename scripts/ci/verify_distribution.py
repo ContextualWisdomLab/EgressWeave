@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Verify EgressWeave release distributions without executing package code.
 
 The verifier treats wheel and source-distribution archives as data. It confirms
