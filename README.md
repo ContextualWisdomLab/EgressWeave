@@ -6,15 +6,15 @@
 port, and HTTP-method allowlists, refuses any target that resolves to a non-
 globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
-validated addresses—rejecting any authority that changes after validation and
-bounding every decoded response body.
+validated addresses—rejecting authority drift and bounding every identity-coded
+response body.
 
 It exists because the naive pattern—resolve, check the IP, then
 `httpx.get(url)`—is unsafe. An attacker-controlled DNS answer can change between
 the check and the connect (a TOCTOU / DNS-rebinding attack, CWE-350), while a
 permissive URL, port, or method policy can reach unintended services (SSRF,
 CWE-918), and even an allowlisted authority can exhaust resources with an
-unbounded response (CWE-400).
+unbounded or compressed response (CWE-400).
 
 ## What it defends against
 
@@ -31,9 +31,10 @@ unbounded response (CWE-400).
 - **Application-layer tunnelling:** a positive HTTP-method allowlist is enforced
   at the transport boundary. Common API methods are enabled by default, unusual
   methods require explicit opt-in, and `CONNECT` can never be authorized.
-- **Unbounded response consumption (CWE-400):** synchronous and asynchronous
-  transports reject unsafe declared lengths before returning a response and
-  count decoded bytes while streaming. Chunked, close-delimited, missing-length,
+- **Unbounded response consumption (CWE-400):** both transports force
+  `Accept-Encoding: identity`, reject body-bearing content-coded responses and
+  unsafe declared lengths before returning a response, and count every
+  transfer-decoded identity body byte. Chunked, close-delimited, missing-length,
   and dishonestly under-declared bodies cannot exceed the finite policy budget.
 - **Bounded DNS resolution:** synchronous and asynchronous validation apply the
   same finite positive `dns_timeout_seconds` deadline. Resolver workers are
@@ -100,7 +101,7 @@ alternate_port_policy = EgressPolicy.from_hosts(
 )
 ```
 
-Set an integration-specific decoded response budget when the 16 MiB default is
+Set an integration-specific identity response budget when the 16 MiB default is
 not appropriate:
 
 ```python
@@ -122,12 +123,15 @@ The default method set is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and
 Less common non-tunnelling methods such as `PROPFIND` require explicit opt-in.
 `CONNECT` is always rejected, including when present in configuration.
 
-The default decoded response-body budget is 16 MiB. `max_response_bytes` accepts
-a positive integer or an ASCII decimal string for environment-variable use.
-Zero, negative, boolean, fractional, empty, signed, or malformed values fail at
-policy construction. A body-bearing response with a duplicate, malformed, or
-over-budget `Content-Length` is rejected before it becomes caller-visible, and
-every response stream is counted independently of its framing metadata. On an
+The default response-body budget is 16 MiB. `max_response_bytes` accepts a
+positive integer or an ASCII decimal string for environment-variable use. Zero,
+negative, boolean, fractional, empty, signed, or malformed values fail at policy
+construction. Pinned transports replace every caller compression preference
+with `Accept-Encoding: identity`; a body-bearing response that still uses gzip,
+deflate, Brotli, or another content coding is closed and rejected before HTTPX
+can allocate decompressed output. Duplicate, malformed, or over-budget
+`Content-Length` values fail before the response becomes caller-visible, and
+every identity body stream is counted independently of framing metadata. On an
 overrun, the underlying stream is closed and `EgressNotAllowedError` is raised.
 Responses to `HEAD`, informational responses, `204`, and `304` remain bodyless
 under RFC 9112 and do not treat representation metadata as transferred bytes.
@@ -175,22 +179,23 @@ policy = EgressPolicy.from_hosts(
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact-host, destination-port, HTTP-method, DNS-timeout, local-address, and decoded response-body resource policy. |
+| `EgressPolicy` | Injected exact-host, destination-port, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all bodies are policy-bounded. |
-| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all bodies are policy-bounded. |
+| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
+| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
 | `build_pinned_https_client(validated, *, policy)` | Build a bounded synchronous client from an already-validated URL. |
 | `build_pinned_https_async_client(validated, *, policy)` | Build a bounded asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
 ## Compatibility note
 
-Destination-port allowlisting and finite response-body limits are intentional
-pre-1.0 secure-default tightenings. Applications that use alternate HTTPS or
-local-development ports must add those exact ports to `allowed_ports`.
-Integrations that legitimately consume more than 16 MiB per response must set a
-larger, still-finite `max_response_bytes` value. Ordinary HTTPS JSON APIs remain
-unchanged.
+Destination-port allowlisting, finite response-body limits, and identity-only
+response coding are intentional pre-1.0 secure-default tightenings. Applications
+that use alternate HTTPS or local-development ports must add those exact ports
+to `allowed_ports`. Integrations that legitimately consume more than 16 MiB per
+response must set a larger, still-finite `max_response_bytes` value. Integrations
+that require compressed response content need a separately reviewed client with
+a bounded streaming decoder; EgressWeave does not silently accept compression.
 
 ## One source, multi use (OSMU)
 
@@ -234,10 +239,10 @@ synchronous and asynchronous transports.
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention and
 positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
-consumption), RFC 9110 (origin authority and `CONNECT` tunnelling), RFC 9112
-(response body length), and RFC 8305 (Happy Eyeballs-style concurrent connect
-across asynchronously pinned addresses). The response-resource decision is
-specified in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+consumption), RFC 9110 (origin authority, content coding, and `CONNECT`), RFC
+9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
+connect across asynchronously pinned addresses). The response-resource decision
+is specified in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
 
 ## License
 
