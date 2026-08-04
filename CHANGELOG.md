@@ -6,7 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-04
+
 ### Added
+- Add pull-request package acceptance for wheel and source distributions,
+  including SPDX license metadata, archive path validation, PEP 561 marker
+  checks, installed-wheel smoke testing outside the source tree, and
+  deterministic `SHA256SUMS` evidence.
+- Add a credential-separated release workflow that rebuilds an immutable
+  published tag with hash-locked Hatchling tooling, verifies version and
+  dated changelog binding, publishes through PyPI Trusted Publishing with
+  attestations, and attaches checksummed artifacts to the GitHub Release.
 - Enforce 100% production statement and branch coverage on every supported
   Python 3.10–3.13 CI job with one canonical coverage.py configuration, a
   SHA-256-locked coverage artifact, and deterministic tests for defensive DNS,
@@ -47,6 +57,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Bind every pull-request quality and package-acceptance job to the immutable
+  event head SHA, verify the checked-out commit before executing repository
+  code, and name release evidence with that source SHA so a synthetic merge or
+  stale revision cannot be mistaken for exact-current-head validation.
+- Gate stable publication through a protected-main manual dispatch and separate
+  build, tag, PyPI OIDC, and GitHub Release identities. The public GitHub Release
+  is now created from a complete draft only after PyPI publication succeeds,
+  exact tag identity is rechecked, and release evidence checksums pass.
+- Reject any additional wheel or source-distribution archive before checksum
+  generation or publication, so publisher globs cannot carry an unintended
+  second package alongside the canonical EgressWeave artifacts.
 - Bind every permitted destination port to its exact normalized hostname through
   `allowed_authorities` and `EgressPolicy.from_authorities(...)`. Ambiguous
   many-host by many-port `from_hosts(...)` configuration now fails at policy

@@ -42,7 +42,7 @@ from egressweave.validation import (
     validate_egress_url_details_async,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "EGRESS_NOT_ALLOWED",
