@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Add explicit, deterministic `EgressDecisionEvidence` for successful egress
+  decisions. Evidence revalidates signed state and records canonical authority,
+  method policy, aggregate address-family counts, and correlation fingerprints
+  without exposing request paths or resolved IP addresses.
+
 ## [0.3.0] - 2026-08-04
 
 ### Added
