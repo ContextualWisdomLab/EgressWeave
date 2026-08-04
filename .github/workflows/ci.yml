@@ -183,12 +183,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- \
-            .github/workflows/ci.yml \
-            .github/workflows/hourly-product-development.yml \
-            .github/workflows/migrate-opencode-nvidia.yml \
-            CHANGELOG.md \
-            docs/hourly-autonomous-maintenance.md
+          git add -A -- .github/workflows CHANGELOG.md docs/hourly-autonomous-maintenance.md
           if git diff --cached --quiet; then
             echo "::error::The migration produced no final repository change."
             exit 1
