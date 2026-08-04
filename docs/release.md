@@ -5,6 +5,11 @@ PyPI Trusted Publishing. The build job receives no publishing identity. A later
 job may request a short-lived OIDC token only after the exact release-tag source
 has produced and passed distribution acceptance.
 
+Release readiness does not itself mean the package is publicly installable.
+`pip install egressweave` becomes an authoritative installation path only after
+the corresponding version is visible on PyPI with its wheel, source
+distribution, and publish-attestation evidence.
+
 ## One-time repository and PyPI configuration
 
 1. Create a protected GitHub environment named `pypi`.
