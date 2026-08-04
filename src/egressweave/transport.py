@@ -9,8 +9,8 @@ This transport closes that gap. Every outbound connection is pinned to the exact
 addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
-(``trust_env=False``), Unix sockets refused, and response bodies are bounded by
-the injected egress policy.
+(``trust_env=False``), Unix sockets refused, and raw plus decoded response bodies
+are bounded by the injected egress policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -36,6 +36,7 @@ from egressweave.request_safety import (
 )
 from egressweave.response_safety import (
     _BoundedAsyncResponseStream,
+    _BoundedHTTPXResponse,
     _enforce_declared_response_size,
 )
 from egressweave.validation import (
@@ -79,8 +80,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         self._hostname = hostname
         self._port = port
         self._policy = policy
-        # Re-validate each address; pass the hostname so allowlisted local
-        # container names are accepted under ``allow_local``.
         self._addresses = tuple(
             _validate_global_address(address, policy, hostname=hostname)
             for address in addresses
@@ -203,8 +202,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     try:
                         stream = task.result()
                     except Exception as exc:  # noqa: BLE001  # pragma: no cover
-                        # Backends expose different connection exception classes;
-                        # one failed address must not abort remaining candidates.
                         last_error = exc
                         continue
 
@@ -245,8 +242,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
 class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
     """Asynchronous HTTPX transport pinned to one validated URL authority."""
 
-    # A private transport allocated without ``__init__`` (for example by a
-    # low-level test double) still gets secure method and response policies.
     _policy = EgressPolicy(allowed_hosts=frozenset())
 
     def __init__(self, validated: ValidatedEgressURL, policy: EgressPolicy) -> None:
@@ -288,7 +283,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one request and return a response bounded by policy bytes."""
+        """Send one request and return a raw and decoded policy-bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         validated_scheme = parsed_url.scheme.encode("ascii")
@@ -329,8 +324,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             finally:
                 raise
 
-        return httpx.Response(
+        return _BoundedHTTPXResponse(
             status_code=resp.status,
+            max_response_bytes=self._policy.max_response_bytes,
             headers=resp.headers,
             stream=_BoundedAsyncResponseStream(
                 AsyncResponseStream(resp.stream), self._policy.max_response_bytes
@@ -351,9 +347,9 @@ async def build_egress_http_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Successful response
-    bodies are limited to ``policy.max_response_bytes`` during streaming and
-    buffered reads.
+    :class:`~egressweave.validation.EgressNotAllowedError`. Successful raw and
+    decoded response bodies are limited to ``policy.max_response_bytes`` during
+    streaming and buffered reads.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
@@ -383,7 +379,8 @@ def build_pinned_https_async_client(
     The supplied result is revalidated without another DNS lookup, then every
     outbound connection is pinned to its addresses. Any forged policy/URL/host/
     port combination or post-validation host/port change is rejected, and each
-    decoded response body is constrained by ``policy.max_response_bytes``.
+    raw and HTTPX-decoded response body is constrained by
+    ``policy.max_response_bytes``.
     """
     return httpx.AsyncClient(
         follow_redirects=False,
