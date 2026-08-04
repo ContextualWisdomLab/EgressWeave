@@ -57,6 +57,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Gate stable publication through a protected-main manual dispatch and separate
+  build, tag, PyPI OIDC, and GitHub Release identities. The public GitHub Release
+  is now created from a complete draft only after PyPI publication succeeds,
+  exact tag identity is rechecked, and release evidence checksums pass.
 - Reject any additional wheel or source-distribution archive before checksum
   generation or publication, so publisher globs cannot carry an unintended
   second package alongside the canonical EgressWeave artifacts.
