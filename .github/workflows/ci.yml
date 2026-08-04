@@ -125,7 +125,8 @@ jobs:
     timeout-minutes: 25
     permissions:
       actions: write
-      contents: write
+      contents: read
+      id-token: write
     steps:
       - name: Check out the exact current pull-request head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -200,16 +201,57 @@ jobs:
           path: ${{ runner.temp }}/opencode-migration-result/
           if-no-files-found: error
           retention-days: 3
-      - name: Commit and push only the verified final migration
+      - name: Select a workflow-capable external write identity
+        id: write_token
         env:
-          WORKFLOW_WRITE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN || secrets.OPENCODE_APPROVE_TOKEN || '' }}
+          PREFERRED_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN || secrets.OPENCODE_APPROVE_TOKEN || '' }}
+          OIDC_AUDIENCE: opencode-github-action
+          OPENCODE_API_BASE_URL: https://api.opencode.ai
         run: |
           set -euo pipefail
-          if [ -z "${WORKFLOW_WRITE_TOKEN:-}" ]; then
-            echo "::error::A workflow-capable external write token is required."
+          if [ -n "${PREFERRED_TOKEN:-}" ]; then
+            echo "::add-mask::$PREFERRED_TOKEN"
+            echo "token=$PREFERRED_TOKEN" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "::error::No external workflow write identity is available."
             exit 1
           fi
-          echo "::add-mask::$WORKFLOW_WRITE_TOKEN"
+          request_url="${ACTIONS_ID_TOKEN_REQUEST_URL}"
+          separator="&"
+          case "$request_url" in
+            *\?*) ;;
+            *) separator="?" ;;
+          esac
+          oidc_response="$(
+            curl -fsS \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${request_url}${separator}audience=${OIDC_AUDIENCE}"
+          )"
+          oidc_token="$(jq -r '.value // empty' <<<"$oidc_response")"
+          if [ -z "$oidc_token" ]; then
+            echo "::error::OIDC token response was empty."
+            exit 1
+          fi
+          token_response="$(
+            curl -fsS \
+              -X POST \
+              -H "Authorization: Bearer ${oidc_token}" \
+              "${OPENCODE_API_BASE_URL}/exchange_github_app_token"
+          )"
+          app_token="$(jq -r '.token // empty' <<<"$token_response")"
+          if [ -z "$app_token" ]; then
+            echo "::error::OpenCode app token exchange returned no write token."
+            exit 1
+          fi
+          echo "::add-mask::$app_token"
+          echo "token=$app_token" >>"$GITHUB_OUTPUT"
+      - name: Commit and push only the verified final migration
+        env:
+          WORKFLOW_WRITE_TOKEN: ${{ steps.write_token.outputs.token }}
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- .github/workflows CHANGELOG.md docs/hourly-autonomous-maintenance.md
