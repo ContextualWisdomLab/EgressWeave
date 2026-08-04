@@ -67,6 +67,7 @@ class ValidatedEgressURL:
         port: int,
         addresses: tuple[str, ...],
     ) -> None:
+        """Reject direct construction so only completed validation can issue results."""
         raise TypeError(
             "ValidatedEgressURL objects must come from a validation function"
         )
@@ -108,10 +109,12 @@ def _make_validated_egress_url(
 
 
 def _has_url_control_character(value: str) -> bool:
+    """Return whether URL text contains an ASCII control or DEL character."""
     return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
 def _is_ip_literal(candidate: str) -> bool:
+    """Return whether ``candidate`` is a canonical IPv4 or IPv6 literal."""
     try:
         ipaddress.ip_address(candidate)
     except ValueError:
@@ -120,6 +123,7 @@ def _is_ip_literal(candidate: str) -> bool:
 
 
 def _looks_like_ip_literal(candidate: str) -> bool:
+    """Return whether text resembles an alternate numeric IP representation."""
     compact_candidate = candidate.replace(".", "").lower()
     return (
         ":" in candidate
@@ -151,6 +155,7 @@ def _is_private_local_address(
 
 
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
+    """Render one canonical URL authority while preserving explicit-port intent."""
     host_part = f"[{hostname}]" if ":" in hostname else hostname
     if not explicit_port:
         return host_part
@@ -281,6 +286,7 @@ async def _resolve_all_global_addresses_async(
 def _parse_and_validate_candidate_url(
     value: str | None,
 ) -> tuple[SplitResult | None, int | None]:
+    """Parse candidate text and return its split URL plus effective port."""
     if value is None:
         return None, None
 
@@ -308,6 +314,7 @@ def _validate_url_components(
     is_local_dev_host: bool,
     policy: EgressPolicy,
 ) -> None:
+    """Reject unsafe URL syntax, schemes, credentials, and local-mode use."""
     if parsed.scheme.lower() not in {"http", "https"}:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
@@ -346,6 +353,7 @@ def _validate_remote_authority_is_allowed(
 def _normalize_egress_url(
     value: str | None, policy: EgressPolicy
 ) -> tuple[str | None, str | None, int | None]:
+    """Return the normalized URL, hostname, and exact authorized port."""
     parsed, port = _parse_and_validate_candidate_url(value)
     if parsed is None or port is None:
         return None, None, None
