@@ -34,6 +34,13 @@ silently replaced by the scheme default.
 
 ## HTTP method authority — RFC 9110
 
+- **RFC 9110, section 9.1.** A method is one case-sensitive HTTP `token`; the
+  standardized methods use uppercase US-ASCII spellings. EgressWeave therefore
+  distinguishes normalized operator configuration from request-boundary input:
+  the actual method reaching a pinned transport must already be the exact
+  canonical token authorized by policy. Whitespace-wrapped, malformed,
+  non-ASCII, or alternate-case spellings fail before HTTPCore dispatch rather
+  than being repaired and forwarded under a different interpretation.
 - **RFC 9110, section 9.3.6 (`CONNECT`).** `CONNECT` asks a proxy to establish a
   tunnel to the host and port carried in the method-specific request target and
   then blindly forward traffic. That tunnel destination is a second authority
@@ -43,13 +50,18 @@ silently replaced by the scheme default.
   operator attempts to add it. Less common non-tunnelling methods such as
   WebDAV verbs require explicit opt-in.
 
+See [Canonical request-method enforcement](canonical-request-methods.md) for the
+request-line threat model and fail-closed transport decision.
+
 Primary references:
 
 - [RFC 9110: HTTP Semantics—URI Origin](https://www.rfc-editor.org/rfc/rfc9110.html#section-4.3.1)
+- [RFC 9110: HTTP Semantics—Methods Overview](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.1)
 - [RFC 9110: HTTP Semantics—CONNECT](https://www.rfc-editor.org/rfc/rfc9110.html#name-connect)
 - [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
 - [OWASP Top 10 A10:2021 SSRF](https://owasp.org/Top10/2021/A10_2021-Server-Side_Request_Forgery_%28SSRF%29/)
 - [CWE-918: Server-Side Request Forgery](https://cwe.mitre.org/data/definitions/918.html)
+- [CWE-444: Inconsistent Interpretation of HTTP Requests](https://cwe.mitre.org/data/definitions/444.html)
 
 ## Protocol switching and proxy-only fields — RFC 9110
 
