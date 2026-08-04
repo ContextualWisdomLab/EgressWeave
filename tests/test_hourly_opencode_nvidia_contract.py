@@ -57,7 +57,8 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
     assert 'OPENCODE_DISABLE_DEFAULT_PLUGINS: "true"' in workflow
     assert 'OPENCODE_DISABLE_LSP_DOWNLOAD: "true"' in workflow
     assert 'OPENCODE_DISABLE_PROJECT_CONFIG: "true"' in workflow
-    assert 'OPENCODE_CONFIG_DIR: "${{ runner.temp }}/opencode-empty-config"' in workflow
+    assert 'HOME: "${{ runner.temp }}/opencode-home"' in workflow
+    assert 'XDG_CONFIG_HOME: "${{ runner.temp }}/opencode-home/config"' in workflow
     assert '"external_directory":"deny"' in workflow
     assert '"webfetch":"deny"' in workflow
     assert '"websearch":"deny"' in workflow
