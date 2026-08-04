@@ -154,7 +154,11 @@ class TLSConfiguration:
         if self.include_default_trust_store:
             context = _create_httpx_ssl_context(verify=True, trust_env=False)
         else:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context = ssl.create_default_context(
+                cafile=self.ca_file,
+                capath=self.ca_path,
+                cadata=self.ca_data,
+            )
 
         context.minimum_version = self.minimum_version
         context.check_hostname = True
@@ -163,7 +167,9 @@ class TLSConfiguration:
         if self.minimum_version is ssl.TLSVersion.TLSv1_2:
             # RFC 10015 excludes DHE and static RSA in this profile.
             context.set_ciphers(_TLS12_FORWARD_SECRET_CIPHERS)  # nosemgrep
-        if any((self.ca_file, self.ca_path, self.ca_data)):
+        if self.include_default_trust_store and any(
+            (self.ca_file, self.ca_path, self.ca_data)
+        ):
             context.load_verify_locations(
                 cafile=self.ca_file,
                 capath=self.ca_path,
