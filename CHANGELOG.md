@@ -40,6 +40,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Bind every permitted destination port to its exact normalized hostname through
+  `allowed_authorities` and `EgressPolicy.from_authorities(...)`. Ambiguous
+  many-host by many-port `from_hosts(...)` configuration now fails at policy
+  construction, and unlisted cross-pairs fail before DNS resolution instead of
+  inheriting a port intended for another service on the allowlist.
 - Bound response-body consumption in both pinned transports. Requests now force
   one trusted `Accept-Encoding: identity` field, and body-bearing responses that
   nevertheless apply a content coding are closed and rejected before HTTPX can
