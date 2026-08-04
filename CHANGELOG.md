@@ -22,6 +22,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tools, credential-disclosure detection, isolated reverification, and normal PR
   protections remain mandatory; the central review scheduler and inherited review
   agent identity contract are unchanged.
+- Paginate and aggregate every GitHub REST page at all three zero-open-PR
+  boundaries so an open pull request beyond the first 100 results still blocks
+  model execution, independent reverification, and publication.
 - Bound outbound request-body consumption in both pinned transports. Oversized
   declared `Content-Length` values fail before connection-pool dispatch, while
   chunked, missing-length, and dishonestly under-declared bodies are counted as
