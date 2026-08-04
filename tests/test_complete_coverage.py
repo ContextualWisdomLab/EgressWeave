@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable
 
-import httpcore
-import httpx
 import pytest
 
 from egressweave import (
@@ -18,11 +16,9 @@ from egressweave import (
     validate_egress_url_details,
     validate_egress_url_details_async,
 )
-from egressweave import request_safety as request_safety
-from egressweave import validation as validation
+from egressweave import request_safety, transport as async_transport, validation
 from egressweave.sync_transport import _PinnedEgressSyncNetworkBackend
 from egressweave.transport import _PinnedEgressNetworkBackend
-from egressweave import transport as async_transport
 
 PUBLIC_ADDRESS = "93.184.216.34"
 SECOND_PUBLIC_ADDRESS = "93.184.216.35"
@@ -85,20 +81,6 @@ class _SyncBackend:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
-
-
-def _validated_result(monkeypatch, hostname: str = "api.example.com"):
-    """Return one signed validation result backed by deterministic DNS."""
-    monkeypatch.setattr(
-        validation.socket,
-        "getaddrinfo",
-        lambda host, port, type=None: [
-            (2, 1, 6, "", (PUBLIC_ADDRESS, port))
-        ],
-    )
-    result = validate_egress_url_details(f"https://{hostname}", policy=POLICY)
-    assert result is not None
-    return result
 
 
 def test_direct_policy_strings_cover_projection_normalization() -> None:
@@ -202,9 +184,12 @@ def test_bounded_resolver_wraps_worker_start_failure(monkeypatch) -> None:
 def test_bounded_resolver_normalizes_worker_outcomes(monkeypatch, outcome) -> None:
     """Preserve only the generic error boundary for worker outcomes."""
     if isinstance(outcome, Exception):
+
         def resolve(*args, **kwargs):
             raise outcome
+
     else:
+
         def resolve(*args, **kwargs):
             return None
 
@@ -229,6 +214,7 @@ def test_local_url_requires_allow_local_even_when_authority_is_listed() -> None:
 
 def test_ip_literal_defense_remains_after_authority_authorization() -> None:
     """Reject an IP literal even if a malicious policy double claims the pair."""
+
     class _PermissivePolicy:
         allowed_authorities = frozenset({("127.0.0.1", 443)})
 
@@ -354,7 +340,6 @@ async def test_async_backend_closes_simultaneous_extra_stream(monkeypatch) -> No
     )
     streams = [_AsyncStream(), _AsyncStream()]
     stream_iter = iter(streams)
-    real_wait = asyncio.wait
     wait_calls = 0
 
     async def connect(address, port, timeout, local_address, socket_options):
@@ -365,8 +350,8 @@ async def test_async_backend_closes_simultaneous_extra_stream(monkeypatch) -> No
         wait_calls += 1
         if wait_calls == 1:
             return set(), set(tasks)
-        await asyncio.sleep(0)
-        return await real_wait(tasks, timeout=0, return_when=asyncio.ALL_COMPLETED)
+        await asyncio.gather(*tasks)
+        return set(tasks), set()
 
     monkeypatch.setattr(backend, "_connect_validated_ip_address", connect)
     monkeypatch.setattr(async_transport.asyncio, "wait", deterministic_wait)
