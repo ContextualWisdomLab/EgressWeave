@@ -40,6 +40,11 @@ model-modified repository code; the reverifier can execute that patch only
 inside an offline least-privilege container; and the publisher can write to
 GitHub but never executes modified package code.
 
+Every zero-open-PR decision—the initial development gate, the independent
+reverification gate, and the publication gate—uses GitHub CLI pagination and
+sums every REST response page. A pull request beyond the first 100 results
+therefore still blocks development, reverification, and publication.
+
 ### 1. Read-only development and patch capture
 
 The development job has read-only GitHub permissions and checks out `main`
@@ -159,9 +164,9 @@ write.
 ## Manual operation
 
 Both workflows support `workflow_dispatch`. Manual runs use the same checks,
-concurrency, permissions, patch boundary, container isolation, and publication
-gates as scheduled runs. A manual run cannot bypass the zero-open-PR condition
-or any repository policy.
+concurrency, permissions, patch boundary, container isolation, full REST
+pagination, and publication gates as scheduled runs. A manual run cannot bypass
+the zero-open-PR condition or any repository policy.
 
 ## Agent implementation references
 
