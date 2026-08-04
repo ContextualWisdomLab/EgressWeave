@@ -42,6 +42,10 @@ from egressweave.validation import (
     validate_egress_url_details_async,
 )
 
+# RFC 8305 section 5 recommends 250 ms between Happy Eyeballs connection
+# attempts and explicitly advises against starting every candidate at once.
+_CONNECTION_ATTEMPT_DELAY_SECONDS = 0.25
+
 
 class _DenyAllAsyncTransport(httpx.AsyncBaseTransport):
     """Fail-closed transport used when no outbound authority was validated."""
@@ -106,34 +110,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def _wait_for_first_successful_stream(self, tasks: set):
-        last_error: Exception | None = None
-        while tasks:
-            done, tasks_remaining = await asyncio.wait(
-                tasks, return_when=asyncio.FIRST_COMPLETED
-            )
-            tasks.clear()
-            tasks.update(tasks_remaining)
-
-            successful_stream = None
-            for task in done:
-                try:
-                    stream = task.result()
-                except Exception as exc:  # noqa: BLE001  # pragma: no cover
-                    # Backends expose different connection exception classes;
-                    # one failed address must not abort the remaining candidates.
-                    last_error = exc
-                    continue
-
-                if successful_stream is None:
-                    successful_stream = stream
-                else:
-                    await stream.aclose()
-
-            if successful_stream is not None:
-                return successful_stream, last_error
-        return None, last_error
-
     async def connect_tcp(
         self,
         host: str | bytes,
@@ -142,28 +118,98 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
+        """Race pinned addresses gradually within one connection-timeout budget.
+
+        RFC 8305 starts one candidate first and staggers later attempts to avoid
+        unreasonable network load. Each newly started task receives only the
+        timeout budget that remains, while the first successful stream wins and
+        every losing attempt is cancelled and awaited.
+        """
         self._verify_host_port(host, port)
 
-        tasks = {
-            asyncio.create_task(
-                self._connect_validated_ip_address(
-                    address,
-                    port,
-                    timeout=timeout,
-                    local_address=local_address,
-                    socket_options=socket_options,
+        loop = asyncio.get_running_loop()
+        deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
+        address_iterator = iter(self._addresses)
+        tasks: set[asyncio.Task] = set()
+        last_error: Exception | None = None
+        more_addresses = True
+        next_attempt_at = loop.time()
+
+        def start_next_attempt() -> bool:
+            nonlocal more_addresses, next_attempt_at
+            try:
+                address = next(address_iterator)
+            except StopIteration:
+                more_addresses = False
+                return False
+
+            remaining_timeout = None
+            if deadline is not None:
+                remaining_timeout = max(0.0, deadline - loop.time())
+            tasks.add(
+                asyncio.create_task(
+                    self._connect_validated_ip_address(
+                        address,
+                        port,
+                        timeout=remaining_timeout,
+                        local_address=local_address,
+                        socket_options=socket_options,
+                    )
                 )
             )
-            for address in self._addresses
-        }
+            next_attempt_at = loop.time() + _CONNECTION_ATTEMPT_DELAY_SECONDS
+            return True
 
+        start_next_attempt()
         try:
-            (
-                successful_stream,
-                last_error,
-            ) = await self._wait_for_first_successful_stream(tasks)
-            if successful_stream is not None:
-                return successful_stream
+            while tasks:
+                wait_timeout = None
+                if more_addresses:
+                    wait_timeout = max(0.0, next_attempt_at - loop.time())
+                    if deadline is not None:
+                        remaining_budget = max(0.0, deadline - loop.time())
+                        if remaining_budget <= 0:
+                            more_addresses = False
+                            wait_timeout = None
+                        else:
+                            wait_timeout = min(wait_timeout, remaining_budget)
+
+                done, pending = await asyncio.wait(
+                    tasks,
+                    timeout=wait_timeout,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                tasks.clear()
+                tasks.update(pending)
+
+                if not done:
+                    if more_addresses:
+                        start_next_attempt()
+                    continue
+
+                successful_stream = None
+                for task in done:
+                    try:
+                        stream = task.result()
+                    except Exception as exc:  # noqa: BLE001  # pragma: no cover
+                        # Backends expose different connection exception classes;
+                        # one failed address must not abort remaining candidates.
+                        last_error = exc
+                        continue
+
+                    if successful_stream is None:
+                        successful_stream = stream
+                    else:
+                        await stream.aclose()
+
+                if successful_stream is not None:
+                    return successful_stream
+
+                if more_addresses and (not tasks or loop.time() >= next_attempt_at):
+                    if deadline is None or loop.time() < deadline:
+                        start_next_attempt()
+                    else:
+                        more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
 
