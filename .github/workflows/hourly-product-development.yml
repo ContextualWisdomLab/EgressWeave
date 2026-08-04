@@ -54,7 +54,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          open_prs="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq 'length')"
+          open_prs="$(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --paginate \
+              --slurp \
+              --jq 'map(length) | add // 0'
+          )"
           if [ "$open_prs" -eq 0 ]; then
             echo "develop=true" >>"$GITHUB_OUTPUT"
           else
@@ -297,7 +302,12 @@ jobs:
         run: |
           set -euo pipefail
           current_sha="$(git rev-parse HEAD)"
-          open_prs="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq 'length')"
+          open_prs="$(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --paginate \
+              --slurp \
+              --jq 'map(length) | add // 0'
+          )"
           if [ "$open_prs" -ne 0 ] || [ "$current_sha" != "$EXPECTED_BASE_SHA" ]; then
             echo "verify=false" >>"$GITHUB_OUTPUT"
             echo "::notice::Discarding the bounded patch because repository state changed before reverification."
@@ -454,7 +464,12 @@ jobs:
           set -euo pipefail
           patch_file="${RUNNER_TEMP}/hourly-product-change/egressweave.patch"
           current_sha="$(git rev-parse HEAD)"
-          open_prs="$(gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" --jq 'length')"
+          open_prs="$(
+            gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+              --paginate \
+              --slurp \
+              --jq 'map(length) | add // 0'
+          )"
           observed_patch_sha256="$(sha256sum "$patch_file" | awk '{print $1}')"
           if [ "$open_prs" -ne 0 ] || [ "$current_sha" != "$EXPECTED_BASE_SHA" ]; then
             echo "publish=false" >>"$GITHUB_OUTPUT"
