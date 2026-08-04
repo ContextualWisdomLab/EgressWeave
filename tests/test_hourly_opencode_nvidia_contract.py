@@ -84,7 +84,9 @@ def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
 
 def test_open_pull_request_gates_count_every_paginated_page() -> None:
     """Refuse autonomous publication when an open PR exists beyond page one."""
-    workflow = " ".join(_read(PRODUCT_WORKFLOW_PATH).split())
+    workflow = " ".join(
+        _read(PRODUCT_WORKFLOW_PATH).replace("\\\n", "").split()
+    )
     complete_query = (
         'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
         "--paginate --slurp --jq 'map(length) | add // 0'"
