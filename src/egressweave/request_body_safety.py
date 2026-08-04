@@ -7,8 +7,9 @@ module applies a finite byte budget twice: it rejects an oversized declared
 produced by synchronous and asynchronous streams. When a content length is
 present, actual stream consumption must also equal that declaration exactly.
 Each bounded request stream is single-consumption so an exhausted or replayable
-source cannot be retried under stale framing or a reset allowance. The stream
-that would exceed either boundary is closed before its over-budget chunk can be
+source cannot be retried under stale framing or a reset allowance. Non-byte
+chunks fail before downstream protocol code can serialize or report them. The
+stream that would cross any boundary is closed before the invalid chunk can be
 sent, while callers continue to receive EgressWeave's generic non-leaking denial
 error.
 """
@@ -88,13 +89,16 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
         self._iteration_started = False
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield one request under cumulative and framing-exact byte bounds."""
+        """Yield one byte-only request under cumulative and exact bounds."""
         if self._iteration_started:
             self.close()
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         for chunk in self._stream:
+            if not isinstance(chunk, bytes):
+                self.close()
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
                 self._declared_request_bytes is not None
@@ -138,13 +142,16 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
         self._iteration_started = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield one async request under cumulative and exact framing bounds."""
+        """Yield one byte-only async request under cumulative exact bounds."""
         if self._iteration_started:
             await self.aclose()
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         async for chunk in self._stream:
+            if not isinstance(chunk, bytes):
+                await self.aclose()
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
                 self._declared_request_bytes is not None
