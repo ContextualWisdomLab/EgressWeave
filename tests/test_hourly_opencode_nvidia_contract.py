@@ -19,6 +19,7 @@ OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
 )
 NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+NVIDIA_API_ENDPOINT = ".".join(("integrate", "api", "nvidia", "com")) + ":443"
 
 
 def _read(path: Path) -> str:
@@ -49,7 +50,7 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
     workflow = _read(PRODUCT_WORKFLOW_PATH)
 
     assert "egress-policy: block" in workflow
-    assert "integrate.api.nvidia.com:443" in workflow
+    assert NVIDIA_API_ENDPOINT in {line.strip() for line in workflow.splitlines()}
     assert 'OPENCODE_DISABLE_AUTOUPDATE: "true"' in workflow
     assert 'OPENCODE_DISABLE_MODELS_FETCH: "true"' in workflow
     assert 'OPENCODE_DISABLE_DEFAULT_PLUGINS: "true"' in workflow
