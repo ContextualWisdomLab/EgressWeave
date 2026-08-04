@@ -10,13 +10,13 @@ from types import SimpleNamespace
 import certifi
 import pytest
 
-from egressweave import sync_transport as sync_transport_module
-from egressweave import transport as async_transport_module
 from egressweave.tls import (
     TLSConfiguration,
     _load_client_identity,
     create_egress_ssl_context,
 )
+from egressweave import sync_transport as sync_transport_module
+from egressweave import transport as async_transport_module
 
 
 def _first_certifi_certificate() -> str:
@@ -58,6 +58,7 @@ def test_configuration_supports_explicit_tls12_compatibility() -> None:
     assert context.verify_mode is ssl.CERT_REQUIRED
     assert tls12_ciphers
     assert all(cipher["kea"] == "kx-ecdhe" for cipher in tls12_ciphers)
+    assert all(cipher["auth"] in {"auth-rsa", "auth-ecdsa"} for cipher in tls12_ciphers)
 
 
 @pytest.mark.parametrize(
