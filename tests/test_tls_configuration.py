@@ -289,7 +289,7 @@ def test_sync_transport_uses_the_injected_fresh_context(monkeypatch) -> None:
     monkeypatch.setattr(
         sync_transport_module,
         "create_egress_ssl_context",
-        lambda value: observed.setdefault("configuration", value) or expected_context,
+        lambda value: observed.update(configuration=value) or expected_context,
     )
     monkeypatch.setattr(
         sync_transport_module,
@@ -340,7 +340,7 @@ async def test_async_transport_uses_the_injected_fresh_context(monkeypatch) -> N
     monkeypatch.setattr(
         async_transport_module,
         "create_egress_ssl_context",
-        lambda value: observed.setdefault("configuration", value) or expected_context,
+        lambda value: observed.update(configuration=value) or expected_context,
     )
     monkeypatch.setattr(
         async_transport_module,
