@@ -30,9 +30,12 @@ external object lifetime and mutation order.
 Path-like values are normalized to deterministic text without expanding or
 resolving them, and filesystem or certificate parsing is deferred to context
 construction. Secret-bearing client-key passwords are excluded from
-representations and equality comparisons. Every transport owns the fresh context
-that results, eliminating post-validation caller mutation as an authority
-channel.
+representations and equality comparisons. Mutable password bytearrays are copied
+to immutable bytes at construction so later caller mutation cannot change the
+identity used to build a transport. A zero-argument callback remains an explicit
+trusted integration point for deferred secret retrieval. Every transport owns
+the fresh context that results, eliminating post-validation caller mutation as
+an authority channel.
 
 ## Trust-store semantics
 
@@ -49,13 +52,27 @@ fail at startup. Trust configuration is provider-neutral and can be injected by
 a standalone application, naruon adapter, or another CWL service without
 embedding provider-specific certificate logic in the transport.
 
+## Service identity binding
+
+RFC 9525 requires a TLS client to verify the reference identity it intended to
+reach against the server certificate. EgressWeave uses the same canonical,
+validated hostname for the exact authority decision, TLS SNI, HTTP authority,
+and Python hostname verification. Neither `TLSConfiguration` nor the request can
+introduce an independent service name.
+
+Private trust therefore changes which certification authorities are trusted; it
+does not change which service identity is expected. This keeps a private CA or
+mutual-TLS deployment from becoming a second authority channel that bypasses the
+URL policy or DNS-pinned transport.
+
 ## Mutual TLS identity
 
 `client_certificate_file` enables a client certificate identity. The private key
 may be contained in the same PEM file or supplied through
 `client_private_key_file`. `client_private_key_password` accepts the same secret
 shapes supported by Python's certificate loader, including a zero-argument
-callable for deferred secret retrieval.
+callable for deferred secret retrieval. A supplied bytearray is copied to bytes
+before it is retained.
 
 A private key or password without a certificate is rejected before filesystem
 access. Certificate and key loading errors remain startup/operator errors rather
@@ -84,6 +101,9 @@ DTLS 1.2* (RFC 10015). RFC Editor. https://www.rfc-editor.org/rfc/rfc10015.html
 
 Python Software Foundation. (2026). *ssl — TLS/SSL wrapper for socket objects*
 (Python 3 documentation). https://docs.python.org/3/library/ssl.html
+
+Saint-Andre, P., & Salz, R. (2024). *Service identity in TLS* (RFC 9525). RFC
+Editor. https://www.rfc-editor.org/rfc/rfc9525.html
 
 Salz, R., & Aviram, N. (2026). *New protocols using TLS must require TLS 1.3*
 (RFC 9852; BCP 195). RFC Editor. https://www.rfc-editor.org/rfc/rfc9852.html
