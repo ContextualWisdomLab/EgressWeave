@@ -10,13 +10,13 @@ from types import SimpleNamespace
 import certifi
 import pytest
 
+from egressweave import sync_transport as sync_transport_module
+from egressweave import transport as async_transport_module
 from egressweave.tls import (
     TLSConfiguration,
     _load_client_identity,
     create_egress_ssl_context,
 )
-from egressweave import sync_transport as sync_transport_module
-from egressweave import transport as async_transport_module
 
 
 def _first_certifi_certificate() -> str:
