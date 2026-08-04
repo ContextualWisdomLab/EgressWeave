@@ -12,6 +12,7 @@ continue to receive EgressWeave's generic non-leaking denial error.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterable, Iterator
+from contextlib import suppress
 
 import httpx
 
@@ -69,17 +70,16 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
         """Store the caller's stream and its positive policy byte budget."""
         self._stream = stream
         self._max_request_bytes = max_request_bytes
+        self._consumed_bytes = 0
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield only complete chunks that keep consumption within the budget."""
-        consumed_bytes = 0
+        """Yield chunks while preserving one cumulative budget across retries."""
         for chunk in self._stream:
-            consumed_bytes += len(chunk)
-            if consumed_bytes > self._max_request_bytes:
-                try:
+            self._consumed_bytes += len(chunk)
+            if self._consumed_bytes > self._max_request_bytes:
+                with suppress(Exception):
                     self._stream.close()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield chunk
 
     def close(self) -> None:
@@ -96,17 +96,16 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
         """Store the caller's asynchronous stream and policy byte budget."""
         self._stream = stream
         self._max_request_bytes = max_request_bytes
+        self._consumed_bytes = 0
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield only async chunks that keep consumption within the budget."""
-        consumed_bytes = 0
+        """Yield async chunks under one cumulative budget across retries."""
         async for chunk in self._stream:
-            consumed_bytes += len(chunk)
-            if consumed_bytes > self._max_request_bytes:
-                try:
+            self._consumed_bytes += len(chunk)
+            if self._consumed_bytes > self._max_request_bytes:
+                with suppress(Exception):
                     await self._stream.aclose()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield chunk
 
     async def aclose(self) -> None:
