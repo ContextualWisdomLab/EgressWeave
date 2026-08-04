@@ -12,11 +12,12 @@ from egressweave import (
     EgressPolicy,
     build_egress_http_client,
     build_egress_sync_client,
+    request_safety,
     validate_egress_url_async,
-    validate_egress_url_details,
     validate_egress_url_details_async,
+    validation,
 )
-from egressweave import request_safety, transport as async_transport, validation
+from egressweave import transport as async_transport
 from egressweave.sync_transport import _PinnedEgressSyncNetworkBackend
 from egressweave.transport import _PinnedEgressNetworkBackend
 
