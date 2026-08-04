@@ -13,11 +13,12 @@ minimum/maximum values, and arbitrary integer or text spellings fail during
 configuration construction. Certificate verification and hostname verification
 cannot be disabled.
 
-For explicit TLS 1.2 compatibility, EgressWeave offers only authenticated,
-ephemeral elliptic-curve Diffie-Hellman suites using AEAD ciphers. It does not
-offer static RSA, finite-field DH or DHE, static ECDH, anonymous, or PSK suites.
-TLS 1.3 cipher suites remain controlled by the platform's current OpenSSL
-security policy.
+For explicit TLS 1.2 compatibility, EgressWeave offers exactly six named,
+authenticated ephemeral elliptic-curve Diffie-Hellman suites using AES-GCM or
+ChaCha20-Poly1305. It does not use OpenSSL family selector expressions that
+could expand as provider inventories evolve, and it does not offer static RSA,
+finite-field DH or DHE, static ECDH, anonymous, or PSK suites. TLS 1.3 cipher
+suites remain controlled by the platform's current OpenSSL security policy.
 
 Python's default client context is intentionally the starting point because its
 verification flags, protocol defaults, and cipher policy can become more
@@ -25,9 +26,10 @@ restrictive as Python and OpenSSL evolve. RFC 10015 nevertheless imposes a
 specialized TLS 1.2 requirement that a generic default cipher inventory does not
 guarantee on every supported runtime: finite-field DHE and static RSA must not
 be offered. The implementation therefore uses one narrow, documented
-`SSLContext.set_ciphers()` call only for the explicit TLS 1.2 compatibility
-mode. The Semgrep suppression is attached to that single standards-mandated call
-and regression tests inspect the resulting TLS 1.2 cipher inventory.
+`SSLContext.set_ciphers()` call with an explicit six-suite allowlist only for the
+TLS 1.2 compatibility mode. The Semgrep suppression is attached to that single
+standards-mandated call, and regression tests verify both the literal allowlist
+and the resulting TLS 1.2 cipher inventory.
 
 ## Why the context is created internally
 
@@ -111,6 +113,9 @@ independently enforced.
 
 Aviram, N. (2026). *Deprecating obsolete key exchange methods in TLS 1.2 and
 DTLS 1.2* (RFC 10015). RFC Editor. https://www.rfc-editor.org/rfc/rfc10015.html
+
+OpenSSL Project Authors. (2026). *openssl-ciphers*. OpenSSL 3.0 documentation.
+https://docs.openssl.org/3.0/man1/openssl-ciphers/
 
 Python Software Foundation. (2026). *ssl — TLS/SSL wrapper for socket objects*
 (Python 3.14 documentation). https://docs.python.org/3/library/ssl.html
