@@ -109,6 +109,33 @@ def test_policy_change_changes_evidence_fingerprints() -> None:
     assert first_evidence.decision_fingerprint != second_evidence.decision_fingerprint
 
 
+def test_request_budget_change_changes_evidence_fingerprints() -> None:
+    """Include the outbound body budget in audit-visible policy correlation."""
+    validated = _validated_result()
+    smaller_budget = EgressPolicy.from_hosts(
+        "api.example.com",
+        max_request_bytes=4096,
+        max_response_bytes=8192,
+    )
+    larger_budget = EgressPolicy.from_hosts(
+        "api.example.com",
+        max_request_bytes=8192,
+        max_response_bytes=8192,
+    )
+
+    smaller_evidence = build_egress_decision_evidence(
+        validated,
+        policy=smaller_budget,
+    )
+    larger_evidence = build_egress_decision_evidence(
+        validated,
+        policy=larger_budget,
+    )
+
+    assert smaller_evidence.policy_fingerprint != larger_evidence.policy_fingerprint
+    assert smaller_evidence.decision_fingerprint != larger_evidence.decision_fingerprint
+
+
 def test_evidence_builder_rejects_tampered_validation_state_generically() -> None:
     """Revalidate signed state and preserve the non-leaking runtime error boundary."""
     validated = _validated_result()

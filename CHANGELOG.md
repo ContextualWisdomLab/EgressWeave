@@ -11,6 +11,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
   without exposing request paths or resolved IP addresses.
+- Add `EgressPolicy.max_request_bytes` with a secure finite 16 MiB default,
+  positive integer or ASCII decimal-string configuration, and fail-fast
+  rejection of values that could silently remove the outbound resource bound.
+
+### Security
+- Bound outbound request-body consumption in both pinned transports. Oversized
+  declared `Content-Length` values fail before connection-pool dispatch, while
+  chunked, missing-length, and dishonestly under-declared bodies are counted as
+  their synchronous or asynchronous streams are consumed. The first
+  over-budget chunk is withheld, the caller stream is closed, and the generic
+  policy error is raised, limiting CWE-400 resource exhaustion without exposing
+  policy thresholds or request details.
 
 ## [0.3.0] - 2026-08-04
 

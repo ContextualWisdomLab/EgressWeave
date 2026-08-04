@@ -6,15 +6,15 @@
 authority pairs and an HTTP-method allowlist, refuses any target that resolves
 to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
-validated addresses—rejecting authority drift and bounding every identity-coded
-response body.
+validated addresses—rejecting authority drift and bounding both outbound
+request bodies and inbound identity-coded response bodies.
 
 It exists because the naive pattern—resolve, check the IP, then
 `httpx.get(url)`—is unsafe. An attacker-controlled DNS answer can change between
 the check and the connect (a TOCTOU / DNS-rebinding attack, CWE-350), while a
 permissive URL, port, or method policy can reach unintended services (SSRF,
 CWE-918), and even an allowlisted authority can exhaust resources with an
-unbounded or compressed response (CWE-400).
+unbounded request producer or an unbounded or compressed response (CWE-400).
 
 ## What it defends against
 
@@ -31,6 +31,13 @@ unbounded or compressed response (CWE-400).
 - **Application-layer tunnelling:** a positive HTTP-method allowlist is enforced
   at the transport boundary. Common API methods are enabled by default, unusual
   methods require explicit opt-in, and `CONNECT` can never be authorized.
+- **Unbounded or ambiguously framed requests (CWE-400, CWE-444):** both
+  transports reject a declared `Content-Length` beyond the finite policy budget
+  before pool dispatch and count actual synchronous or asynchronous stream
+  bytes. A valid declared length must equal the bytes consumed exactly; excess,
+  truncation, chunked overruns, and retry-based budget resets fail closed. The
+  first chunk crossing a policy or declared boundary is withheld and its source
+  is closed without replacing the generic policy error.
 - **Unbounded response consumption (CWE-400):** both transports force
   `Accept-Encoding: identity`, reject body-bearing content-coded responses and
   unsafe declared lengths before returning a response, and count every
@@ -54,9 +61,9 @@ Release automation and package acceptance establish that a commit is ready
 to publish; they do not establish that an artifact is already available.
 A bare `pip install egressweave` command is authoritative only after the
 exact version appears on a verified PyPI project page with its wheel, source
-distribution, and publish-attestation evidence. Until then, install from a reviewed source checkout
-and preserve the repository's hash-locked validation before promoting the
-package into another system.
+distribution, and publish-attestation evidence. Until then,
+install from a reviewed source checkout and preserve the repository's
+hash-locked validation before promoting the package into another system.
 
 ## Install
 
@@ -132,12 +139,13 @@ split_service_policy = EgressPolicy.from_authorities(
 )
 ```
 
-Set an integration-specific identity response budget when the 16 MiB default is
-not appropriate:
+Set integration-specific outbound and inbound body budgets when the 16 MiB
+defaults are not appropriate:
 
 ```python
 artifact_policy = EgressPolicy.from_hosts(
     "artifacts.example.com",
+    max_request_bytes=8 * 1024 * 1024,
     max_response_bytes=64 * 1024 * 1024,
 )
 ```
@@ -156,6 +164,19 @@ The default method set is `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, and
 `OPTIONS`. Method names are validated and normalized at policy construction.
 Less common non-tunnelling methods such as `PROPFIND` require explicit opt-in.
 `CONNECT` is always rejected, including when present in configuration.
+
+The default request-body budget is 16 MiB. `max_request_bytes` accepts a
+positive integer or an ASCII decimal string for environment-variable use. Zero,
+negative, boolean, fractional, empty, signed, non-ASCII, or malformed values
+fail at policy construction. A single declared `Content-Length` greater than
+the budget is rejected before connection-pool dispatch. When a valid declared
+length is present, the actual body must contain exactly that many bytes: excess
+and truncated streams both fail closed. Chunked and missing-length streams are
+still counted against the policy limit. The byte counter remains cumulative
+across repeated iteration or retry of a replayable source, so re-consumption
+does not grant another allowance. The first chunk crossing a policy or declared
+boundary is not sent, the source stream is closed, and the generic
+`EgressNotAllowedError` is raised without disclosing thresholds or byte counts.
 
 The default response-body budget is 16 MiB. `max_response_bytes` accepts a
 positive integer or an ASCII decimal string for environment-variable use. Zero,
@@ -213,24 +234,25 @@ policy = EgressPolicy.from_hosts(
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite identity response-body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
-| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and all body-bearing responses are identity-coded and bounded. |
+| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and request and response bodies are bounded. |
+| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and request and response bodies are bounded. |
 | `build_pinned_https_client(validated, *, policy)` | Build a bounded synchronous client from an already-validated URL. |
 | `build_pinned_https_async_client(validated, *, policy)` | Build a bounded asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
 ## Compatibility note
 
-Exact authority-pair allowlisting, finite response-body limits, and identity-
-only response coding are intentional pre-1.0 secure-default tightenings.
-Applications with several hosts and several ports must migrate ambiguous
-`from_hosts(...)` configuration to explicit `from_authorities(...)` pairs.
-Integrations that legitimately consume more than 16 MiB per response must set a
-larger, still-finite `max_response_bytes` value. Integrations that require
-compressed response content need a separately reviewed client with a bounded
-streaming decoder; EgressWeave does not silently accept compression.
+Exact authority-pair allowlisting, finite request/response body limits, and
+identity-only response coding are intentional pre-1.0 secure-default
+tightenings. Applications with several hosts and several ports must migrate
+ambiguous `from_hosts(...)` configuration to explicit `from_authorities(...)`
+pairs. Integrations that legitimately upload or consume more than 16 MiB per
+message must set larger, still-finite `max_request_bytes` or
+`max_response_bytes` values. Integrations that require compressed response
+content need a separately reviewed client with a bounded streaming decoder;
+EgressWeave does not silently accept compression.
 
 ## One source, multi use (OSMU)
 
@@ -274,11 +296,15 @@ synchronous and asynchronous transports.
 See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention and
 positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
-consumption), RFC 9110 (origin authority, content coding, and `CONNECT`), RFC
-9112 (response body length), and RFC 8305 (Happy Eyeballs-style concurrent
+consumption), CWE-444 (HTTP request interpretation differentials), RFC 9110
+(origin authority, content coding, and `CONNECT`), RFC 9112 (HTTP/1.1 message
+framing and response body length), and RFC 8305 (Happy Eyeballs-style concurrent
 connect across asynchronously pinned addresses). The exact authority decision is
 specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
-and response limits in [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+outbound request limits in
+[`request-body-resource-limits.md`](docs/research/request-body-resource-limits.md),
+and response limits in
+[`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
 
 ## License
 

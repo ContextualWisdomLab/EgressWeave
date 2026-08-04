@@ -4,7 +4,8 @@ This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
-identity-coded response bodies are bounded by the injected egress policy.
+both outbound request bodies and identity-coded response bodies are bounded by
+the injected egress policy.
 """
 
 from __future__ import annotations
@@ -19,6 +20,10 @@ from httpx._config import DEFAULT_LIMITS, create_ssl_context
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
+from egressweave.request_body_safety import (
+    _BoundedSyncRequestStream,
+    _enforce_declared_request_size,
+)
 from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
@@ -174,7 +179,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one request and return a bounded identity-coded response."""
+        """Send one framing-exact bounded request and return a bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         safe_extensions = _bind_validated_tls_server_name(
@@ -185,6 +190,16 @@ class _PinnedEgressTransport(httpx.BaseTransport):
                 request.headers.raw, parsed_url.netloc.encode("ascii")
             )
         )
+        try:
+            declared_request_bytes = _enforce_declared_request_size(
+                safe_headers, self._policy.max_request_bytes
+            )
+        except EgressNotAllowedError:
+            try:
+                request.stream.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
         core_request = httpcore.Request(
             method=request.method,
@@ -195,7 +210,11 @@ class _PinnedEgressTransport(httpx.BaseTransport):
                 target=request.url.raw_path,
             ),
             headers=safe_headers,
-            content=request.stream,
+            content=_BoundedSyncRequestStream(
+                request.stream,
+                self._policy.max_request_bytes,
+                declared_request_bytes,
+            ),
             extensions=safe_extensions,
         )
         with map_httpcore_exceptions():
@@ -236,9 +255,11 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Successful response
-    bodies are requested with identity coding and limited to
-    ``policy.max_response_bytes`` during streaming and buffered reads.
+    :class:`~egressweave.validation.EgressNotAllowedError`. Request bodies are
+    limited to ``policy.max_request_bytes`` and must match a supplied
+    ``Content-Length`` exactly. Successful response bodies are requested with
+    identity coding and limited to ``policy.max_response_bytes`` during
+    streaming and buffered reads.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
@@ -267,8 +288,10 @@ def build_pinned_https_client(
 
     The supplied result is revalidated without another DNS lookup. Every
     connection is pinned to its addresses, any forged result or authority change
-    is rejected before network I/O, and every identity-coded response body is
-    constrained by ``policy.max_response_bytes``.
+    is rejected before network I/O, every outbound request body is constrained
+    by ``policy.max_request_bytes`` and exact declared framing, and every
+    identity-coded response body is constrained by
+    ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,

@@ -43,6 +43,7 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         "allowed_methods": sorted(policy.allowed_methods),
         "allow_local": policy.allow_local,
         "dns_timeout_seconds": repr(policy.dns_timeout_seconds),
+        "max_request_bytes": policy.max_request_bytes,
         "max_response_bytes": policy.max_response_bytes,
     }
     return _sha256_canonical_json(payload)
