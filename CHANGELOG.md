@@ -37,6 +37,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Require every request method reaching a pinned transport to be the exact
+  canonical uppercase RFC 9110 `token` authorized by policy. Leading or trailing
+  whitespace, embedded separators or controls, non-ASCII spellings, and
+  alternate casing now fail with the generic policy error before HTTPCore
+  dispatch, preventing malformed request-line parser differentials while
+  preserving normalized operator configuration.
 - Reject caller-supplied connection controls, protocol-upgrade fields, and
   proxy-only authentication fields before synchronous or asynchronous HTTPCore
   dispatch. `Connection`, `Keep-Alive`, `Upgrade`, `Proxy-Authenticate`,
