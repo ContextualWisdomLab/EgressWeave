@@ -3,10 +3,11 @@
 An allowlisted authority can still be attacker-controlled or compromised. Without
 an explicit consumption budget, a valid outbound request can therefore return an
 unbounded response and exhaust process memory, disk-backed buffers, or worker
-capacity. This module enforces one policy budget at three boundaries: declared
-oversized bodies are rejected before caller-visible delivery, raw transport bytes
-are bounded during transfer, and HTTPX-decoded bytes are bounded after content
-coding so compressed responses cannot amplify past the policy limit.
+capacity. EgressWeave requests identity coding, rejects a body-bearing response
+that nevertheless applies a content coding, rejects unsafe declared lengths
+before caller-visible delivery, and counts every transfer-decoded body byte while
+it is consumed. The identity-coding invariant prevents decompression expansion
+from occurring outside the byte budget.
 """
 
 from __future__ import annotations
@@ -20,25 +21,59 @@ from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
 
 
+def _force_identity_accept_encoding(
+    headers: Iterable[tuple[bytes, bytes]],
+) -> list[tuple[bytes, bytes]]:
+    """Replace caller compression preferences with one trusted identity request.
+
+    The safe request-header builder has already validated every field and placed
+    the trusted ``Host`` field last. This function removes all caller-supplied
+    ``Accept-Encoding`` fields, adds ``identity``, and preserves ``Host`` as the
+    final field. A server that ignores the request and returns a content-coded
+    body is rejected by :func:`_enforce_declared_response_size` before HTTPX can
+    allocate decompressed output outside the policy byte budget.
+    """
+    safe_headers: list[tuple[bytes, bytes]] = []
+    trusted_host: tuple[bytes, bytes] | None = None
+    for name, value in headers:
+        normalized_name = name.lower()
+        if normalized_name == b"accept-encoding":
+            continue
+        if normalized_name == b"host":
+            trusted_host = (name, value)
+            continue
+        safe_headers.append((name, value))
+
+    safe_headers.append((b"accept-encoding", b"identity"))
+    if trusted_host is not None:
+        safe_headers.append(trusted_host)
+    return safe_headers
+
+
 def _enforce_declared_response_size(
     request_method: str,
     status_code: int,
     headers: Iterable[tuple[bytes, bytes]],
     max_response_bytes: int,
 ) -> None:
-    """Reject unsafe declared response lengths before caller-visible delivery.
+    """Reject content coding or unsafe lengths before caller-visible delivery.
 
     RFC 9112 defines responses to ``HEAD`` and responses with informational,
-    204, or 304 status codes as bodyless regardless of their fields. For every
-    response that can carry a body, exactly one canonical decimal
-    ``Content-Length`` is accepted. Duplicate, comma-joined, signed, malformed,
-    or over-budget values fail behind EgressWeave's generic rejection boundary.
+    204, or 304 status codes as bodyless regardless of their fields. Their
+    representation metadata is therefore not interpreted as transferred bytes.
 
-    This preflight is an optimization and early-failure control, not the sole
-    resource limit. A server can omit ``Content-Length``, use chunked framing,
-    lie about the declared size, or apply a content coding whose decoded output
-    is much larger. The bounded raw streams and response subclass below provide
-    the authoritative transfer and decoded-consumption enforcement.
+    Every body-bearing response must be identity-coded: an absent
+    ``Content-Encoding`` or exactly one canonical ``identity`` value is allowed.
+    This pairs with the trusted ``Accept-Encoding: identity`` request field and
+    prevents a compressed chunk from expanding beyond the policy limit before a
+    post-decompression check can run. Exactly one canonical decimal
+    ``Content-Length`` is accepted when present. Duplicate, comma-joined, signed,
+    malformed, or over-budget values fail behind EgressWeave's generic rejection
+    boundary.
+
+    This metadata preflight is not the sole length control. A peer can omit or
+    under-declare ``Content-Length`` or use chunked framing, so the bounded stream
+    wrappers below count every transfer-decoded identity body chunk.
     """
     if (
         request_method == "HEAD"
@@ -47,8 +82,19 @@ def _enforce_declared_response_size(
     ):
         return
 
+    header_items = tuple(headers)
+    content_encoding_values = [
+        value for name, value in header_items if name.lower() == b"content-encoding"
+    ]
+    if len(content_encoding_values) > 1:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    if content_encoding_values:
+        content_encoding = content_encoding_values[0]
+        if content_encoding != b"identity":
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
     content_length_values = [
-        value for name, value in headers if name.lower() == b"content-length"
+        value for name, value in header_items if name.lower() == b"content-length"
     ]
     if not content_length_values:
         return
@@ -65,7 +111,7 @@ def _enforce_declared_response_size(
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
-    """Count raw sync response bytes and close on the first overrun."""
+    """Count identity-coded sync response bytes and close on first overrun."""
 
     def __init__(
         self, stream: httpx.SyncByteStream, max_response_bytes: int
@@ -75,7 +121,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield raw chunks until the next complete chunk exceeds the budget."""
+        """Yield chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         for chunk in self._stream:
             consumed_bytes += len(chunk)
@@ -92,7 +138,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
 
 
 class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
-    """Count raw async response bytes and close on the first overrun."""
+    """Count identity-coded async response bytes and close on first overrun."""
 
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
@@ -102,7 +148,7 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield raw chunks until the next complete chunk exceeds the budget."""
+        """Yield chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         async for chunk in self._stream:
             consumed_bytes += len(chunk)
@@ -116,40 +162,3 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
     async def aclose(self) -> None:
         """Release the wrapped async stream and its pooled connection."""
         await self._stream.aclose()
-
-
-class _BoundedHTTPXResponse(httpx.Response):
-    """Apply the policy budget after HTTPX content decoding as well as before it."""
-
-    def __init__(
-        self, status_code: int, *, max_response_bytes: int, **kwargs
-    ) -> None:
-        """Initialize a normal HTTPX response with a decoded-byte budget."""
-        self._max_response_bytes = max_response_bytes
-        super().__init__(status_code, **kwargs)
-
-    def iter_bytes(self, chunk_size: int | None = None) -> Iterator[bytes]:
-        """Yield decoded sync chunks without allowing decompression amplification."""
-        consumed_bytes = 0
-        for chunk in super().iter_bytes(chunk_size=chunk_size):
-            consumed_bytes += len(chunk)
-            if consumed_bytes > self._max_response_bytes:
-                try:
-                    self.close()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-            yield chunk
-
-    async def aiter_bytes(
-        self, chunk_size: int | None = None
-    ) -> AsyncIterator[bytes]:
-        """Yield decoded async chunks without allowing decompression amplification."""
-        consumed_bytes = 0
-        async for chunk in super().aiter_bytes(chunk_size=chunk_size):
-            consumed_bytes += len(chunk)
-            if consumed_bytes > self._max_response_bytes:
-                try:
-                    await self.aclose()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-            yield chunk
