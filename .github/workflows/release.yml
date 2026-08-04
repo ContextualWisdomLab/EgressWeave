@@ -148,6 +148,13 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
+          current_main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha'
+          )"
+          if [ "$current_main_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Protected main moved after artifact verification."
+            exit 1
+          fi
           existing_sha="$(
             gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" \
               --jq '.object.sha' 2>/dev/null || true
