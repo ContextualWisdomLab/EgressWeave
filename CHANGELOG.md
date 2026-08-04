@@ -57,6 +57,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version drift.
 
 ### Security
+- Reject any additional wheel or source-distribution archive before checksum
+  generation or publication, so publisher globs cannot carry an unintended
+  second package alongside the canonical EgressWeave artifacts.
 - Bind every permitted destination port to its exact normalized hostname through
   `allowed_authorities` and `EgressPolicy.from_authorities(...)`. Ambiguous
   many-host by many-port `from_hosts(...)` configuration now fails at policy
