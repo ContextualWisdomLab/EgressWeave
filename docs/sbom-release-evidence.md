@@ -93,25 +93,27 @@ controls.
 
 ## Protected release integration
 
-A future protected integration may generate both SBOMs in a read-only exact-main
-build job after distribution verification. It may add the SBOMs to the complete
+A protected integration generates both SBOMs in a read-only exact-main build job
+after distribution verification. It adds the SBOMs to the complete
 release-evidence artifact and `SHA256SUMS`, while keeping PyPI inputs limited to
 the wheel and source distribution.
 
-Attestation must run in a credential-separated job that consumes only the
-independently verified exact artifact set. Pin the current `actions/attest` SBOM
-mode to an immutable reviewed commit SHA. Grant only the permissions required by
-the reviewed action; repository contents remain read-only. Recheck GitHub's
-current permission contract during protected integration.
+Attestation runs in a credential-separated job that consumes only the
+independently verified exact artifact set. The current `actions/attest` SBOM mode
+is pinned to an immutable reviewed commit SHA. The signer receives only
+repository and artifact read access plus the OIDC, attestation, and
+artifact-metadata permissions required by the reviewed action; it does not check
+out or execute repository code.
 
-Before public GitHub Release publication, verify each attestation against the
-exact artifact SHA-256, repository identity, immutable workflow source, exact
-protected-main commit, CycloneDX predicate bytes, and release tag.
+Before public GitHub Release publication, a separate read-only job verifies each
+attestation against the exact artifact SHA-256, repository identity, immutable
+workflow source, exact protected-main commit, CycloneDX predicate bytes, hosted
+runner policy, and release tag.
 
-Public release must fail closed on any mismatch.
-A branch must never add a temporary job that publishes, moves refs, writes contents,
-pushes to a pull-request branch, self-modifies workflows, or executes
-model-modified source under a write credential.
+Public release fails closed on any mismatch. A branch must never add a temporary
+job that publishes, moves refs, writes contents, pushes to a pull-request branch,
+self-modifies workflows, or executes model-modified source under a write
+credential.
 
 ## Threats, failure, and recovery
 
@@ -138,6 +140,62 @@ EgressWeave does not infer a SLSA Build level from SBOM generation, PyPI
 attestations, or GitHub artifact attestations. Add a level claim only after every
 normative requirement for that level maps to independently verified evidence.
 
+## Signed release attestations and offline verification
+
+The protected release workflow generates one CycloneDX 1.7 document for the
+canonical wheel and one for the canonical source distribution, includes both
+SBOMs in `SHA256SUMS`, and signs each artifact/SBOM pair with
+`actions/attest` 4.1.0 pinned to commit
+`59d89421af93a897026c735860bf21b6eb4f7b26`. The signer receives only artifact
+read access plus the OIDC, attestation, and artifact-metadata permissions required
+by the current official action. It does not check out or execute repository code.
+
+A separate read-only hosted-runner job verifies the local bundle against the
+exact artifact bytes, the CycloneDX predicate type, this repository's
+`.github/workflows/release.yml` signer identity, the protected-main source ref,
+and the exact release commit. It also canonicalizes the signed predicate and
+compares it with the checksummed `.cdx.json` document byte-for-semantic-byte
+before either PyPI or GitHub Release publication can start.
+
+Online verification for one acquired artifact should be at least as strict as:
+
+```bash
+gh attestation verify egressweave-<version>-py3-none-any.whl \
+  --repo ContextualWisdomLab/EgressWeave \
+  --predicate-type https://cyclonedx.org/bom \
+  --signer-workflow ContextualWisdomLab/EgressWeave/.github/workflows/release.yml \
+  --source-digest <release-commit-sha> \
+  --source-ref refs/heads/main \
+  --deny-self-hosted-runners
+```
+
+For an offline or air-gapped environment, obtain a fresh trusted root through an
+independently authenticated online staging system, then transfer the artifact,
+its `*.sbom-attestation.json` bundle, the checksummed CycloneDX document, and the
+trusted root through controlled media:
+
+```bash
+gh attestation trusted-root > trusted_root.jsonl
+
+gh attestation verify egressweave-<version>-py3-none-any.whl \
+  --repo ContextualWisdomLab/EgressWeave \
+  --bundle egressweave-<version>-py3-none-any.whl.sbom-attestation.json \
+  --custom-trusted-root trusted_root.jsonl \
+  --predicate-type https://cyclonedx.org/bom \
+  --signer-workflow ContextualWisdomLab/EgressWeave/.github/workflows/release.yml \
+  --source-digest <release-commit-sha> \
+  --source-ref refs/heads/main \
+  --deny-self-hosted-runners
+```
+
+The transferred trusted root is itself trust material. Refresh it when importing
+newly signed material and authenticate it independently; do not accept a root
+merely because it was stored beside the artifact it is supposed to verify.
+Attestation signature verification does not replace `SHA256SUMS`, CycloneDX
+schema validation, dependency/license review, vulnerability assessment, or
+artifact behavior testing. No SLSA Build level is claimed until every normative
+requirement of a specific SLSA v1.2 level is independently mapped and verified.
+
 ## Authoritative references
 
 Ecma International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
@@ -147,8 +205,15 @@ GitHub. (n.d.). *Using artifact attestations to establish provenance for
 builds.* GitHub Docs. Retrieved August 5, 2026, from
 https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations
 
-GitHub. (2026). *actions/attest* [Computer software]. GitHub.
+GitHub. (n.d.). *Verifying attestations offline*. GitHub Docs. Retrieved August
+5, 2026, from
+https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/verify-attestations-offline
+
+GitHub. (2026). *actions/attest* (Version 4.1.0) [Computer software].
 https://github.com/actions/attest
+
+in-toto Project. (2026). *CycloneDX predicate type*. In *in-toto Attestation
+Framework*. https://github.com/in-toto/attestation/blob/main/spec/predicates/cyclonedx.md
 
 Python Packaging Authority. (n.d.). *Core metadata specifications.* Python
 Packaging User Guide. Retrieved August 5, 2026, from
