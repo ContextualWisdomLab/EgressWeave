@@ -184,6 +184,34 @@ def test_attestable_sbom_rejects_non_finite_json_numbers(
         generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
 
 
+def test_attestable_sbom_rejects_non_serializable_json_values(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject arbitrary Python objects that cannot be represented by JSON."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    _write_wheel(wheel_path)
+    foundation = generator._load_foundation_generator()
+    malformed_sbom = foundation.build_sbom(wheel_path, MANIFEST_PATH)
+    malformed_sbom["metadata"]["nonJsonValue"] = object()
+    malformed_foundation = SimpleNamespace(
+        validate_runtime_lock=lambda manifest_path, lock_path: None,
+        build_sbom=lambda artifact_path, manifest_path: dict(malformed_sbom),
+    )
+    monkeypatch.setattr(
+        generator,
+        "_load_foundation_generator",
+        lambda: malformed_foundation,
+    )
+
+    with pytest.raises(
+        SystemExit,
+        match="release SBOM foundation must produce strict JSON evidence",
+    ):
+        generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+
+
 def test_attestable_sbom_api_rejects_manifest_lock_drift(tmp_path: Path) -> None:
     """Prevent direct Python callers from bypassing executable lock parity."""
     generator = _load_generator()
