@@ -283,7 +283,7 @@ def build_evidence_manifest(
         raise SystemExit("source SHA must be exactly 40 lowercase hexadecimal characters")
 
     wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path = (
-        _select_evidence_paths(evidence_dir.resolve())
+        _select_evidence_paths(evidence_dir)
     )
     payload_paths = (wheel_path, sdist_path, wheel_sbom, sdist_sbom)
     checksums = _load_checksums(checksum_path, {path.name for path in payload_paths})
@@ -359,9 +359,12 @@ def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None
 def main() -> int:
     """Verify sealed evidence and write one deterministic credential handoff manifest."""
     arguments = _parse_arguments()
-    evidence_dir = arguments.evidence_dir.resolve()
+    evidence_dir = arguments.evidence_dir
+    resolved_evidence_dir = evidence_dir.resolve()
     output_path = arguments.output.resolve()
-    if output_path == evidence_dir or output_path.is_relative_to(evidence_dir):
+    if output_path == resolved_evidence_dir or output_path.is_relative_to(
+        resolved_evidence_dir
+    ):
         raise SystemExit("evidence manifest output must remain outside the verified set")
     manifest = build_evidence_manifest(
         evidence_dir,
