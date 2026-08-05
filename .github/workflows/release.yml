@@ -114,6 +114,28 @@ jobs:
           print(egressweave.__version__)
           PY
           )
+      - name: Generate deterministic CycloneDX SBOMs
+        run: |
+          set -euo pipefail
+          wheel="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          sdist="$(find dist -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$wheel" && test -n "$sdist"
+          python scripts/ci/generate_release_sbom.py \
+            --artifact "$wheel" \
+            --manifest scripts/ci/release_runtime_dependencies.json \
+            --lock requirements-ci.txt \
+            --output "${wheel}.cdx.json"
+          python scripts/ci/generate_release_sbom.py \
+            --artifact "$sdist" \
+            --manifest scripts/ci/release_runtime_dependencies.json \
+            --lock requirements-ci.txt \
+            --output "${sdist}.cdx.json"
+          (
+            cd dist
+            sha256sum *.whl *.tar.gz *.whl.cdx.json *.tar.gz.cdx.json \
+              | LC_ALL=C sort -k2 > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
       - name: Prepare the canonical PyPI-only artifact set
         run: |
           mkdir publish-dist
@@ -171,11 +193,133 @@ jobs:
             -f ref="refs/tags/${RELEASE_TAG}" \
             -f sha="$RELEASE_SHA"
 
+  attest-release-evidence:
+    name: Sign and verify exact CycloneDX SBOM evidence
+    needs:
+      - build-distributions
+      - create-release-tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download complete reviewed release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence
+      - name: Verify checksums and identify canonical subjects
+        id: evidence
+        run: |
+          set -euo pipefail
+          (
+            cd release-evidence
+            sha256sum --check SHA256SUMS
+          )
+          mapfile -t wheels < <(find release-evidence -maxdepth 1 -type f -name '*.whl' -print)
+          mapfile -t sdists < <(find release-evidence -maxdepth 1 -type f -name '*.tar.gz' -print)
+          if [ "${#wheels[@]}" -ne 1 ] || [ "${#sdists[@]}" -ne 1 ]; then
+            echo "::error::Attestation requires exactly one wheel and one source distribution."
+            exit 1
+          fi
+          test -f "${wheels[0]}.cdx.json"
+          test -f "${sdists[0]}.cdx.json"
+          echo "wheel=${wheels[0]}" >>"$GITHUB_OUTPUT"
+          echo "wheel_sbom=${wheels[0]}.cdx.json" >>"$GITHUB_OUTPUT"
+          echo "sdist=${sdists[0]}" >>"$GITHUB_OUTPUT"
+          echo "sdist_sbom=${sdists[0]}.cdx.json" >>"$GITHUB_OUTPUT"
+      - name: Attest wheel SBOM
+        id: attest_wheel
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ steps.evidence.outputs.wheel }}
+          sbom-path: ${{ steps.evidence.outputs.wheel_sbom }}
+      - name: Attest source distribution SBOM
+        id: attest_sdist
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ steps.evidence.outputs.sdist }}
+          sbom-path: ${{ steps.evidence.outputs.sdist_sbom }}
+      - name: Verify signed SBOM attestations against repository and predicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WHEEL: ${{ steps.evidence.outputs.wheel }}
+          WHEEL_SBOM: ${{ steps.evidence.outputs.wheel_sbom }}
+          WHEEL_BUNDLE: ${{ steps.attest_wheel.outputs.bundle-path }}
+          SDIST: ${{ steps.evidence.outputs.sdist }}
+          SDIST_SBOM: ${{ steps.evidence.outputs.sdist_sbom }}
+          SDIST_BUNDLE: ${{ steps.attest_sdist.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          signer_workflow="${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+          gh attestation verify "$WHEEL" \
+            --bundle "$WHEEL_BUNDLE" \
+            -R "$GITHUB_REPOSITORY" \
+            --predicate-type https://cyclonedx.org/bom \
+            --signer-workflow "$signer_workflow" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners \
+            --format json \
+            --jq '.[0].verificationResult.statement.predicate' \
+            > wheel.observed.cdx.json
+          gh attestation verify "$SDIST" \
+            --bundle "$SDIST_BUNDLE" \
+            -R "$GITHUB_REPOSITORY" \
+            --predicate-type https://cyclonedx.org/bom \
+            --signer-workflow "$signer_workflow" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref "$GITHUB_REF" \
+            --deny-self-hosted-runners \
+            --format json \
+            --jq '.[0].verificationResult.statement.predicate' \
+            > sdist.observed.cdx.json
+          python - "$WHEEL_SBOM" wheel.observed.cdx.json \
+            "$SDIST_SBOM" sdist.observed.cdx.json <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          for expected_name, observed_name in zip(sys.argv[1::2], sys.argv[2::2]):
+              expected = json.loads(pathlib.Path(expected_name).read_text(encoding="utf-8"))
+              observed = json.loads(pathlib.Path(observed_name).read_text(encoding="utf-8"))
+              if observed != expected:
+                  raise SystemExit(
+                      f"verified SBOM predicate did not match {expected_name!r}"
+                  )
+          PY
+      - name: Preserve Sigstore bundles and refresh evidence checksums
+        env:
+          WHEEL_BUNDLE: ${{ steps.attest_wheel.outputs.bundle-path }}
+          SDIST_BUNDLE: ${{ steps.attest_sdist.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$WHEEL_BUNDLE" release-evidence/wheel.sbom.attestation.json
+          cp "$SDIST_BUNDLE" release-evidence/sdist.sbom.attestation.json
+          (
+            cd release-evidence
+            sha256sum *.whl *.tar.gz *.cdx.json *.attestation.json \
+              | LC_ALL=C sort -k2 > SHA256SUMS
+            sha256sum --check SHA256SUMS
+          )
+      - name: Upload attested release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: attested-release-evidence-${{ github.sha }}
+          path: release-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
   publish-to-pypi:
     name: Publish to PyPI with OIDC
     needs:
       - build-distributions
       - create-release-tag
+      - attest-release-evidence
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
@@ -203,6 +347,7 @@ jobs:
     needs:
       - build-distributions
       - create-release-tag
+      - attest-release-evidence
       - publish-to-pypi
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -210,10 +355,10 @@ jobs:
       actions: read
       contents: write
     steps:
-      - name: Download complete reviewed release evidence
+      - name: Download complete attested release evidence
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: release-evidence-${{ github.sha }}
+          name: attested-release-evidence-${{ github.sha }}
           path: release-evidence
       - name: Verify the immutable release tag
         env:
