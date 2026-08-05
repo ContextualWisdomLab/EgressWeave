@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from numbers import Real
+from typing import NoReturn
 
 import pytest
 
@@ -11,12 +12,17 @@ from egressweave import EGRESS_NOT_ALLOWED, EgressNotAllowedError, EgressTimeout
 from egressweave.request_safety import _bind_bounded_request_timeouts
 
 
+def _raise_unexpected_protocol_failure(message: str) -> NoReturn:
+    """Raise one arbitrary secret-bearing failure from untrusted protocol code."""
+    raise RuntimeError(message)
+
+
 class _ExplodingTimeoutMapping(Mapping[str, object]):
-    """Expose one key but fail through the standard mapping lookup protocol."""
+    """Expose one key but raise arbitrarily when its value is retrieved."""
 
     def __getitem__(self, key: str) -> object:
-        """Raise a caller-controlled lookup failure instead of returning a value."""
-        raise KeyError("secret mapping failure")
+        """Delegate to an unexpected caller-controlled protocol failure."""
+        return _raise_unexpected_protocol_failure("secret mapping failure")
 
     def __iter__(self) -> Iterator[str]:
         """Advertise one valid timeout phase key."""
@@ -28,11 +34,11 @@ class _ExplodingTimeoutMapping(Mapping[str, object]):
 
 
 class _ExplodingReal:
-    """Behave as a registered real number whose conversion is unsupported."""
+    """Behave as a registered real number whose conversion raises arbitrarily."""
 
     def __float__(self) -> float:
-        """Raise a standard numeric-conversion error with caller-controlled text."""
-        raise TypeError("secret numeric failure")
+        """Delegate to an unexpected caller-controlled conversion failure."""
+        return _raise_unexpected_protocol_failure("secret numeric failure")
 
 
 class _ExplodingStringKey(str):
@@ -66,12 +72,12 @@ def _assert_generic_timeout_denial(timeout_value: object) -> None:
 
 
 def test_timeout_mapping_exceptions_are_masked() -> None:
-    """Mask failures raised while copying an untrusted timeout mapping."""
+    """Mask arbitrary failures raised while copying an untrusted timeout mapping."""
     _assert_generic_timeout_denial(_ExplodingTimeoutMapping())
 
 
 def test_timeout_numeric_conversion_exceptions_are_masked() -> None:
-    """Mask failures raised while converting an untrusted real-number object."""
+    """Mask arbitrary failures from an untrusted real-number conversion method."""
     _assert_generic_timeout_denial({"connect": _ExplodingReal()})
 
 
