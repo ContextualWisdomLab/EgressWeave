@@ -283,10 +283,10 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         """Send one target-, metadata-, and framing-exact bounded request."""
-        self._verify_request_target(request)
-        parsed_url = urlsplit(self._validated.normalized_url)
         request_denied = False
         try:
+            self._verify_request_target(request)
+            parsed_url = urlsplit(self._validated.normalized_url)
             safe_target = _enforce_request_target_limit(
                 request.url.raw_path,
                 self._policy.max_request_target_bytes,
