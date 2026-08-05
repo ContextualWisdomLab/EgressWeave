@@ -55,13 +55,13 @@ data.
 
 ## References
 
-Encode OSS Ltd. (2026). *Resource limits*. HTTPX documentation.
+Encode OSS. (n.d.). *Resource limits*. HTTPX.
 https://www.python-httpx.org/advanced/resource-limits/
 
-MITRE Corporation. (2026a). *CWE-400: Uncontrolled resource consumption*
-(Version 4.20). Common Weakness Enumeration.
+MITRE. (2026a). *CWE-400: Uncontrolled resource consumption* (Version 4.20).
+Common Weakness Enumeration.
 https://cwe.mitre.org/data/definitions/400.html
 
-MITRE Corporation. (2026b). *CWE-770: Allocation of resources without limits or
-throttling* (Version 4.20). Common Weakness Enumeration.
+MITRE. (2026b). *CWE-770: Allocation of resources without limits or throttling*
+(Version 4.20). Common Weakness Enumeration.
 https://cwe.mitre.org/data/definitions/770.html
