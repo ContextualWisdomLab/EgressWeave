@@ -171,3 +171,28 @@ def test_decision_evidence_is_immutable_and_serialization_is_detached() -> None:
         "PUT",
     )
     assert isinstance(evidence, EgressDecisionEvidence)
+
+
+def test_dns_address_limit_change_changes_evidence_fingerprints() -> None:
+    """Include the candidate-address budget in audit-visible policy correlation."""
+    validated = _validated_result()
+    smaller_limit = EgressPolicy.from_hosts(
+        "api.example.com",
+        max_resolved_addresses=2,
+    )
+    larger_limit = EgressPolicy.from_hosts(
+        "api.example.com",
+        max_resolved_addresses=4,
+    )
+
+    smaller_evidence = build_egress_decision_evidence(
+        validated,
+        policy=smaller_limit,
+    )
+    larger_evidence = build_egress_decision_evidence(
+        validated,
+        policy=larger_limit,
+    )
+
+    assert smaller_evidence.policy_fingerprint != larger_evidence.policy_fingerprint
+    assert smaller_evidence.decision_fingerprint != larger_evidence.decision_fingerprint
