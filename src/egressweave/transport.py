@@ -9,10 +9,10 @@ This transport closes that gap. Every outbound connection is pinned to the exact
 addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
-(``trust_env=False``), Unix sockets refused, outbound request streams are
-bounded and tied to declared framing, request-phase waits are capped, response
-header metadata is bounded, and identity-coded response bodies are bounded by
-the injected policy.
+(``trust_env=False``), Unix sockets refused, outbound request headers and streams
+are bounded and tied to declared framing, request-phase waits are capped,
+response header metadata is bounded, and identity-coded response bodies are
+bounded by the injected policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -40,6 +40,7 @@ from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
     _enforce_allowed_http_method,
+    _enforce_request_header_limits,
 )
 from egressweave.response_safety import (
     _BoundedAsyncResponseStream,
@@ -280,21 +281,26 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one framing-exact bounded request and return a bounded response."""
+        """Send one metadata- and framing-exact request and bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
-        safe_extensions = _bind_bounded_request_timeouts(
-            _bind_validated_tls_server_name(
-                request.extensions, self._validated.hostname
-            ),
-            self._policy.request_timeout_policy,
-        )
-        safe_headers = _force_identity_accept_encoding(
-            _build_safe_request_headers(
-                request.headers.raw, parsed_url.netloc.encode("ascii")
-            )
-        )
         try:
+            safe_extensions = _bind_bounded_request_timeouts(
+                _bind_validated_tls_server_name(
+                    request.extensions, self._validated.hostname
+                ),
+                self._policy.request_timeout_policy,
+            )
+            safe_headers = _force_identity_accept_encoding(
+                _build_safe_request_headers(
+                    request.headers.raw, parsed_url.netloc.encode("ascii")
+                )
+            )
+            _enforce_request_header_limits(
+                safe_headers,
+                self._policy.max_request_header_fields,
+                self._policy.max_request_header_bytes,
+            )
             declared_request_bytes = _enforce_declared_request_size(
                 safe_headers, self._policy.max_request_bytes
             )
@@ -368,7 +374,9 @@ async def build_egress_http_client(
 ) -> tuple[str | None, httpx.AsyncClient]:
     """Build a DNS-pinned, fail-closed client for ``base_url``.
 
-    Empty or absent URLs return a deny-all client. Request bodies are limited to
+    Empty or absent URLs return a deny-all client. Final outbound fields are
+    limited by ``policy.max_request_header_fields`` and
+    ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
     ``policy.request_timeout_policy``. Response headers are limited by

@@ -18,6 +18,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Add `EgressPolicy.max_request_bytes` with a secure finite 16 MiB default,
   positive integer or ASCII decimal-string configuration, and fail-fast
   rejection of values that could silently remove the outbound resource bound.
+- Add `EgressPolicy.max_request_header_fields` and
+  `EgressPolicy.max_request_header_bytes` with finite defaults of 100 fields and
+  64 KiB of final field-name and field-value bytes. Both public policy
+  constructors accept positive integers or ASCII decimal strings and reject
+  ambiguous or non-positive configuration before network I/O.
 - Add `EgressPolicy.max_response_header_fields` and
   `EgressPolicy.max_response_header_bytes` with finite defaults of 100 fields
   and 64 KiB of decoded field-name and field-value bytes. Both public policy
@@ -53,6 +58,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   over-budget chunk is withheld, the caller stream is closed, and the generic
   policy error is raised, limiting CWE-400 resource exhaustion without exposing
   policy thresholds or request details.
+- Bound final outbound request-header field fanout and cumulative name/value
+  bytes before HTTPCore connection-pool dispatch. The exact fields are counted
+  after trusted `Host` and `Accept-Encoding: identity` rewriting, repeated
+  fields count independently, malformed or failing metadata iterators fail
+  closed, rejected request streams are released synchronously or asynchronously,
+  cleanup failures remain behind the generic non-leaking denial boundary, and
+  both limits participate in deterministic policy and decision fingerprints.
 - Bound decoded response-header field fanout and cumulative name/value bytes
   before constructing a caller-visible HTTPX response. Repeated fields count
   independently, malformed downstream metadata fails closed, rejected source

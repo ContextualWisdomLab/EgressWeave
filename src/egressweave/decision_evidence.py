@@ -45,6 +45,8 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         "dns_timeout_seconds": repr(policy.dns_timeout_seconds),
         "max_resolved_addresses": policy.max_resolved_addresses,
         "max_request_bytes": policy.max_request_bytes,
+        "max_request_header_fields": policy.max_request_header_fields,
+        "max_request_header_bytes": policy.max_request_header_bytes,
         "max_response_bytes": policy.max_response_bytes,
         "max_response_header_fields": policy.max_response_header_fields,
         "max_response_header_bytes": policy.max_response_header_bytes,

@@ -14,6 +14,8 @@ import idna
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
 DEFAULT_MAX_RESOLVED_ADDRESSES = 16
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
+DEFAULT_MAX_REQUEST_HEADER_FIELDS = 100
+DEFAULT_MAX_REQUEST_HEADER_BYTES = 64 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_HEADER_FIELDS = 100
 DEFAULT_MAX_RESPONSE_HEADER_BYTES = 64 * 1024
@@ -233,6 +235,16 @@ def _normalize_positive_byte_count(value: object, field_name: str) -> int:
 def _normalize_max_request_bytes(value: object) -> int:
     """Return one positive outbound request-body byte budget."""
     return _normalize_positive_byte_count(value, "max_request_bytes")
+
+
+def _normalize_max_request_header_fields(value: object) -> int:
+    """Return one positive outbound request-header field-count budget."""
+    return _normalize_positive_count(value, "max_request_header_fields")
+
+
+def _normalize_max_request_header_bytes(value: object) -> int:
+    """Return one positive outbound request-header name/value byte budget."""
+    return _normalize_positive_byte_count(value, "max_request_header_bytes")
 
 
 def _normalize_max_response_bytes(value: object) -> int:

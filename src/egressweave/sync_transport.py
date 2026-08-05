@@ -4,8 +4,9 @@ This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
-outbound request bodies, request-phase waits, response-header metadata, and
-identity-coded response bodies are bounded by the injected egress policy.
+outbound request headers, request bodies, request-phase waits, response-header
+metadata, and identity-coded response bodies are bounded by the injected egress
+policy.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from egressweave.request_safety import (
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
     _enforce_allowed_http_method,
+    _enforce_request_header_limits,
 )
 from egressweave.response_safety import (
     _BoundedSyncResponseStream,
@@ -188,21 +190,26 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one framing-exact bounded request and return a bounded response."""
+        """Send one metadata- and framing-exact request and bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
-        safe_extensions = _bind_bounded_request_timeouts(
-            _bind_validated_tls_server_name(
-                request.extensions, self._validated.hostname
-            ),
-            self._policy.request_timeout_policy,
-        )
-        safe_headers = _force_identity_accept_encoding(
-            _build_safe_request_headers(
-                request.headers.raw, parsed_url.netloc.encode("ascii")
-            )
-        )
         try:
+            safe_extensions = _bind_bounded_request_timeouts(
+                _bind_validated_tls_server_name(
+                    request.extensions, self._validated.hostname
+                ),
+                self._policy.request_timeout_policy,
+            )
+            safe_headers = _force_identity_accept_encoding(
+                _build_safe_request_headers(
+                    request.headers.raw, parsed_url.netloc.encode("ascii")
+                )
+            )
+            _enforce_request_header_limits(
+                safe_headers,
+                self._policy.max_request_header_fields,
+                self._policy.max_request_header_bytes,
+            )
             declared_request_bytes = _enforce_declared_request_size(
                 safe_headers, self._policy.max_request_bytes
             )
@@ -279,9 +286,11 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Request bodies are
-    limited to ``policy.max_request_bytes`` and must match a supplied
-    ``Content-Length`` exactly. Request-phase timeout metadata is capped by
+    :class:`~egressweave.validation.EgressNotAllowedError`. Final outbound fields
+    are limited by ``policy.max_request_header_fields`` and
+    ``policy.max_request_header_bytes``. Request bodies are limited to
+    ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
+    exactly. Request-phase timeout metadata is capped by
     ``policy.request_timeout_policy``. Response headers are limited by
     ``policy.max_response_header_fields`` and
     ``policy.max_response_header_bytes`` before delivery. Successful response
@@ -320,11 +329,12 @@ def build_pinned_https_client(
 
     The supplied result is revalidated without another DNS lookup. Every
     connection is pinned to its addresses, any forged result or authority change
-    is rejected before network I/O, every outbound request body is constrained
-    by ``policy.max_request_bytes`` and exact declared framing, every request
-    phase is capped by ``policy.request_timeout_policy``, response metadata is
-    bounded by the finite header policy, and every identity-coded response body
-    is constrained by ``policy.max_response_bytes``.
+    is rejected before network I/O, every outbound request header section is
+    bounded after trusted rewriting, every request body is constrained by
+    ``policy.max_request_bytes`` and exact declared framing, every request phase
+    is capped by ``policy.request_timeout_policy``, response metadata is bounded
+    by the finite header policy, and every identity-coded response body is
+    constrained by ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
