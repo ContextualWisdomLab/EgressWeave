@@ -8,7 +8,8 @@ Request Forgery).
 
 The resolved addresses are returned so the transport layer can *pin* them and
 reject any post-validation host/port change — closing the validate-then-connect
-TOCTOU / DNS-rebinding gap (CWE-350).
+TOCTOU / DNS-rebinding gap (CWE-350). A finite policy cardinality also bounds
+the unique DNS-derived connection candidates retained for later attempts.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import secrets
 import socket
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
@@ -200,10 +202,30 @@ def _validate_global_address(
     return str(ip_address)
 
 
+def _validate_bounded_unique_addresses(
+    addresses: Iterable[str],
+    policy: EgressPolicy,
+    *,
+    hostname: str,
+) -> tuple[str, ...]:
+    """Validate, deduplicate, order, and bound DNS-derived address candidates."""
+    validated_addresses: list[str] = []
+    seen_addresses: set[str] = set()
+    for candidate in addresses:
+        address = _validate_global_address(candidate, policy, hostname=hostname)
+        if address in seen_addresses:
+            continue
+        if len(validated_addresses) >= policy.max_resolved_addresses:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        seen_addresses.add(address)
+        validated_addresses.append(address)
+    return tuple(validated_addresses)
+
+
 def _resolve_all_global_addresses_blocking(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
-    """Resolve and validate every address on the current worker thread."""
+    """Resolve and validate a finite unique address set on the worker thread."""
     try:
         address_infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except (OSError, UnicodeError) as exc:
@@ -211,16 +233,11 @@ def _resolve_all_global_addresses_blocking(
 
     if not address_infos:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-    addresses: list[str] = []
-    seen_addresses: set[str] = set()
-    for address_info in address_infos:
-        address = _validate_global_address(
-            str(address_info[4][0]), policy, hostname=hostname
-        )
-        if address not in seen_addresses:
-            seen_addresses.add(address)
-            addresses.append(address)
-    return tuple(addresses)
+    return _validate_bounded_unique_addresses(
+        (str(address_info[4][0]) for address_info in address_infos),
+        policy,
+        hostname=hostname,
+    )
 
 
 def _resolve_all_global_addresses(
@@ -415,11 +432,10 @@ def _revalidate_pinned_egress_url(
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
-    addresses = tuple(
-        dict.fromkeys(
-            _validate_global_address(address, policy, hostname=hostname)
-            for address in validated.addresses
-        )
+    addresses = _validate_bounded_unique_addresses(
+        validated.addresses,
+        policy,
+        hostname=hostname,
     )
     return _make_validated_egress_url(normalized_url, hostname, port, addresses)
 
