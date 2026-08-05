@@ -148,11 +148,17 @@ def test_connection_policy_changes_audit_visible_policy_fingerprints() -> None:
     validated = _validated_result()
     smaller = EgressPolicy.from_hosts(
         "api.example.com",
-        connection_policy=EgressConnectionPolicy(max_connections=7),
+        connection_policy=EgressConnectionPolicy(
+            max_connections=7,
+            max_keepalive_connections=2,
+        ),
     )
     larger = EgressPolicy.from_hosts(
         "api.example.com",
-        connection_policy=EgressConnectionPolicy(max_connections=8),
+        connection_policy=EgressConnectionPolicy(
+            max_connections=8,
+            max_keepalive_connections=2,
+        ),
     )
 
     smaller_evidence = build_egress_decision_evidence(validated, policy=smaller)
