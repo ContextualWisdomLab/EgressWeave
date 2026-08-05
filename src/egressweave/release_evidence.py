@@ -324,8 +324,12 @@ def _load_source_identity(
     return document["repository"], document["sourceSha"]
 
 
-def _load_strict_json(path: Path) -> dict[str, Any]:
-    """Load one stable bounded RFC 8259 object without duplicate names."""
+def _load_strict_json(
+    path: Path,
+    *,
+    expected_digest: str | None = None,
+) -> dict[str, Any]:
+    """Load strict bounded JSON and optionally bind it to a sealed digest."""
     label = f"SBOM {path.name}"
     digest_before = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
     try:
@@ -349,6 +353,8 @@ def _load_strict_json(path: Path) -> dict[str, Any]:
         digest_after=digest_after,
         label=label,
     )
+    if expected_digest is not None and digest_after != expected_digest:
+        raise SystemExit(f"{label} does not match the sealed digest")
     if type(document) is not dict:
         raise SystemExit(f"{label} must be a JSON object")
     return document
@@ -391,9 +397,10 @@ def _verify_sbom(
     artifact_name: str,
     artifact_digest: str,
     version: str,
+    expected_digest: str,
 ) -> str:
     """Verify exact CycloneDX identity and root-artifact binding for one SBOM."""
-    document = _load_strict_json(sbom_path)
+    document = _load_strict_json(sbom_path, expected_digest=expected_digest)
     required_envelope = {
         "$schema": CYCLONEDX_SCHEMA,
         "bomFormat": CYCLONEDX_FORMAT,
@@ -518,6 +525,7 @@ def build_evidence_manifest(
             artifact_name=artifact_path.name,
             artifact_digest=artifact_digest,
             version=version,
+            expected_digest=observed_digests[sbom_path.name],
         )
         artifacts.append(
             {
