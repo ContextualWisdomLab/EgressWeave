@@ -35,24 +35,55 @@ branch.
 ## Zero-PR product-development loop
 
 `.github/workflows/hourly-product-development.yml` uses three fresh Ubuntu 24.04
-runners. The model job can only emit a bounded patch; the reverifier can execute
-that patch only inside an offline least-privilege container; and the publisher
-can write to GitHub but never executes modified package code.
+runners. The model job can only emit a bounded patch and does not execute
+model-modified repository code; the reverifier can execute that patch only
+inside an offline least-privilege container; and the publisher can write to
+GitHub but never executes modified package code.
+
+Every zero-open-PR decision—the initial development gate, the independent
+reverification gate, and the publication gate—uses GitHub CLI pagination and
+sums every REST response page. A pull request beyond the first 100 results
+therefore still blocks development, reverification, and publication.
 
 ### 1. Read-only development and patch capture
 
 The development job has read-only GitHub permissions and checks out `main`
 without persisted credentials. It exits before model use whenever any pull
 request is open. It installs the trusted base toolchain, creates a root-owned
-read-only baseline outside the model workspace, and then runs the commit-pinned
-OpenAI Codex Action with:
+read-only baseline outside the model workspace, and then runs OpenCode 1.18.13
+from the official Linux x64 release asset only after verifying SHA-256
+`8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937`.
+The repository secret `NVIDIA_NIM_API_KEY` is exposed only to that process
+through OpenCode's documented `NVIDIA_API_KEY` provider variable. The explicit
+model is `nvidia/nemotron-3-super-120b-a12b`.
 
-- the `:workspace` permission profile and `drop-sudo` safety strategy;
-- a static repository-specific maintenance prompt;
-- no repository write token;
-- no permission to edit workflows, guard scripts, dependencies, or build
-  configuration;
+The model execution boundary provides:
+
+- block-mode runner egress restricted to the reviewed package sources, GitHub,
+  and `integrate.api.nvidia.com:443`;
+- deny-by-default OpenCode permissions, with edits limited to the normal bounded
+  source, test, documentation, README, and CHANGELOG paths;
+- an isolated empty `HOME` and XDG configuration/data/cache roots, plus
+  `OPENCODE_DISABLE_PROJECT_CONFIG=true`, so repository or runner OpenCode
+  configuration, auto-discovered agents, commands, and plugins cannot augment
+  the reviewed in-memory permission policy;
+- no model web tools, external-directory access, task delegation, skill loading,
+  language-server execution, shell network commands, repository write token, or
+  workflow edits;
+- no Ruff, pytest, compileall, Python-module, code-generation, or other
+  model-modified repository execution while the model credential is present;
+  only exact read-only Git diff/status shell commands are permitted;
+- disabled OpenCode auto-update, remote model-list refresh, default plugins, and
+  LSP downloads;
+- an exact credential-disclosure scan that reports only affected paths and never
+  prints the secret value;
 - a maximum of ten files and 1,000 changed lines.
+
+The model must place a focused regression test before its production change,
+but it cannot execute either one in the credential-bearing step. Executable
+validation is deliberately deferred to the fresh secret-free verifier so a
+repository prompt injection cannot turn a generated test, import hook, plugin,
+or language server into a credential-reading program.
 
 After model execution, only the protected baseline copy of
 `scripts/ci/hourly_product_guard.py` runs on the host. It uses an alternate Git
@@ -118,7 +149,8 @@ larger than 1,000 changed lines.
 
 The scheduled product-development workflow requires:
 
-- `OPENAI_API_KEY` for the Codex Action's secured Responses API proxy;
+- `NVIDIA_NIM_API_KEY`, mapped only to OpenCode's `NVIDIA_API_KEY`
+  environment variable for the NVIDIA NIM endpoint;
 - either `PR_REVIEW_MERGE_TOKEN`, `OPENCODE_APPROVE_TOKEN`, or a working
   organization OpenCode App OIDC exchange for a write identity that triggers
   downstream pull-request events;
@@ -132,6 +164,17 @@ write.
 ## Manual operation
 
 Both workflows support `workflow_dispatch`. Manual runs use the same checks,
-concurrency, permissions, patch boundary, container isolation, and publication
-gates as scheduled runs. A manual run cannot bypass the zero-open-PR condition
-or any repository policy.
+concurrency, permissions, patch boundary, container isolation, full REST
+pagination, and publication gates as scheduled runs. A manual run cannot bypass
+the zero-open-PR condition or any repository policy.
+
+## Agent implementation references
+
+Anomaly. (2026). *OpenCode CLI documentation*.
+https://opencode.ai/docs/cli/
+
+Anomaly. (2026). *OpenCode providers: NVIDIA*.
+https://opencode.ai/docs/providers/
+
+NVIDIA Corporation. (2026). *NVIDIA Nemotron 3 Super 120B A12B model card*.
+https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard
