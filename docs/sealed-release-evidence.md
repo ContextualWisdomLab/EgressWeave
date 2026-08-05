@@ -18,7 +18,8 @@ repository-level completion remains tracked in
 
 ## Exact six-file input contract
 
-The evidence directory must be a canonical absolute path to a real directory.
+The verifier computes the lexical absolute form of the supplied evidence path and
+requires it to equal the strict filesystem-resolved path to a real directory.
 Neither the final directory nor any ancestor component may be a symbolic link.
 After this check, the verifier uses the resolved real path for every subsequent
 read so retargeting a caller-supplied ancestor link cannot change the verified
@@ -223,6 +224,9 @@ Bray, T. (2017). *The JavaScript Object Notation (JSON) data interchange format*
 (RFC 8259). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC8259
 
+CWE Content Team. (2026). *CWE-59: Improper link resolution before file access
+('link following').* MITRE. https://cwe.mitre.org/data/definitions/59.html
+
 Davis, K. R., Peabody, B., & Leach, P. J. (2024). *Universally unique
 identifiers (UUIDs)* (RFC 9562). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC9562
@@ -242,9 +246,6 @@ IEEE Computer Society. (2018). *IEEE standard for information technology—Porta
 operating system interface (POSIX®) base specifications, Issue 7* (IEEE Std
 1003.1-2017). The Open Group.
 https://pubs.opengroup.org/onlinepubs/9699919799/
-
-MITRE. (2024). *CWE-59: Improper link resolution before file access ('link
-following').* https://cwe.mitre.org/data/definitions/59.html
 
 The in-toto Project. (n.d.). *Attestation framework specification.* GitHub.
 Retrieved August 6, 2026, from
