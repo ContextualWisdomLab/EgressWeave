@@ -123,13 +123,16 @@ fail-closed verification boundary, not a substitute for immutable storage or an
 independently supplied container digest.
 
 The output path must remain outside the verified directory so manifest creation
-cannot change the set it just accepted. Before touching the output path, the
-writer detaches one strict RFC 8259 JSON snapshot and rejects non-object,
-non-finite, Python-only, or structurally coerced values. It then creates a new
-owner-only file through an exclusive descriptor, refuses an existing path or
-final-path symlink, flushes and durably synchronizes the bytes, and rechecks that
-the path still names the same regular descriptor. It never overwrites a prior
-manifest.
+cannot change the set it just accepted. The CLI checks the resolved location
+before evidence verification. Immediately before descriptor creation, after the
+new descriptor is bound to its path, and again after durable synchronization,
+the writer resolves the current output parent and rejects any redirection into
+the verified directory. Before touching the output path, it also detaches one
+strict RFC 8259 JSON snapshot and rejects non-object, non-finite, Python-only, or
+structurally coerced values. It creates a new owner-only file through an exclusive
+descriptor, refuses an existing path or final-path symlink, flushes and durably
+synchronizes the bytes, and rechecks that the path still names the same regular
+descriptor. It never overwrites a prior manifest.
 
 Manifest format version 2 records:
 
@@ -162,7 +165,8 @@ credential-free build and a credentialed attestation boundary. It rejects:
 - an alternate valid SBOM or source identity exposed only during semantic parsing
   while different bytes remain named by the accepted checksum digest;
 - pre-existing, symlinked, replaced, non-private, or non-strict handoff-manifest
-  output paths and payloads;
+  output paths and payloads, including an output parent redirected into the
+  verified evidence directory during verification;
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
