@@ -285,6 +285,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         """Send one target-, metadata-, and framing-exact bounded request."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
+        request_denied = False
         try:
             safe_target = _enforce_request_target_limit(
                 request.url.raw_path,
@@ -310,6 +311,8 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 safe_headers, self._policy.max_request_bytes
             )
         except EgressNotAllowedError:
+            request_denied = True
+        if request_denied:
             try:
                 await request.stream.aclose()
             except Exception:  # noqa: BLE001, S110
