@@ -212,6 +212,43 @@ def test_attestable_sbom_rejects_non_serializable_json_values(
         generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        (1, "numeric object key"),
+        ("tupleValue", ("array-like but not exact JSON",)),
+    ],
+)
+def test_attestable_sbom_rejects_python_json_coercions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    key: object,
+    value: object,
+) -> None:
+    """Reject Python values that ``json.dumps`` would silently coerce."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    _write_wheel(wheel_path)
+    foundation = generator._load_foundation_generator()
+    malformed_sbom = foundation.build_sbom(wheel_path, MANIFEST_PATH)
+    malformed_sbom["metadata"][key] = value
+    malformed_foundation = SimpleNamespace(
+        validate_runtime_lock=lambda manifest_path, lock_path: None,
+        build_sbom=lambda artifact_path, manifest_path: dict(malformed_sbom),
+    )
+    monkeypatch.setattr(
+        generator,
+        "_load_foundation_generator",
+        lambda: malformed_foundation,
+    )
+
+    with pytest.raises(
+        SystemExit,
+        match="release SBOM foundation must produce strict JSON evidence",
+    ):
+        generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+
+
 def test_attestable_sbom_api_rejects_manifest_lock_drift(tmp_path: Path) -> None:
     """Prevent direct Python callers from bypassing executable lock parity."""
     generator = _load_generator()
