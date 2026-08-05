@@ -3,9 +3,10 @@
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
 HTTP methods those authorities may receive, finite request- and response-body
-budgets, and an ``allow_local`` escape hatch for local development stacks:
-built-in local names are bound to loopback, while explicit Docker-container
-names may resolve to RFC 1918 or RFC 4193 addresses.
+budgets, finite request-phase timeout ceilings, and an ``allow_local`` escape
+hatch for local development stacks: built-in local names are bound to loopback,
+while explicit Docker-container names may resolve to RFC 1918 or RFC 4193
+addresses.
 
 Construct a concise one-port policy explicitly::
 
@@ -33,6 +34,11 @@ from dataclasses import dataclass
 from numbers import Real
 
 import idna
+
+from egressweave.timeout_policy import (
+    DEFAULT_EGRESS_TIMEOUT_POLICY,
+    EgressTimeoutPolicy,
+)
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
@@ -256,6 +262,10 @@ class EgressPolicy:
     ``CONNECT`` is always invalid because it can ask an allowlisted proxy to open
     a tunnel to a second, unvalidated destination.
 
+    ``request_timeout_policy`` caps the connect, read, write, and pool timeout
+    values delegated to HTTPCore. Missing or explicitly disabled request values
+    receive the finite policy maximum, while stricter caller values are retained.
+
     ``max_request_bytes`` is the largest outbound request body a returned client
     will consume from its caller. The finite 16 MiB default rejects an oversized
     declared length before pool dispatch and also counts actual synchronous or
@@ -278,11 +288,16 @@ class EgressPolicy:
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     allowed_authorities: frozenset[tuple[str, int]] | None = None
     max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
         if not isinstance(self.allow_local, bool):
             raise TypeError("allow_local must be a boolean")
+        if not isinstance(self.request_timeout_policy, EgressTimeoutPolicy):
+            raise TypeError(
+                "request_timeout_policy must be an EgressTimeoutPolicy"
+            )
 
         timeout = self.dns_timeout_seconds
         if (
@@ -378,6 +393,7 @@ class EgressPolicy:
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
         allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
@@ -413,6 +429,7 @@ class EgressPolicy:
             dns_timeout_seconds=dns_timeout_seconds,
             allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
+            request_timeout_policy=request_timeout_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
         )
@@ -425,6 +442,7 @@ class EgressPolicy:
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
@@ -452,6 +470,7 @@ class EgressPolicy:
             dns_timeout_seconds=dns_timeout_seconds,
             allowed_ports=frozenset(port for _, port in normalized_authorities),
             allowed_methods=frozenset(method_items),
+            request_timeout_policy=request_timeout_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
             allowed_authorities=normalized_authorities,
