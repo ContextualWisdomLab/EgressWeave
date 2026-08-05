@@ -23,22 +23,12 @@ Asynchronous usage::
     )
 """
 
-from egressweave import policy as _policy_module
-from egressweave._policy_normalization import (
-    DEFAULT_MAX_RESPONSE_HEADER_BYTES,
-    DEFAULT_MAX_RESPONSE_HEADER_FIELDS,
-)
-from egressweave.response_header_policy import EgressPolicy
-
-_policy_module.EgressPolicy = EgressPolicy
-_policy_module.DEFAULT_MAX_RESPONSE_HEADER_BYTES = DEFAULT_MAX_RESPONSE_HEADER_BYTES
-_policy_module.DEFAULT_MAX_RESPONSE_HEADER_FIELDS = DEFAULT_MAX_RESPONSE_HEADER_FIELDS
-
 from egressweave.decision_evidence import (
     DECISION_EVIDENCE_SCHEMA_VERSION,
     EgressDecisionEvidence,
     build_egress_decision_evidence,
 )
+from egressweave.policy import EgressPolicy
 from egressweave.sync_transport import (
     build_egress_sync_client,
     build_pinned_https_client,
