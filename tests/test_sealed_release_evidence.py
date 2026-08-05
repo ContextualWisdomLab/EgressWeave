@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from egressweave import release_evidence as v
 from test_sealed_release_evidence_source_identity import (
     REPOSITORY,
     SOURCE_SHA,
@@ -18,6 +17,8 @@ from test_sealed_release_evidence_source_identity import (
     _evidence,
     _sbom,
 )
+
+from egressweave import release_evidence as v
 
 SCRIPT = Path(v.__file__).resolve()
 
