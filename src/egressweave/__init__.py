@@ -23,6 +23,7 @@ Asynchronous usage::
     )
 """
 
+from egressweave.connection_pool_policy import EgressConnectionPoolPolicy
 from egressweave.decision_evidence import (
     DECISION_EVIDENCE_SCHEMA_VERSION,
     EgressDecisionEvidence,
@@ -54,6 +55,7 @@ __version__ = "0.3.0"
 __all__ = [
     "DECISION_EVIDENCE_SCHEMA_VERSION",
     "EGRESS_NOT_ALLOWED",
+    "EgressConnectionPoolPolicy",
     "EgressDecisionEvidence",
     "EgressNotAllowedError",
     "EgressPolicy",
