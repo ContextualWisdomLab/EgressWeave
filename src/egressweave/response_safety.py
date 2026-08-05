@@ -1,13 +1,13 @@
-"""Response-body resource limits shared by synchronous and async transports.
+"""Response resource limits shared by synchronous and asynchronous transports.
 
 An allowlisted authority can still be attacker-controlled or compromised. Without
-an explicit consumption budget, a valid outbound request can therefore return an
-unbounded response and exhaust process memory, disk-backed buffers, or worker
-capacity. EgressWeave requests identity coding, rejects a body-bearing response
-that nevertheless applies a content coding, rejects unsafe declared lengths
-before caller-visible delivery, and counts every transfer-decoded body byte while
-it is consumed. The identity-coding invariant prevents decompression expansion
-from occurring outside the byte budget.
+explicit consumption budgets, a valid outbound request can return an unbounded
+field section or body and exhaust process memory, disk-backed buffers, or worker
+capacity. EgressWeave bounds decoded response-header fields and their name/value
+bytes, requests identity coding, rejects a body-bearing response that nevertheless
+applies a content coding, rejects unsafe declared lengths before caller-visible
+delivery, and counts every transfer-decoded body byte while it is consumed. The
+identity-coding invariant prevents decompression expansion outside the byte budget.
 """
 
 from __future__ import annotations
@@ -19,6 +19,44 @@ import httpx
 from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
+
+
+def _coerce_response_header_item(item: object) -> tuple[bytes, bytes] | None:
+    """Return one exact byte header pair or ``None`` without leaking failures."""
+    try:
+        name, value = item  # type: ignore[misc]
+    except Exception:  # noqa: BLE001
+        return None
+    if type(name) is not bytes or type(value) is not bytes:
+        return None
+    return name, value
+
+
+def _enforce_response_header_limits(
+    headers: Iterable[tuple[bytes, bytes]],
+    max_response_header_fields: int,
+    max_response_header_bytes: int,
+) -> None:
+    """Reject response metadata exceeding field-count or name/value budgets.
+
+    RFC 9110 leaves received field limits to implementations. Repeated fields,
+    including ``Set-Cookie``, count independently. The byte budget sums each
+    decoded field name and value exactly once. Structural protocol overhead is
+    controlled separately by the finite field count, keeping accounting stable
+    across HTTP versions. Malformed downstream metadata fails through the same
+    generic policy boundary as an exceeded budget.
+    """
+    field_bytes = 0
+    for field_count, item in enumerate(headers, start=1):
+        normalized_item = _coerce_response_header_item(item)
+        if normalized_item is None:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        name, value = normalized_item
+        if field_count > max_response_header_fields:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        field_bytes += len(name) + len(value)
+        if field_bytes > max_response_header_bytes:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
 
 def _force_identity_accept_encoding(
