@@ -7,6 +7,11 @@
       "httpcore",
       "httpx",
       "idna"
+    ],
+    "requires_dist": [
+      "httpcore<2.0,>=1.0",
+      "httpx<0.29,>=0.28",
+      "idna<4,>=3.18"
     ]
   },
   "components": [
