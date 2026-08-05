@@ -25,16 +25,20 @@ never weaken a check to make a test pass.
    validated one. Do not remove or "optimize away" that re-validation.
 6. **No redirects, no environment proxies, no Unix sockets, no embedded
    credentials, no query/fragment, no plaintext `http` to remote hosts.**
-7. **Bound response consumption.** Identity-coded response bodies must remain
-   within the policy's finite decoded-byte budget in both sync and async clients.
+7. **Bound transport resources.** Connection-pool capacity, request targets,
+   request metadata and bodies, request-phase waits, response metadata, and
+   identity-coded response bodies must remain within finite injected policy
+   limits in both synchronous and asynchronous clients.
 8. **Error messages stay generic** — never leak which rule rejected a target or
    which internal host was probed.
 
 ## Maintenance notes
 
-- The transport depends on `httpx._config`, `httpx._transports.default`, and
-  `httpcore._backends.auto` — private APIs. `httpx`/`httpcore` are version-pinned
-  in `pyproject.toml`; when bumping them, run the suite and confirm those symbols
+- The transport depends on `httpx._transports.default` and
+  `httpcore._backends.auto` private APIs. Connection-pool limits are owned by
+  `EgressConnectionPoolPolicy`; do not reintroduce HTTPX private
+  `DEFAULT_LIMITS` coupling. `httpx`/`httpcore` are version-pinned in
+  `pyproject.toml`; when bumping them, run the suite and confirm those symbols
   still exist and behave the same.
 - TDD: add a failing test for any new rejection/acceptance rule before the code.
 - Every shipped module, class, function, and method requires a useful docstring.
@@ -60,8 +64,10 @@ a failing quality gate, not an advisory metric.
 
 ## Code-owner review gates — disabled (on hold)
 
-As of 2026-08-04, code-owner review requirements (`require_code_owner_reviews` in branch
-protection, `require_code_owner_review` in rulesets) are disabled across the ContextualWisdomLab
-org: there is a single maintainer (solo developer), so a code-owner approval gate can never be
-satisfied. This is ON HOLD until the org has multiple maintainers — do NOT re-enable these
-settings or add CODEOWNERS-based merge gates before then.
+As of 2026-08-04, code-owner review requirements
+(`require_code_owner_reviews` in branch protection,
+`require_code_owner_review` in rulesets) are disabled across the
+ContextualWisdomLab org: there is a single maintainer (solo developer), so a
+code-owner approval gate can never be satisfied. This is ON HOLD until the org
+has multiple maintainers — do NOT re-enable these settings or add
+CODEOWNERS-based merge gates before then.
