@@ -9,6 +9,8 @@ import uuid
 import zipfile
 from pathlib import Path
 
+import pytest
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = (
     REPOSITORY_ROOT / "scripts" / "ci" / "generate_attestable_release_sbom.py"
@@ -57,8 +59,8 @@ def test_attestable_sbom_has_deterministic_rfc4122_document_identity(
     wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
     _write_wheel(wheel_path)
 
-    first = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH)
-    second = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH)
+    first = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+    second = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
 
     assert first == second
     assert first["serialNumber"].startswith("urn:uuid:")
@@ -68,7 +70,7 @@ def test_attestable_sbom_has_deterministic_rfc4122_document_identity(
 
     changed_path = tmp_path / "egressweave-0.3.0-changed-py3-none-any.whl"
     _write_wheel(changed_path, marker=b"changed exact artifact bytes")
-    changed = generator.build_attestable_sbom(changed_path, MANIFEST_PATH)
+    changed = generator.build_attestable_sbom(changed_path, MANIFEST_PATH, LOCK_PATH)
     assert changed["serialNumber"] != first["serialNumber"]
 
 
@@ -80,12 +82,27 @@ def test_attestable_sbom_matches_pinned_actions_attest_cyclonedx_contract(
     wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
     _write_wheel(wheel_path)
 
-    sbom = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH)
+    sbom = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
 
     assert sbom["bomFormat"] == "CycloneDX"
     assert sbom["specVersion"] == "1.7"
     assert sbom["serialNumber"]
     assert generator.ATTESTATION_PREDICATE_TYPE == "https://cyclonedx.org/bom"
+
+
+def test_attestable_sbom_api_rejects_manifest_lock_drift(tmp_path: Path) -> None:
+    """Prevent direct Python callers from bypassing executable lock parity."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    manifest_path = tmp_path / "runtime-dependencies.json"
+    _write_wheel(wheel_path)
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    manifest["components"][0]["version"] = "99.0.0"
+    manifest["components"][0]["purl"] = "pkg:pypi/anyio@99.0.0"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="does not match the hash-locked runtime subset"):
+        generator.build_attestable_sbom(wheel_path, manifest_path, LOCK_PATH)
 
 
 def test_attestable_sbom_cli_writes_byte_stable_json(
