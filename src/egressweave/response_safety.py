@@ -43,20 +43,31 @@ def _enforce_response_header_limits(
     including ``Set-Cookie``, count independently. The byte budget sums each
     decoded field name and value exactly once. Structural protocol overhead is
     controlled separately by the finite field count, keeping accounting stable
-    across HTTP versions. Malformed downstream metadata fails through the same
-    generic policy boundary as an exceeded budget.
+    across HTTP versions. Malformed downstream metadata, including an iterator
+    that fails while yielding fields, is masked behind the same generic policy
+    boundary as an exceeded budget.
     """
+    denied = False
     field_bytes = 0
-    for field_count, item in enumerate(headers, start=1):
-        normalized_item = _coerce_response_header_item(item)
-        if normalized_item is None:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
-        name, value = normalized_item
-        if field_count > max_response_header_fields:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
-        field_bytes += len(name) + len(value)
-        if field_bytes > max_response_header_bytes:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+    try:
+        for field_count, item in enumerate(headers, start=1):
+            if field_count > max_response_header_fields:
+                denied = True
+                break
+            normalized_item = _coerce_response_header_item(item)
+            if normalized_item is None:
+                denied = True
+                break
+            name, value = normalized_item
+            field_bytes += len(name) + len(value)
+            if field_bytes > max_response_header_bytes:
+                denied = True
+                break
+    except Exception:  # noqa: BLE001
+        denied = True
+
+    if denied:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
 
 def _force_identity_accept_encoding(
