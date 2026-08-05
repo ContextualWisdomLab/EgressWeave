@@ -98,6 +98,7 @@ def test_attestable_sbom_matches_pinned_actions_attest_cyclonedx_contract(
         ("bomFormat", "NotCycloneDX"),
         ("specVersion", "1.6"),
         ("version", 0),
+        ("version", True),
     ],
 )
 def test_attestable_sbom_rejects_non_cyclonedx_1_7_foundation_output(
@@ -116,6 +117,31 @@ def test_attestable_sbom_rejects_non_cyclonedx_1_7_foundation_output(
     malformed_foundation = SimpleNamespace(
         validate_runtime_lock=lambda manifest_path, lock_path: None,
         build_sbom=lambda artifact_path, manifest_path: dict(malformed_sbom),
+    )
+    monkeypatch.setattr(
+        generator,
+        "_load_foundation_generator",
+        lambda: malformed_foundation,
+    )
+
+    with pytest.raises(
+        SystemExit,
+        match="release SBOM foundation must produce exact CycloneDX 1.7 evidence",
+    ):
+        generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+
+
+def test_attestable_sbom_rejects_non_object_foundation_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject non-object JSON before any attestable identity can be attached."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    _write_wheel(wheel_path)
+    malformed_foundation = SimpleNamespace(
+        validate_runtime_lock=lambda manifest_path, lock_path: None,
+        build_sbom=lambda artifact_path, manifest_path: [],
     )
     monkeypatch.setattr(
         generator,
