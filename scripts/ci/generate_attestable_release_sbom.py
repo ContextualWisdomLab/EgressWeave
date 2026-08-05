@@ -29,6 +29,10 @@ FOUNDATION_PROFILE_ERROR = (
     "release SBOM foundation must produce exact CycloneDX 1.7 evidence"
 )
 STRICT_JSON_ERROR = "release SBOM foundation must produce strict JSON evidence"
+MISSING_SERIAL_ERROR = "attestable SBOM requires a deterministic serialNumber"
+STALE_SERIAL_ERROR = (
+    "attestable SBOM serialNumber does not match complete document"
+)
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -146,6 +150,28 @@ def _serial_number(sbom: dict[str, Any]) -> str:
     return f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, identity_url)}"
 
 
+def _validate_attestable_sbom(sbom: dict[str, Any]) -> dict[str, Any]:
+    """Revalidate the complete mutable document immediately before output.
+
+    The builder returns an ordinary JSON-compatible mapping so release tooling
+    can inspect it. A caller could accidentally mutate that mapping after the
+    deterministic identity was derived. The writer therefore removes the serial
+    from a detached top-level copy, revalidates the CycloneDX foundation and
+    strict JSON semantics, recomputes the expected identity, and refuses output
+    unless the supplied serial still binds the complete document.
+    """
+    serial_number = sbom.get("serialNumber")
+    if type(serial_number) is not str:
+        raise SystemExit(MISSING_SERIAL_ERROR)
+
+    unsigned_sbom = dict(sbom)
+    del unsigned_sbom["serialNumber"]
+    _validate_foundation_sbom(unsigned_sbom)
+    if serial_number != _serial_number(unsigned_sbom):
+        raise SystemExit(STALE_SERIAL_ERROR)
+    return sbom
+
+
 def build_attestable_sbom(
     artifact_path: Path,
     manifest_path: Path,
@@ -164,9 +190,10 @@ def build_attestable_sbom(
 
 
 def write_attestable_sbom(sbom: dict[str, Any], output_path: Path) -> None:
-    """Write stable sorted UTF-8 JSON through the reviewed foundation writer."""
+    """Rebind identity and write stable JSON through the foundation writer."""
+    validated_sbom = _validate_attestable_sbom(sbom)
     foundation = _load_foundation_generator()
-    foundation.write_sbom(sbom, output_path)
+    foundation.write_sbom(validated_sbom, output_path)
 
 
 def main() -> int:
