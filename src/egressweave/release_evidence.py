@@ -593,13 +593,34 @@ def _open_exclusive_manifest(path: str, flags: int) -> int:
     return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
 
 
-def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None:
-    """Create one private descriptor-bound manifest without replacing a path."""
+def _require_output_outside_verified_set(
+    output_path: Path,
+    verified_root: Path,
+) -> None:
+    """Require the current output location to remain outside verified evidence."""
+    try:
+        resolved_parent = output_path.parent.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit("evidence manifest parent directory is unavailable") from error
+    resolved_output = resolved_parent / output_path.name
+    if resolved_output == verified_root or resolved_output.is_relative_to(verified_root):
+        raise SystemExit("evidence manifest output must remain outside the verified set")
+
+
+def write_evidence_manifest(
+    manifest: dict[str, Any],
+    output_path: Path,
+    *,
+    forbidden_root: Path | None = None,
+) -> None:
+    """Create one private manifest and optionally exclude one verified directory."""
     payload = _encode_evidence_manifest(manifest)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         raise SystemExit("evidence manifest parent directory is unavailable") from error
+    if forbidden_root is not None:
+        _require_output_outside_verified_set(output_path, forbidden_root)
 
     try:
         with open(output_path, "xb", opener=_open_exclusive_manifest) as stream:
@@ -608,6 +629,8 @@ def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None
                 stream,
                 label="evidence manifest output",
             )
+            if forbidden_root is not None:
+                _require_output_outside_verified_set(output_path, forbidden_root)
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
@@ -616,6 +639,8 @@ def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None
                 stream,
                 label="evidence manifest output",
             )
+            if forbidden_root is not None:
+                _require_output_outside_verified_set(output_path, forbidden_root)
     except FileExistsError:
         raise SystemExit("evidence manifest output already exists") from None
     except OSError as error:
@@ -637,7 +662,11 @@ def main() -> int:
         repository=arguments.repository,
         source_sha=arguments.source_sha,
     )
-    write_evidence_manifest(manifest, output_path)
+    write_evidence_manifest(
+        manifest,
+        output_path,
+        forbidden_root=resolved_evidence_dir,
+    )
     print(f"verified sealed release evidence: {output_path}")
     return 0
 
