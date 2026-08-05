@@ -87,6 +87,23 @@ tag, publish through PyPI OIDC, and publish a GitHub Release. A pull-request
 branch must not introduce or retain new branch-controlled release behavior that
 receives those identities.
 
+```mermaid
+flowchart LR
+    PR[Pull-request source] --> CI[Read-only exact-head CI]
+    MAIN[Protected main source] --> BUILD[Credential-free exact-artifact build]
+    BUILD --> SEALED[Sealed wheel, sdist, SBOMs, and checksums]
+    SEALED --> ORG[Organization-owned reusable workflow pinned by commit]
+    ORG --> SIGN[OIDC SBOM signer with no caller-code execution]
+    SIGN --> VERIFY[Read-only exact-digest and predicate verifier]
+    VERIFY --> RELEASE[Protected publication identities]
+    PR -. no signing or publication path .-> SIGN
+```
+
+The dashed edge is a prohibition, not a data flow: pull-request-controlled
+source cannot reach signing or publication credentials. Only the sealed evidence
+set produced from the exact protected-main head may cross into the organization
+workflow.
+
 Protected integration remains a separate, independently reviewed action tracked
 by `ContextualWisdomLab/.github#783`:
 
