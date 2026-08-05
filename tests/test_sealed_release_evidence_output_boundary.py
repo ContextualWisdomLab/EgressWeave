@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -139,3 +140,45 @@ def test_manifest_output_normalizes_write_failure(tmp_path: Path, monkeypatch) -
         release_evidence.write_evidence_manifest(MANIFEST, output)
 
     assert output.is_file()
+
+
+def test_cli_refuses_final_path_symlink_before_resolving_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep the CLI from resolving a dangling output symlink into its target."""
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    target = tmp_path / "attacker-selected-target.json"
+    output = tmp_path / "manifest.json"
+    try:
+        output.symlink_to(target)
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this platform")
+
+    monkeypatch.setattr(
+        release_evidence,
+        "build_evidence_manifest",
+        lambda *args, **kwargs: MANIFEST,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release_evidence",
+            "--evidence-dir",
+            str(evidence_dir),
+            "--repository",
+            "ContextualWisdomLab/EgressWeave",
+            "--source-sha",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="already exists"):
+        release_evidence.main()
+
+    assert output.is_symlink()
+    assert not target.exists()
