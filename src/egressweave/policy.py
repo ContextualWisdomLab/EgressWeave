@@ -53,6 +53,7 @@ from egressweave.timeout_policy import (
     EgressTimeoutPolicy,
 )
 
+
 @dataclass(frozen=True)
 class EgressPolicy:
     """Immutable outbound-egress allowlist and resource policy.
