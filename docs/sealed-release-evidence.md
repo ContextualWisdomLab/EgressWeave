@@ -12,7 +12,7 @@ The verifier is a credential-free preparation control. It does not sign an
 artifact, publish a release, prove that artifacts were honestly built from the
 claimed source, or authorize pull-request code to modify a signing workflow.
 Protected SBOM attestation and publication remain dependent on the
-organization-owned reusable workflow tracked in `ContexualWisdomLab/Github#783`;
+organization-owned reusable workflow tracked in `ContextualWisdomLab/.github#783`;
 repository-level completion remains tracked in
 `ContextualWisdomLab/EgressWeave#46`.
 
@@ -50,8 +50,11 @@ compares the current path's device and inode with the opened descriptor and
 rejects symlinks, non-regular descriptors, disappearing paths, or substitutions.
 For `SOURCE_IDENTITY.json`, `SHA256SUMS`, and each SBOM, the exact parsed byte
 snapshot must match bounded digests taken immediately before and after the read.
-The accepted checksum-file digest is retained through semantic verification.
-After all identity, CycloneDX, and artifact bindings have been checked, every
+The source-identity and SBOM snapshots must also match the digests already
+accepted from `SHA256SUMS`, so a valid alternate JSON document cannot be swapped
+in only for semantic parsing and then restored before the final rehash. The
+accepted checksum-file digest is retained through semantic verification. After
+all identity, CycloneDX, and artifact bindings have been checked, every
 non-checksum payload is hashed again and `SHA256SUMS` is independently rehashed
 against its retained snapshot. Any change to any accepted file prevents manifest
 issuance.
@@ -95,7 +98,9 @@ Each SBOM must satisfy the EgressWeave release profile:
 - canonical lowercase `urn:uuid:` identity using UUID version 5, recomputed from
   complete pre-serial SBOM semantics rather than trusted as input;
 - exact root-component `bom-ref`, SHA-256, package name, version, package URL,
-  and artifact-filename property bound to the paired distribution bytes.
+  and artifact-filename property bound to the paired distribution bytes;
+- exact parsed bytes whose SHA-256 equals the corresponding digest accepted from
+  the sealed checksum set.
 
 ## Operator procedure
 
@@ -154,12 +159,14 @@ credential-free build and a credentialed attestation boundary. It rejects:
 - symlinked directories or payloads, nested paths, non-files, and extra files;
 - path-to-descriptor identity changes and mutation of any accepted evidence file
   before manifest issuance;
+- an alternate valid SBOM or source identity exposed only during semantic parsing
+  while different bytes remain named by the accepted checksum digest;
 - pre-existing, symlinked, replaced, non-private, or non-strict handoff-manifest
   output paths and payloads;
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
-- ambiguous JSON, downgraded CycloneDX convelopes, copied or random identifiers,
+- ambiguous JSON, downgraded CycloneDX envelopes, copied or random identifiers,
   and SBOMs bound to different distribution bytes.
 
 Every rejection exits nonzero before a trusted handoff manifest is issued. A
@@ -201,8 +208,8 @@ Bray, T. (2017). *The JavaScript Object Notation (JSON) data interchange format*
 (RFC 8259). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC8259
 
-Davis, K. R., Peabody, B., & Leach, P. J.(2024). *Universally unique
-identifiers (UUIDs) (RFC 9562). Internet Engineering Task Force.
+Davis, K. R., Peabody, B., & Leach, P. J. (2024). *Universally unique
+identifiers (UUIDs)* (RFC 9562). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC9562
 
 ECMA International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
