@@ -40,6 +40,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   constructors accept positive integers or ASCII decimal strings and reject
   ambiguous or non-positive configuration before network I/O.
 
+### Fixed
+- Correct the buyer-facing autonomous-maintainer identity from the retired Codex
+  wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
+  without changing the centrally managed review-agent credential contract.
+
 ### Security
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
