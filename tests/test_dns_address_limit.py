@@ -43,6 +43,26 @@ def test_policy_defaults_to_finite_resolved_address_limit() -> None:
     assert isinstance(policy.max_resolved_addresses, int)
 
 
+def test_new_limit_preserves_existing_positional_constructor_order() -> None:
+    """Append the new public field without reinterpreting legacy arguments."""
+    policy = EgressPolicy(
+        frozenset({"api.example.com"}),
+        False,
+        5.0,
+        frozenset({8443}),
+        frozenset({"GET"}),
+        2048,
+        None,
+        1024,
+    )
+
+    assert policy.allowed_ports == frozenset({8443})
+    assert policy.allowed_methods == frozenset({"GET"})
+    assert policy.max_response_bytes == 2048
+    assert policy.max_request_bytes == 1024
+    assert policy.max_resolved_addresses == 16
+
+
 @pytest.mark.parametrize(
     ("value", "error_type", "message"),
     [
