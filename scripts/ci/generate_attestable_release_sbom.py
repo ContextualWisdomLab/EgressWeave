@@ -73,15 +73,17 @@ def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
 
 
 def _validate_strict_json_value(root: object) -> None:
-    """Require only exact RFC 8259 value types without Python coercions.
+    """Require RFC 8259 value types without Python structural coercions.
 
     Python's JSON encoder accepts tuples as arrays and integer mapping keys as
     object names. Those conveniences can collapse distinct Python structures
     into the same serialized evidence. This iterative validator accepts only
-    exact built-in dictionaries with exact string keys, exact lists, strings,
-    booleans, integers, finite floats, and ``None``. Active-container tracking
-    rejects cycles while allowing one immutable value or completed container to
-    be referenced from more than one part of the source object.
+    exact built-in dictionaries with exact string keys, exact lists, string
+    values, booleans, integers, finite floats, and ``None``. String subclasses
+    emitted by Python's standards-library email metadata parser are safe because
+    they already are immutable Unicode values and serialize directly as JSON
+    strings. Active-container tracking rejects cycles while allowing one value
+    or completed container to be referenced from more than one source location.
     """
     stack: list[tuple[object, bool]] = [(root, False)]
     active_container_ids: set[int] = set()
@@ -114,7 +116,7 @@ def _validate_strict_json_value(root: object) -> None:
             stack.extend((item, False) for item in value)
             continue
 
-        if value is None or value_type in {str, bool, int}:
+        if value is None or isinstance(value, str) or value_type in {bool, int}:
             continue
         if value_type is float and math.isfinite(value):
             continue
