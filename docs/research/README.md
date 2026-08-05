@@ -192,6 +192,19 @@ for phase semantics, the operational distinction between inactivity limits and
 end-to-end deadlines, and APA 7th references to the primary HTTPX/HTTPCore
 extension documentation, RFC 9112, CWE-400, and OWASP denial-of-service guidance.
 
+## Connection-pool allocation — HTTPX / CWE-770 / CWE-400
+
+Destination validation does not bound how many sockets caller activity can
+allocate or how long idle sockets remain retained. EgressWeave therefore injects
+finite total-connection, idle-connection, and idle-retention limits into both
+pinned pools. The defaults preserve HTTPX's documented bounded behavior, stricter
+integration values are supported, and configuration that requests an unbounded
+or contradictory pool fails before network I/O.
+
+See [Finite connection-pool resource limits](connection-pool-resource-limits.md)
+for the immutable policy contract, audit fingerprint binding, tests, and APA 7th
+references to HTTPX, CWE-770, and CWE-400.
+
 ## Provenance
 
 Extracted behaviour-preserving from the naruon control plane's LLM-provider
