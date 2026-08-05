@@ -10,8 +10,8 @@ addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
 (``trust_env=False``), Unix sockets refused, outbound request streams are
-bounded and tied to declared framing, and identity-coded response bodies are
-bounded by the injected policy.
+bounded and tied to declared framing, request-phase waits are capped, and
+identity-coded response bodies are bounded by the injected policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -35,6 +35,7 @@ from egressweave.request_body_safety import (
     _enforce_declared_request_size,
 )
 from egressweave.request_safety import (
+    _bind_bounded_request_timeouts,
     _bind_validated_tls_server_name,
     _build_safe_request_headers,
     _enforce_allowed_http_method,
@@ -280,8 +281,11 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         """Send one framing-exact bounded request and return a bounded response."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
-        safe_extensions = _bind_validated_tls_server_name(
-            request.extensions, self._validated.hostname
+        safe_extensions = _bind_bounded_request_timeouts(
+            _bind_validated_tls_server_name(
+                request.extensions, self._validated.hostname
+            ),
+            self._policy.request_timeout_policy,
         )
         safe_headers = _force_identity_accept_encoding(
             _build_safe_request_headers(
@@ -353,8 +357,9 @@ async def build_egress_http_client(
 
     Empty or absent URLs return a deny-all client. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
-    exactly. Successful response bodies are requested with identity coding and
-    limited to ``policy.max_response_bytes``.
+    exactly. Request-phase timeout metadata is capped by
+    ``policy.request_timeout_policy``. Successful response bodies are requested
+    with identity coding and limited to ``policy.max_response_bytes``.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
@@ -384,7 +389,7 @@ def build_pinned_https_async_client(
     policy: EgressPolicy,
     tls_configuration: TLSConfiguration | None = None,
 ) -> httpx.AsyncClient:
-    """Build an async client with framing-exact bounded request and response bodies."""
+    """Build an async client with bounded request, timeout, and response policy."""
     return httpx.AsyncClient(
         follow_redirects=False,
         trust_env=False,

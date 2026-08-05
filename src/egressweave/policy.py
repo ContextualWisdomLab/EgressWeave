@@ -2,10 +2,11 @@
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
-HTTP methods those authorities may receive, finite DNS candidate, request-body,
-and response-body budgets, and an ``allow_local`` escape hatch for local
-development stacks: built-in local names are bound to loopback, while explicit
-Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
+HTTP methods those authorities may receive, finite DNS-candidate, request-body,
+and response-body budgets, finite request-phase timeout ceilings, and an
+``allow_local`` escape hatch for local development stacks: built-in local names
+are bound to loopback, while explicit Docker-container names may resolve to
+RFC 1918 or RFC 4193 addresses.
 
 Construct a concise one-port policy explicitly::
 
@@ -26,222 +27,31 @@ Use exact pairs whenever both the host and port axes vary::
 
 from __future__ import annotations
 
-import ipaddress
 import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from numbers import Real
 
-import idna
-
-DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
-DEFAULT_MAX_RESOLVED_ADDRESSES = 16
-DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
-DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
-DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
-DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
-    {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
+from egressweave._policy_normalization import (
+    DEFAULT_ALLOWED_EGRESS_PORTS,
+    DEFAULT_ALLOWED_HTTP_METHODS,
+    DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+    DEFAULT_MAX_REQUEST_BYTES,
+    DEFAULT_MAX_RESOLVED_ADDRESSES,
+    DEFAULT_MAX_RESPONSE_BYTES,
+    _normalize_allowed_authority,
+    _normalize_allowed_host,
+    _normalize_allowed_method,
+    _normalize_allowed_port,
+    _normalize_host,
+    _normalize_max_request_bytes,
+    _normalize_max_resolved_addresses,
+    _normalize_max_response_bytes,
 )
-_INVALID_HOST_DELIMITERS = frozenset("*/\\@?:#%")
-_ALLOWED_HOST_CONFIGURATION_ERROR = (
-    "allowed_hosts entries must be exact hostnames without wildcards, URL syntax, "
-    "invalid IDNA labels, or IP literals"
+from egressweave.timeout_policy import (
+    DEFAULT_EGRESS_TIMEOUT_POLICY,
+    EgressTimeoutPolicy,
 )
-_HTTP_METHOD_TOKEN_CHARACTERS = frozenset(
-    "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-)
-
-
-def _canonicalize_host(value: str) -> str:
-    """Return one validated lowercase ASCII hostname comparison form.
-
-    UTS #46 non-transitional processing maps user-facing Unicode hostnames to
-    their IDNA2008-compatible A-label form. STD3 rules reject characters that
-    are not valid in hostname labels, while the IDNA implementation also
-    enforces per-label and total DNS length limits. A single trailing root dot
-    is accepted and removed from the comparison form.
-    """
-    try:
-        encoded = idna.encode(value.strip(), uts46=True, std3_rules=True)
-    except (idna.IDNAError, UnicodeError) as exc:
-        raise ValueError("hostname is not valid under IDNA") from exc
-    return encoded.decode("ascii").lower().rstrip(".")
-
-
-def _normalize_host(value: str) -> str:
-    """Return the canonical comparison form for a hostname when possible.
-
-    Runtime URL validation must preserve its generic rejection boundary. An
-    invalid hostname therefore falls back to a simple textual normalization;
-    it cannot match a policy entry because policy construction accepts only
-    successfully canonicalized hostnames.
-    """
-    try:
-        return _canonicalize_host(value)
-    except ValueError:
-        return value.strip().lower().rstrip(".")
-
-
-def _looks_like_ip_literal(candidate: str) -> bool:
-    """Return whether ``candidate`` uses a literal or legacy IP-like form."""
-    try:
-        ipaddress.ip_address(candidate)
-    except ValueError:
-        compact_candidate = candidate.replace(".", "").lower()
-        return compact_candidate.isdigit() or compact_candidate.startswith("0x")
-    return True
-
-
-def _normalize_allowed_host(value: object) -> str | None:
-    """Normalize one exact hostname or reject unusable policy configuration.
-
-    Empty strings remain ignorable so comma-separated environment variables may
-    contain harmless extra separators. Every non-empty entry must be a hostname,
-    not a URL, wildcard, credential-bearing authority, port-qualified authority,
-    IP literal, legacy numeric IP representation, or malformed IDNA name. Valid
-    Unicode names are converted to lowercase ASCII A-labels before comparison,
-    DNS resolution, TLS SNI, and HTTP authority construction.
-    """
-    if not isinstance(value, str):
-        raise TypeError("allowed_hosts entries must be exact hostname strings")
-
-    stripped = value.strip()
-    if not stripped:
-        return None
-
-    if (
-        any(
-            character.isspace() or ord(character) < 32 or ord(character) == 127
-            for character in stripped
-        )
-        or any(delimiter in stripped for delimiter in _INVALID_HOST_DELIMITERS)
-    ):
-        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR)
-
-    try:
-        normalized = _canonicalize_host(stripped)
-    except ValueError as exc:
-        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR) from exc
-
-    if _looks_like_ip_literal(normalized):
-        raise ValueError(_ALLOWED_HOST_CONFIGURATION_ERROR)
-    return normalized
-
-
-def _normalize_allowed_port(value: object) -> int | None:
-    """Normalize one positive TCP port or reject unsafe configuration.
-
-    Decimal strings are accepted for environment-variable ergonomics. Empty
-    string segments remain ignorable, while booleans, non-decimal values, port
-    zero, and values outside the TCP/UDP port range fail at construction.
-    """
-    if isinstance(value, str):
-        normalized = value.strip()
-        if not normalized:
-            return None
-        if not normalized.isascii() or not normalized.isdigit():
-            raise ValueError("allowed_ports entries must be decimal port numbers")
-        port = int(normalized)
-    else:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError("allowed_ports entries must be integer port numbers")
-        port = value
-
-    if not 1 <= port <= 65535:
-        raise ValueError("allowed_ports entries must be between 1 and 65535")
-    return port
-
-
-def _normalize_allowed_authority(value: object) -> tuple[str, int]:
-    """Normalize one exact ``(hostname, port)`` policy pair.
-
-    Authority entries deliberately use a two-item tuple instead of parsing a
-    colon-delimited string. This keeps hostname and port validation independent,
-    avoids authority-parser ambiguity, and ensures Unicode hostnames and decimal
-    environment ports pass through the same canonicalizers as ``from_hosts``.
-    """
-    if not isinstance(value, tuple) or len(value) != 2:
-        raise TypeError(
-            "allowed_authorities entries must be (hostname, port) tuples"
-        )
-
-    hostname = _normalize_allowed_host(value[0])
-    if hostname is None:
-        raise ValueError("allowed_authorities hostnames must not be empty")
-    port = _normalize_allowed_port(value[1])
-    if port is None:
-        raise ValueError("allowed_authorities ports must not be empty")
-    return hostname, port
-
-
-def _normalize_allowed_method(value: object) -> str:
-    """Return one canonical HTTP method token or reject unsafe configuration.
-
-    Method names follow the RFC 9110 ``token`` grammar and are normalized to
-    uppercase because HTTPX serializes method names in uppercase. ``CONNECT``
-    is never accepted: its semantics create an application-layer tunnel whose
-    destination is independent of the validated URL authority.
-    """
-    if not isinstance(value, str):
-        raise TypeError("allowed_methods entries must be HTTP method strings")
-
-    normalized = value.strip().upper()
-    if (
-        not normalized
-        or any(character not in _HTTP_METHOD_TOKEN_CHARACTERS for character in normalized)
-    ):
-        raise ValueError("allowed_methods entries must be valid HTTP method tokens")
-    if normalized == "CONNECT":
-        raise ValueError("CONNECT cannot be authorized by an egress policy")
-    return normalized
-
-
-def _normalize_max_resolved_addresses(value: object) -> int:
-    """Return one positive limit for unique DNS-derived connection candidates."""
-    if isinstance(value, str):
-        normalized = value.strip()
-        if not normalized or not normalized.isascii() or not normalized.isdigit():
-            raise ValueError(
-                "max_resolved_addresses must be a positive decimal count"
-            )
-        address_count = int(normalized)
-    else:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError("max_resolved_addresses must be an integer count")
-        address_count = value
-
-    if address_count <= 0:
-        raise ValueError("max_resolved_addresses must be greater than zero")
-    return address_count
-
-
-def _normalize_positive_byte_count(value: object, field_name: str) -> int:
-    """Return one positive byte budget with field-specific safe errors."""
-    if isinstance(value, str):
-        normalized = value.strip()
-        if not normalized or not normalized.isascii() or not normalized.isdigit():
-            raise ValueError(
-                f"{field_name} must be a positive decimal byte count"
-            )
-        byte_count = int(normalized)
-    else:
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise TypeError(f"{field_name} must be an integer byte count")
-        byte_count = value
-
-    if byte_count <= 0:
-        raise ValueError(f"{field_name} must be greater than zero")
-    return byte_count
-
-
-def _normalize_max_request_bytes(value: object) -> int:
-    """Return one positive outbound request-body byte budget."""
-    return _normalize_positive_byte_count(value, "max_request_bytes")
-
-
-def _normalize_max_response_bytes(value: object) -> int:
-    """Return one positive inbound response-body byte budget."""
-    return _normalize_positive_byte_count(value, "max_response_bytes")
 
 
 @dataclass(frozen=True)
@@ -282,6 +92,10 @@ class EgressPolicy:
     ``CONNECT`` is always invalid because it can ask an allowlisted proxy to open
     a tunnel to a second, unvalidated destination.
 
+    ``request_timeout_policy`` caps the connect, read, write, and pool timeout
+    values delegated to HTTPCore. Missing or explicitly disabled request values
+    receive the finite policy maximum, while stricter caller values are retained.
+
     ``max_request_bytes`` is the largest outbound request body a returned client
     will consume from its caller. The finite 16 MiB default rejects an oversized
     declared length before pool dispatch and also counts actual synchronous or
@@ -305,11 +119,16 @@ class EgressPolicy:
     allowed_authorities: frozenset[tuple[str, int]] | None = None
     max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
     max_resolved_addresses: int = DEFAULT_MAX_RESOLVED_ADDRESSES
+    request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
         if not isinstance(self.allow_local, bool):
             raise TypeError("allow_local must be a boolean")
+        if not isinstance(self.request_timeout_policy, EgressTimeoutPolicy):
+            raise TypeError(
+                "request_timeout_policy must be an EgressTimeoutPolicy"
+            )
 
         timeout = self.dns_timeout_seconds
         if (
@@ -414,6 +233,7 @@ class EgressPolicy:
         max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
         allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
@@ -450,6 +270,7 @@ class EgressPolicy:
             max_resolved_addresses=max_resolved_addresses,
             allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
+            request_timeout_policy=request_timeout_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
         )
@@ -463,6 +284,7 @@ class EgressPolicy:
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
         max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
+        request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
     ) -> EgressPolicy:
@@ -491,6 +313,7 @@ class EgressPolicy:
             max_resolved_addresses=max_resolved_addresses,
             allowed_ports=frozenset(port for _, port in normalized_authorities),
             allowed_methods=frozenset(method_items),
+            request_timeout_policy=request_timeout_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
             allowed_authorities=normalized_authorities,

@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rejection of values that could silently remove the outbound resource bound.
 
 ### Security
+- Enforce immutable finite connect, read, write, and connection-pool timeout
+  ceilings immediately before synchronous or asynchronous HTTPCore dispatch.
+  Missing or disabled phase values receive policy maxima, larger values are
+  capped, stricter finite values are preserved, malformed timeout metadata fails
+  with the generic non-leaking policy error, and timeout policy drift is bound
+  into deterministic audit fingerprints.
 - Bound each DNS validation result to at most
   `EgressPolicy.max_resolved_addresses` unique candidates, defaulting to 16.
   Duplicate resolver rows collapse without consuming capacity, over-limit
