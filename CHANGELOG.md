@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rejection of values that could silently remove the outbound resource bound.
 
 ### Security
+- Enforce immutable finite connect, read, write, and connection-pool timeout
+  ceilings immediately before synchronous or asynchronous HTTPCore dispatch.
+  Missing or disabled phase values receive policy maxima, larger values are
+  capped, stricter finite values are preserved, malformed timeout metadata fails
+  with the generic non-leaking policy error, and timeout policy drift is bound
+  into deterministic audit fingerprints.
 - Replace the hourly product-development model executor with SHA-256-verified
   OpenCode 1.18.13 using the existing `NVIDIA_NIM_API_KEY` secret through
   OpenCode's `NVIDIA_API_KEY` contract. Block-mode runner egress, deny-by-default
