@@ -1,10 +1,11 @@
 """Verify and summarize a credential-free sealed EgressWeave release evidence set.
 
-The verifier treats distributions and CycloneDX documents as inert bytes. It
-accepts only the exact canonical wheel, source distribution, one SBOM for each
-artifact, and a sorted ``SHA256SUMS`` file. It then emits a deterministic manifest
-that a separately reviewed credentialed workflow can bind to repository and
-source identity without rebuilding or executing caller-controlled code.
+The verifier treats distributions, CycloneDX documents, and source identity as
+inert bytes. It accepts only the exact canonical wheel, source distribution, one
+SBOM for each artifact, one canonical source-identity document, and a sorted
+``SHA256SUMS`` file. It then emits a deterministic manifest for a separately
+reviewed credentialed workflow without rebuilding or executing caller-controlled
+code.
 """
 
 from __future__ import annotations
@@ -27,7 +28,10 @@ CYCLONEDX_SPEC_VERSION = "1.7"
 CYCLONEDX_DOCUMENT_VERSION = 1
 ATTESTATION_PREDICATE_TYPE = "https://cyclonedx.org/bom"
 EVIDENCE_MANIFEST_FORMAT = "egressweave.release-evidence"
-EVIDENCE_MANIFEST_VERSION = 1
+EVIDENCE_MANIFEST_VERSION = 2
+SOURCE_IDENTITY_FILENAME = "SOURCE_IDENTITY.json"
+SOURCE_IDENTITY_FORMAT = "egressweave.release-source-identity"
+SOURCE_IDENTITY_VERSION = 1
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -42,6 +46,7 @@ CHECKSUM_LINE_PATTERN = re.compile(
     r"^(?P<digest>[0-9a-f]{64})  (?P<filename>[A-Za-z0-9][A-Za-z0-9._+-]*)$"
 )
 MAX_CHECKSUM_BYTES = 65_536
+MAX_SOURCE_IDENTITY_BYTES = 4_096
 MAX_SBOM_BYTES = 8 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
 
@@ -134,8 +139,10 @@ def _require_stable_read(
         raise SystemExit(f"{label} changed during verification")
 
 
-def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, Path]:
-    """Return the exact wheel, sdist, SBOMs, and checksum file or fail closed."""
+def _select_evidence_paths(
+    evidence_dir: Path,
+) -> tuple[Path, Path, Path, Path, Path, Path]:
+    """Return the exact artifacts, SBOMs, source identity, and checksum file."""
     if not evidence_dir.is_dir() or evidence_dir.is_symlink():
         raise SystemExit("release evidence directory is missing or unsafe")
     try:
@@ -158,15 +165,32 @@ def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, 
 
     wheel_sbom = evidence_dir / f"{wheel_path.name}.cdx.json"
     sdist_sbom = evidence_dir / f"{sdist_path.name}.cdx.json"
+    source_identity_path = evidence_dir / SOURCE_IDENTITY_FILENAME
     checksum_path = evidence_dir / "SHA256SUMS"
-    expected = {wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path}
+    legacy_expected = {
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        checksum_path,
+    }
+    if set(entries) == legacy_expected:
+        raise SystemExit("release evidence lacks sealed source identity")
+    expected = legacy_expected | {source_identity_path}
     if set(entries) != expected:
         observed = [path.name for path in entries]
         required = sorted(path.name for path in expected)
         raise SystemExit(
             f"release evidence cardinality mismatch; expected {required}, observed {observed}"
         )
-    return wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path
+    return (
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        source_identity_path,
+        checksum_path,
+    )
 
 
 def _load_checksums(
@@ -231,6 +255,73 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def _reject_json_constant(value: str) -> None:
     """Reject non-standard NaN and infinity tokens during JSON parsing."""
     raise ValueError(f"non-standard JSON number {value}")
+
+
+def _load_source_identity(
+    path: Path,
+    *,
+    expected_digest: str,
+) -> tuple[str, str]:
+    """Return exact repository and source values from one sealed identity file."""
+    label = "sealed source identity"
+    digest_before = _sha256_file(
+        path,
+        maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+        label=label,
+    )
+    try:
+        raw_content = _read_bounded_file(
+            path,
+            maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+            label=label,
+        )
+        document = json.loads(
+            raw_content.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
+        raise SystemExit("sealed source identity is not strict JSON") from error
+    digest_after = _sha256_file(
+        path,
+        maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+        label=label,
+    )
+    _require_stable_read(
+        raw_content,
+        digest_before=digest_before,
+        digest_after=digest_after,
+        label=label,
+    )
+    if digest_after != expected_digest:
+        raise SystemExit("sealed source identity changed during verification")
+    if type(document) is not dict:
+        raise SystemExit("sealed source identity must be a JSON object")
+    required_names = {"format", "formatVersion", "repository", "sourceSha"}
+    if (
+        set(document) != required_names
+        or document.get("format") != SOURCE_IDENTITY_FORMAT
+        or type(document.get("formatVersion")) is not int
+        or document.get("formatVersion") != SOURCE_IDENTITY_VERSION
+        or type(document.get("repository")) is not str
+        or document.get("repository") != EXPECTED_REPOSITORY
+        or type(document.get("sourceSha")) is not str
+        or SOURCE_SHA_PATTERN.fullmatch(document.get("sourceSha")) is None
+    ):
+        raise SystemExit("sealed source identity has an invalid exact profile")
+    canonical = (
+        json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if raw_content != canonical:
+        raise SystemExit("sealed source identity is not canonical JSON")
+    return document["repository"], document["sourceSha"]
 
 
 def _load_strict_json(path: Path) -> dict[str, Any]:
@@ -380,14 +471,24 @@ def build_evidence_manifest(
     if SOURCE_SHA_PATTERN.fullmatch(source_sha) is None:
         raise SystemExit("source SHA must be exactly 40 lowercase hexadecimal characters")
 
-    wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path = (
-        _select_evidence_paths(evidence_dir)
-    )
+    (
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        source_identity_path,
+        checksum_path,
+    ) = _select_evidence_paths(evidence_dir)
     payload_specs = (
         (wheel_path, MAX_ARTIFACT_BYTES, "wheel"),
         (sdist_path, MAX_ARTIFACT_BYTES, "source distribution"),
         (wheel_sbom, MAX_SBOM_BYTES, "wheel SBOM"),
         (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
+        (
+            source_identity_path,
+            MAX_SOURCE_IDENTITY_BYTES,
+            "sealed source identity",
+        ),
     )
     payload_paths = tuple(path for path, _, _ in payload_specs)
     checksums, checksum_digest = _load_checksums(
@@ -397,6 +498,13 @@ def build_evidence_manifest(
     observed_digests = _payload_digests(payload_specs)
     if checksums != observed_digests:
         raise SystemExit("release evidence digest mismatch")
+
+    sealed_repository, sealed_source_sha = _load_source_identity(
+        source_identity_path,
+        expected_digest=observed_digests[source_identity_path.name],
+    )
+    if sealed_repository != repository or sealed_source_sha != source_sha:
+        raise SystemExit("sealed source identity does not match caller expectations")
 
     version = WHEEL_PATTERN.fullmatch(wheel_path.name).group("version")
     artifacts: list[dict[str, str]] = []
@@ -435,12 +543,16 @@ def build_evidence_manifest(
     artifacts.sort(key=lambda item: item["artifactFilename"])
     return {
         "artifacts": artifacts,
+        "checksumFilename": checksum_path.name,
+        "checksumSha256": checksum_digest,
         "format": EVIDENCE_MANIFEST_FORMAT,
         "formatVersion": EVIDENCE_MANIFEST_VERSION,
         "cycloneDxSpecVersion": CYCLONEDX_SPEC_VERSION,
         "predicateType": ATTESTATION_PREDICATE_TYPE,
-        "repository": repository,
-        "sourceSha": source_sha,
+        "repository": sealed_repository,
+        "sourceIdentityFilename": source_identity_path.name,
+        "sourceIdentitySha256": observed_digests[source_identity_path.name],
+        "sourceSha": sealed_source_sha,
     }
 
 

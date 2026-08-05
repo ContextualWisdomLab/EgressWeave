@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
+  and 40-character protected-main source commit inside the checksummed release
+  set. Handoff manifests now use format version 2 and include both source-identity
+  and checksum-file digests for independent credential-bound revalidation.
 - Add a shipped, credential-free sealed release-evidence verifier that accepts
   only the exact wheel, source distribution, paired CycloneDX 1.7 SBOMs, and
   canonical `SHA256SUMS`; independently recomputes content-bound UUIDv5 and
@@ -52,6 +56,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject legacy five-file release evidence whose repository and source commit
+  exist only as caller assertions. The canonical source-identity payload is
+  strict, bounded, descriptor-bound, checksum-covered, and rehashed through final
+  manifest issuance; malformed, noncanonical, stale, mixed, or relabeled source
+  identity now fails closed without claiming build provenance.
 - Bind each selected release-evidence payload to an opened regular-file
   descriptor and its current path identity, bracket parsed checksum and SBOM
   bytes with bounded digests, retain the accepted `SHA256SUMS` snapshot through

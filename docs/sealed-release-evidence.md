@@ -2,53 +2,90 @@
 
 ## Purpose and current status
 
-EgressWeave can verify a release-evidence directory **without executing a wheel,
+EgressWeave verifies one release-evidence directory **without executing a wheel,
 source distribution, build hook, or repository script from that directory**. The
-shipped `egressweave.release_evidence` module validates the exact distribution
-and CycloneDX payload set, binds it to the exact repository and 40-character
-protected-main commit, and emits a deterministic handoff manifest for a
-separately reviewed credentialed workflow.
+shipped `egressweave.release_evidence` module validates the exact distribution,
+CycloneDX, repository, and source-commit evidence set and emits a deterministic
+handoff manifest for a separately reviewed credentialed workflow.
 
-This verifier is a credential-free preparation control. It does not sign an
-artifact, publish a release, prove provenance by itself, or authorize a pull
-request to modify a signing workflow. Signed SBOM integration remains dependent
-on the organization-owned reusable workflow tracked in
-`ContextualWisdomLab/.github#783`; repository-level completion remains tracked
-in `ContextualWisdomLab/EgressWeave#46`.
+The verifier is a credential-free preparation control. It does not sign an
+artifact, publish a release, prove that artifacts were honestly built from the
+claimed source, or authorize pull-request code to modify a signing workflow.
+Protected SBOM attestation and publication remain dependent on the
+organization-owned reusable workflow tracked in `ContexualWisdomLab/Github#783`;
+repository-level completion remains tracked in
+`ContextualWisdomLab/EgressWeave#46`.
 
-## Exact input contract
+## Exact six-file input contract
 
 The evidence directory must be a real directory, not a symlink, and contain
-exactly five regular direct-child files for one stable `X.Y.Z` version:
+exactly six regular direct-child files for one stable `X.Y.Z` version:
 
 ```text
 egressweave-X.Y.Z-py3-none-any.whl
 egressweave-X.Y.Z-py3-none-any.whl.cdx.json
 egressweave-X.Y.Z.tar.gz
 egressweave-X.Y.Z.tar.gz.cdx.json
+SOURCE_IDENTITY.json
 SHA256SUMS
 ```
 
+A legacy five-file set without `SOURCE_IDENTITY.json` fails closed. This is an
+intentional manifest-format-v2 migration: repository and source identity can no
+longer exist only as command-line or workflow assertions.
+
 `SHA256SUMS` must be ASCII, use LF line endings, end with one newline, contain
-one lowercase SHA-256 entry for each of the four payload files, and order entries
-by filename. Paths, duplicates, omitted payloads, additional payloads, and
-noncanonical checksum syntax fail closed.
+one lowercase SHA-256 entry for each of the five non-checksum payload files, and
+order entries by filename. Paths, duplicates, omitted payloads, additional
+payloads, and noncanonical checksum syntax fail closed.
 
 The verifier applies a 256 MiB ceiling to each distribution, an 8 MiB ceiling to
-each SBOM, and a 64 KiB ceiling to `SHA256SUMS`. These are evidence-verification
-limits, not network or application response limits. Size is enforced while each
-opened descriptor is consumed rather than trusted from a path-level metadata
-check.
+each SBOM, a 4 KiB ceiling to `SOURCE_IDENTITY.json`, and a 64 KiB ceiling to
+`SHA256SUMS`. These are evidence-verification limits, not network or application
+response limits. Size is enforced while each opened descriptor is consumed
+rather than trusted from path-level metadata.
 
 Each selected payload is opened as a descriptor-bound regular file. The verifier
 compares the current path's device and inode with the opened descriptor and
 rejects symlinks, non-regular descriptors, disappearing paths, or substitutions.
-For `SHA256SUMS` and each SBOM, the exact parsed byte snapshot must match bounded
-digests taken immediately before and after the read. The accepted checksum-file
-digest is retained through semantic verification. After all CycloneDX semantics
-and artifact bindings have been checked, every distribution and SBOM is hashed
-again and `SHA256SUMS` is independently rehashed against its retained snapshot;
-any change to any of the five accepted files prevents manifest issuance.
+For `SOURCE_IDENTITY.json`, `SHA256SUMS`, and each SBOM, the exact parsed byte
+snapshot must match bounded digests taken immediately before and after the read.
+The accepted checksum-file digest is retained through semantic verification.
+After all identity, CycloneDX, and artifact bindings have been checked, every
+non-checksum payload is hashed again and `SHA256SUMS` is independently rehashed
+against its retained snapshot. Any change to any accepted file prevents manifest
+issuance.
+
+## Canonical source-identity profile
+
+`SOURCE_IDENTITY.json` is a versioned strict-JSON payload finalized **before**
+`SHA256SUMS` is generated. Its exact canonical bytes are compact, key-sorted
+ASCII-safe JSON followed by one LF:
+
+```json
+{"format":"egressweave.release-source-identity","formatVersion":1,"repository":"ContextualWisdomLab/EgressWeave","sourceSha":"0123456789abcdef0123456789abcdef01234567"}
+```
+
+The verifier requires exactly four members and no others:
+
+- `format` must equal `egressweave.release-source-identity`;
+- `formatVersion` must be the JSON integer `1`, not a Boolean or string;
+- `repository` must equal `ContextualWisdomLab/EgressWeave`;
+- `sourceSha` must contain exactly 40 lowercase hexadecimal characters.
+
+Duplicate member names, non-finite values, arrays, alternate whitespace,
+alternate key order, omitted trailing LF, extra members, stale identities, and
+caller/identity mismatches fail closed. The identity digest participates in
+`SHA256SUMS`; changing only the repository or source commit therefore changes
+the sealed set and the handoff manifest bytes.
+
+This binding proves only that the reviewed evidence set contains a specific
+repository/source claim. It does not prove that the artifact was built honestly
+from that source. That stronger statement requires an independently reviewed,
+protected build and attestation workflow with cryptographically verifiable
+provenance.
+
+## CycloneDX release profile
 
 Each SBOM must satisfy the EgressWeave release profile:
 
@@ -56,15 +93,16 @@ Each SBOM must satisfy the EgressWeave release profile:
   document version `1`;
 - strict RFC 8259 JSON with no duplicate object names, `NaN`, or infinities;
 - canonical lowercase `urn:uuid:` identity using UUID version 5, recomputed from
-  the complete pre-serial SBOM semantics rather than trusted as input;
+  complete pre-serial SBOM semantics rather than trusted as input;
 - exact root-component `bom-ref`, SHA-256, package name, version, package URL,
   and artifact-filename property bound to the paired distribution bytes.
 
 ## Operator procedure
 
-Run the verifier in the credential-free build or verification job, after the
-canonical distributions and both deterministic SBOMs have been produced and
-checksummed:
+In the credential-free build or verification job, first create the canonical
+source identity from the exact protected-main commit. Then build the canonical
+distributions and deterministic SBOMs, generate sorted `SHA256SUMS` over all five
+payloads, seal the evidence directory, and run:
 
 ```bash
 PYTHONPATH=src python -m egressweave.release_evidence \
@@ -75,9 +113,9 @@ PYTHONPATH=src python -m egressweave.release_evidence \
 ```
 
 The evidence directory should already be sealed against concurrent writes by the
-build system or artifact service. The descriptor and repeated-digest checks are
-a fail-closed verification boundary, not a substitute for an immutable storage
-handoff or an independently supplied container digest.
+build system or artifact service. Descriptor and repeated-digest checks are a
+fail-closed verification boundary, not a substitute for immutable storage or an
+independently supplied container digest.
 
 The output path must remain outside the verified directory so manifest creation
 cannot change the set it just accepted. Before touching the output path, the
@@ -86,29 +124,33 @@ non-finite, Python-only, or structurally coerced values. It then creates a new
 owner-only file through an exclusive descriptor, refuses an existing path or
 final-path symlink, flushes and durably synchronizes the bytes, and rechecks that
 the path still names the same regular descriptor. It never overwrites a prior
-manifest. Repeating the command with a fresh output path over identical inputs
-produces byte-identical JSON. The manifest records:
+manifest.
+
+Manifest format version 2 records:
 
 - format name and version;
-- exact repository and source commit;
+- exact repository and source commit recovered from sealed evidence;
+- `SOURCE_IDENTITY.json` filename and SHA-256;
+- `SHA256SUMS` filename and SHA-256;
 - CycloneDX version and in-toto predicate type;
 - canonical artifact filename, kind, SHA-256, paired SBOM filename, SBOM
   SHA-256, and recomputed serial number for each distribution.
 
 A later credentialed job must consume only a sealed copy of the already verified
 payloads and the independently digest-bound manifest. It must recheck repository,
-source commit, payload cardinality, and every digest before requesting an
-attestation. It must not rebuild, resolve dependencies, import the distributions,
-or execute caller-controlled source under `id-token: write`,
-`attestations: write`, package-publication, release, tag, or repository-write
-credentials.
+source commit, source-identity digest, checksum digest, payload cardinality, and
+every payload digest before requesting an attestation. It must not rebuild,
+resolve dependencies, import distributions, or execute caller-controlled source
+under `id-token: write`, `attestations: write`, package-publication, release, tag,
+or repository-write credentials.
 
 ## Threat model and failure behavior
 
 The verifier addresses accidental or hostile evidence substitution between a
 credential-free build and a credentialed attestation boundary. It rejects:
 
-- stale or wrong repository/source identity;
+- missing, malformed, mixed, stale, or caller-mismatched repository/source
+  identity;
 - symlinked directories or payloads, nested paths, non-files, and extra files;
 - path-to-descriptor identity changes and mutation of any accepted evidence file
   before manifest issuance;
@@ -117,18 +159,17 @@ credential-free build and a credentialed attestation boundary. It rejects:
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
-- ambiguous JSON, downgraded CycloneDX envelopes, copied/random identifiers,
+- ambiguous JSON, downgraded CycloneDX convelopes, copied or random identifiers,
   and SBOMs bound to different distribution bytes.
 
 Every rejection exits nonzero before a trusted handoff manifest is issued. A
 low-level storage failure can leave a newly created but untrusted partial output;
-operators must never reuse it. Error text identifies the failed evidence class
-but does not make the evidence trusted. Operators must discard the complete
-candidate set and any failed output, rebuild from the exact protected-main head
-in a clean credential-free environment, choose a fresh manifest path, and rerun
-all quality, security, package, SBOM, checksum, and manifest gates. Editing or
-overwriting a failed manifest or checksum file in place is not a recovery
-procedure.
+operators must never reuse it. Operators must discard the complete candidate set
+and any failed output, rebuild from the exact protected-main head in a clean
+credential-free environment, choose a fresh manifest path, and rerun all quality,
+security, package, SBOM, identity, checksum, and manifest gates. Editing or
+overwriting a failed manifest, source identity, or checksum file in place is not
+a recovery procedure.
 
 The verifier does not defend against a compromised runner kernel, a malicious
 credentialed reusable workflow, or a party that can replace both the sealed
@@ -140,10 +181,10 @@ independent review, and offline attestation verification.
 
 The verifier ships with EgressWeave and runs as
 `python -m egressweave.release_evidence` without a service dependency. Its
-manifest is a versioned data handoff rather than a transport or provider
+versioned manifest is a provider-neutral data handoff rather than a transport
 contract, so naruon and other CWL systems can store or relay it without importing
 EgressWeave's HTTP client. The organization-owned attestation workflow should
-remain generic and accept explicit repository, source, artifact, SBOM,
+remain generic and accept explicit repository, source, identity, artifact, SBOM,
 predicate, and digest inputs; it must not infer trust from this
 repository-specific verifier alone.
 
@@ -158,26 +199,26 @@ requirement has been independently mapped to evidence.
 
 Bray, T. (2017). *The JavaScript Object Notation (JSON) data interchange format*
 (RFC 8259). Internet Engineering Task Force.
-https://www.rfc-editor.org/rfc/rfc8259
+https://doi.org/10.17487/RFC8259
 
-Davis, K. R., Peabody, B., & Leach, P. J. (2024). *Universally unique
-identifiers (UUIDs)* (RFC 9562). Internet Engineering Task Force.
-https://www.rfc-editor.org/rfc/rfc9562
+Davis, K. R., Peabody, B., & Leach, P. J.(2024). *Universally unique
+identifiers (UUIDs) (RFC 9562). Internet Engineering Task Force.
+https://doi.org/10.17487/RFC9562
 
 ECMA International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
 (ECMA-424).* https://cyclonedx.org/specification/overview/
 
 GitHub. (n.d.). *Using artifact attestations to establish provenance for
-builds.* GitHub Docs. Retrieved August 5, 2026, from
-https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations
+builds.* GitHub Docs. Retrieved August 6, 2026, from
+https://docs.github.com/en/actions/how-to/secure-your-work/use-artifact-attestations/use-artifact-attestations
 
 GitHub. (n.d.). *Using artifact attestations and reusable workflows to achieve
-SLSA v1 Build Level 3.* GitHub Docs. Retrieved August 5, 2026, from
-https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/increase-security-rating
+SLSA v1 Build Level 3.* GitHub Docs. Retrieved August 6, 2026, from
+https://docs.github.com/en/actions/how-to/secure-your-work/use-artifact-attestations/increase-security-rating
 
-The in-toto Project. (n.d.). *Attestation predicates.* GitHub. Retrieved August
-5, 2026, from
-https://github.com/in-toto/attestation/blob/main/spec/predicates/README.md
+The in-toto Project. (n.d.). *Attestation framework specification.* GitHub.
+Retrieved August 6, 2026, from
+https://github.com/in-toto/attestation
 
 Supply-chain Levels for Software Artifacts Community. (2025). *SLSA
 specification version 1.2.* https://slsa.dev/spec/v1.2/

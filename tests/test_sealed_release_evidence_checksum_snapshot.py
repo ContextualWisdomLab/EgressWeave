@@ -66,8 +66,27 @@ def _sbom(filename: str, digest: str) -> dict[str, Any]:
     return document
 
 
+def _source_identity() -> bytes:
+    """Return one canonical exact repository/source identity payload."""
+    return (
+        json.dumps(
+            {
+                "format": "egressweave.release-source-identity",
+                "formatVersion": 1,
+                "repository": REPOSITORY,
+                "sourceSha": SOURCE_SHA,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
 def _evidence(root: Path) -> dict[str, Path]:
-    """Create one complete valid five-file release evidence set."""
+    """Create one complete valid six-file release evidence set."""
     root.mkdir()
     wheel = root / f"egressweave-{VERSION}-py3-none-any.whl"
     sdist = root / f"egressweave-{VERSION}.tar.gz"
@@ -83,8 +102,10 @@ def _evidence(root: Path) -> dict[str, Path]:
         json.dumps(_sbom(sdist.name, _digest(sdist))),
         encoding="utf-8",
     )
+    source_identity = root / "SOURCE_IDENTITY.json"
+    source_identity.write_bytes(_source_identity())
     checksum = root / "SHA256SUMS"
-    payloads = (wheel, sdist, wheel_sbom, sdist_sbom)
+    payloads = (wheel, sdist, wheel_sbom, sdist_sbom, source_identity)
     checksum.write_text(
         "".join(
             f"{_digest(path)}  {path.name}\n"
