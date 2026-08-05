@@ -507,7 +507,7 @@ def main() -> int:
     arguments = _parse_arguments()
     evidence_dir = arguments.evidence_dir
     resolved_evidence_dir = evidence_dir.resolve()
-    output_path = arguments.output.resolve()
+    output_path = arguments.output.parent.resolve() / arguments.output.name
     if output_path == resolved_evidence_dir or output_path.is_relative_to(
         resolved_evidence_dir
     ):
