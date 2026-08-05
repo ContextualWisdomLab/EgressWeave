@@ -24,6 +24,9 @@ CYCLONEDX_SCHEMA = "https://cyclonedx.org/schema/bom-1.7.schema.json"
 CYCLONEDX_FORMAT = "CycloneDX"
 CYCLONEDX_SPEC_VERSION = "1.7"
 CYCLONEDX_DOCUMENT_VERSION = 1
+FOUNDATION_PROFILE_ERROR = (
+    "release SBOM foundation must produce exact CycloneDX 1.7 evidence"
+)
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -52,7 +55,9 @@ def _load_foundation_generator() -> ModuleType:
 
 def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
     """Return exact CycloneDX 1.7 foundation output or fail closed."""
-    if type(sbom) is not dict or any(
+    if type(sbom) is not dict:
+        raise SystemExit(FOUNDATION_PROFILE_ERROR)
+    if any(
         sbom.get(field_name) != expected_value
         for field_name, expected_value in (
             ("$schema", CYCLONEDX_SCHEMA),
@@ -60,10 +65,8 @@ def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
             ("specVersion", CYCLONEDX_SPEC_VERSION),
             ("version", CYCLONEDX_DOCUMENT_VERSION),
         )
-    ):
-        raise SystemExit(
-            "release SBOM foundation must produce exact CycloneDX 1.7 evidence"
-        )
+    ) or type(sbom["version"]) is not int:
+        raise SystemExit(FOUNDATION_PROFILE_ERROR)
     return sbom
 
 
