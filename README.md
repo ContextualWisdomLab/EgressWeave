@@ -6,15 +6,16 @@
 authority pairs and an HTTP-method allowlist, refuses any target that resolves
 to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
-validated addresses—rejecting authority drift and bounding both outbound
-request bodies and inbound identity-coded response bodies.
+validated addresses—rejecting authority drift and bounding outbound request
+bodies, request-phase waits, and inbound identity-coded response bodies.
 
 It exists because the naive pattern—resolve, check the IP, then
 `httpx.get(url)`—is unsafe. An attacker-controlled DNS answer can change between
 the check and the connect (a TOCTOU / DNS-rebinding attack, CWE-350), while a
 permissive URL, port, or method policy can reach unintended services (SSRF,
 CWE-918), and even an allowlisted authority can exhaust resources with an
-unbounded request producer or an unbounded or compressed response (CWE-400).
+unbounded request producer, disabled timeout, or unbounded or compressed
+response (CWE-400).
 
 ## What it defends against
 
@@ -38,6 +39,11 @@ unbounded request producer or an unbounded or compressed response (CWE-400).
   truncation, chunked overruns, and retry-based budget resets fail closed. The
   first chunk crossing a policy or declared boundary is withheld and its source
   is closed without replacing the generic policy error.
+- **Disabled or excessive request timeouts (CWE-400):** both transports replace
+  missing or explicitly disabled HTTPX/HTTPCore connect, read, write, and pool
+  timeout values with immutable finite policy ceilings. Stricter non-negative
+  caller values are preserved, larger values are capped, and malformed timeout
+  metadata fails generically before connection-pool dispatch.
 - **Unbounded response consumption (CWE-400):** both transports force
   `Accept-Encoding: identity`, reject body-bearing content-coded responses and
   unsafe declared lengths before returning a response, and count every
@@ -167,6 +173,24 @@ artifact_policy = EgressPolicy.from_hosts(
 )
 ```
 
+Set immutable per-phase timeout ceilings when an integration needs limits other
+than the five-second defaults:
+
+```python
+from egressweave import EgressTimeoutPolicy
+
+timeout_policy = EgressTimeoutPolicy(
+    connect_timeout_seconds=2,
+    read_timeout_seconds=10,
+    write_timeout_seconds=5,
+    pool_timeout_seconds=1,
+)
+policy = EgressPolicy.from_hosts(
+    "api.example.com",
+    request_timeout_policy=timeout_policy,
+)
+```
+
 The default authority projection uses port `{443}`. `from_hosts(...)` remains
 concise when several hosts share one port or one host intentionally exposes
 several ports. Supplying several hosts and several ports is rejected as
@@ -194,6 +218,17 @@ across repeated iteration or retry of a replayable source, so re-consumption
 does not grant another allowance. The first chunk crossing a policy or declared
 boundary is not sent, the source stream is closed, and the generic
 `EgressNotAllowedError` is raised without disclosing thresholds or byte counts.
+
+The default `EgressTimeoutPolicy` applies five-second ceilings independently to
+connect, read, write, and pool-acquisition phases. HTTPX low-level request
+metadata cannot disable a phase with `None` or extend it beyond the injected
+ceiling. A finite non-negative value below the ceiling remains valid, including
+zero for an immediate stricter timeout. Boolean, negative, non-finite,
+non-numeric, unknown-key, and non-mapping metadata fails with the generic policy
+error before HTTPCore dispatch. These phase limits bound inactivity rather than
+a complete end-to-end wall-clock duration; applications should still impose job
+cancellation, queue capacity, concurrency, tenant quota, and total-deadline
+controls where required.
 
 The default response-body budget is 16 MiB. `max_response_bytes` accepts a
 positive integer or an ASCII decimal string for environment-variable use. Zero,
@@ -251,24 +286,27 @@ policy = EgressPolicy.from_hosts(
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, request-timeout, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `EgressTimeoutPolicy` | Immutable finite connect, read, write, and pool-acquisition timeout ceilings enforced immediately before HTTPCore dispatch. |
 | `TLSConfiguration` | Immutable provider-neutral TLS 1.3/TLS 1.2 compatibility, private trust, and optional mutual-TLS client identity settings. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
-| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and request and response bodies are bounded. |
-| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and request and response bodies are bounded. |
+| `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and request bodies, phase waits, and response bodies are bounded. |
+| `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and request bodies, phase waits, and response bodies are bounded. |
 | `build_pinned_https_client(validated, *, policy)` | Build a bounded synchronous client from an already-validated URL. |
 | `build_pinned_https_async_client(validated, *, policy)` | Build a bounded asynchronous client from an already-validated URL. |
 | `ValidatedEgressURL`, `EgressNotAllowedError` | Result type and typed failure (a `ValueError`). |
 
 ## Compatibility note
 
-Exact authority-pair allowlisting, finite request/response body limits, and
-identity-only response coding are intentional pre-1.0 secure-default
-tightenings. Applications with several hosts and several ports must migrate
-ambiguous `from_hosts(...)` configuration to explicit `from_authorities(...)`
-pairs. Integrations that legitimately upload or consume more than 16 MiB per
-message must set larger, still-finite `max_request_bytes` or
-`max_response_bytes` values. Integrations that require compressed response
+Exact authority-pair allowlisting, finite request/response body limits,
+identity-only response coding, and finite request-phase timeout ceilings are
+intentional pre-1.0 secure-default tightenings. Applications with several hosts
+and several ports must migrate ambiguous `from_hosts(...)` configuration to
+explicit `from_authorities(...)` pairs. Integrations that legitimately upload
+or consume more than 16 MiB per message must set larger, still-finite
+`max_request_bytes` or `max_response_bytes` values. Integrations needing longer
+network inactivity windows must inject larger, still-finite
+`EgressTimeoutPolicy` ceilings. Integrations that require compressed response
 content need a separately reviewed client with a bounded streaming decoder;
 EgressWeave does not silently accept compression.
 
@@ -321,7 +359,9 @@ connect across asynchronously pinned addresses). The exact authority decision is
 specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
 outbound request limits in
 [`request-body-resource-limits.md`](docs/research/request-body-resource-limits.md),
-and response limits in
+request-timeout ceilings in
+[`request-timeout-boundaries.md`](docs/research/request-timeout-boundaries.md),
+response limits in
 [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md),
 and enterprise TLS configuration in
 [`tls-configuration.md`](docs/research/tls-configuration.md).
