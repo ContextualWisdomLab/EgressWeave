@@ -35,6 +35,18 @@ class _ExplodingReal:
         raise TypeError("secret numeric failure")
 
 
+class _ExplodingStringKey(str):
+    """Raise caller-controlled text when tuple membership compares a key."""
+
+    def __eq__(self, other: object) -> bool:
+        """Raise instead of comparing this hostile string subclass."""
+        raise RuntimeError("secret key comparison failure")
+
+    def __hash__(self) -> int:
+        """Preserve ordinary hashing so this object can remain a mapping key."""
+        return str.__hash__(self)
+
+
 Real.register(_ExplodingReal)
 
 
@@ -61,3 +73,8 @@ def test_timeout_mapping_exceptions_are_masked() -> None:
 def test_timeout_numeric_conversion_exceptions_are_masked() -> None:
     """Mask failures raised while converting an untrusted real-number object."""
     _assert_generic_timeout_denial({"connect": _ExplodingReal()})
+
+
+def test_timeout_key_comparison_exceptions_are_masked() -> None:
+    """Reject string subclasses before invoking hostile equality methods."""
+    _assert_generic_timeout_denial({_ExplodingStringKey("connect"): 1.0})
