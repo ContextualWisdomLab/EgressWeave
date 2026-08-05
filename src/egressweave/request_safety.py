@@ -151,6 +151,24 @@ def _build_safe_request_headers(
     return safe_headers
 
 
+def _copy_timeout_mapping(
+    raw_timeout: Mapping[object, object],
+) -> dict[object, object] | None:
+    """Copy untrusted timeout metadata or return ``None`` without leaking errors."""
+    try:
+        return dict(raw_timeout)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _coerce_timeout_number(value: Real) -> float | None:
+    """Convert an untrusted real value or return ``None`` without leaking errors."""
+    try:
+        return float(value)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _bind_bounded_request_timeouts(
     extensions: Mapping[str, Any],
     timeout_policy: EgressTimeoutPolicy,
@@ -164,16 +182,19 @@ def _bind_bounded_request_timeouts(
     stricter non-negative finite values are preserved and larger values are
     capped. Malformed maps, unknown keys, booleans, negative numbers, and
     non-finite values fail through the generic policy boundary before HTTPCore
-    can allocate a connection or wait on network I/O.
+    can allocate a connection or wait on network I/O. Failures raised by
+    attacker-controlled mapping or numeric protocol methods are also masked.
     """
     raw_timeout = extensions.get("timeout")
     if raw_timeout is None:
-        requested_timeouts: dict[object, object] = {}
+        requested_timeouts: dict[object, object] | None = {}
     elif isinstance(raw_timeout, Mapping):
-        requested_timeouts = dict(raw_timeout)
+        requested_timeouts = _copy_timeout_mapping(raw_timeout)
     else:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
+    if requested_timeouts is None:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
     if any(
         not isinstance(key, str) or key not in _REQUEST_TIMEOUT_EXTENSION_KEYS
         for key in requested_timeouts
@@ -188,8 +209,12 @@ def _bind_bounded_request_timeouts(
             continue
         if isinstance(requested_value, bool) or not isinstance(requested_value, Real):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
-        normalized_value = float(requested_value)
-        if not math.isfinite(normalized_value) or normalized_value < 0:
+        normalized_value = _coerce_timeout_number(requested_value)
+        if (
+            normalized_value is None
+            or not math.isfinite(normalized_value)
+            or normalized_value < 0
+        ):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         bounded_timeouts[key] = min(normalized_value, maximum)
 
