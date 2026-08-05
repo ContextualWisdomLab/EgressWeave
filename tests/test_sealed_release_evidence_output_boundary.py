@@ -182,3 +182,47 @@ def test_cli_refuses_final_path_symlink_before_resolving_it(
 
     assert output.is_symlink()
     assert not target.exists()
+
+
+def test_cli_refuses_output_parent_redirected_into_verified_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Reject an output parent redirected into the evidence set during verification."""
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    output_parent = tmp_path / "handoff"
+    output = output_parent / "manifest.json"
+
+    def redirect_parent(*args, **kwargs):
+        try:
+            output_parent.symlink_to(evidence_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symbolic links are unavailable on this platform")
+        return MANIFEST
+
+    monkeypatch.setattr(
+        release_evidence,
+        "build_evidence_manifest",
+        redirect_parent,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release_evidence",
+            "--evidence-dir",
+            str(evidence_dir),
+            "--repository",
+            "ContextualWisdomLab/EgressWeave",
+            "--source-sha",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="outside the verified set"):
+        release_evidence.main()
+
+    assert not (evidence_dir / "manifest.json").exists()
