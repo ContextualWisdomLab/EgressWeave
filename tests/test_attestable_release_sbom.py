@@ -264,6 +264,44 @@ def test_attestable_sbom_api_rejects_manifest_lock_drift(tmp_path: Path) -> None
         generator.build_attestable_sbom(wheel_path, manifest_path, LOCK_PATH)
 
 
+def test_attestable_sbom_writer_rejects_missing_document_identity(
+    tmp_path: Path,
+) -> None:
+    """Refuse output when a caller removes the deterministic serial number."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    output_path = tmp_path / "missing-identity.cdx.json"
+    _write_wheel(wheel_path)
+    sbom = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+    sbom.pop("serialNumber")
+
+    with pytest.raises(
+        SystemExit,
+        match="attestable SBOM requires a deterministic serialNumber",
+    ):
+        generator.write_attestable_sbom(sbom, output_path)
+    assert not output_path.exists()
+
+
+def test_attestable_sbom_writer_rejects_stale_identity_after_mutation(
+    tmp_path: Path,
+) -> None:
+    """Rebind identity at the write boundary instead of trusting a mutable mapping."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    output_path = tmp_path / "stale-identity.cdx.json"
+    _write_wheel(wheel_path)
+    sbom = generator.build_attestable_sbom(wheel_path, MANIFEST_PATH, LOCK_PATH)
+    sbom["metadata"]["component"]["name"] = "mutated-after-identity"
+
+    with pytest.raises(
+        SystemExit,
+        match="attestable SBOM serialNumber does not match complete document",
+    ):
+        generator.write_attestable_sbom(sbom, output_path)
+    assert not output_path.exists()
+
+
 def test_attestable_sbom_cli_writes_byte_stable_json(
     tmp_path: Path,
     monkeypatch,
