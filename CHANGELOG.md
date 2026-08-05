@@ -56,8 +56,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   descriptor and its current path identity, bracket parsed checksum and SBOM
   bytes with bounded digests, retain the accepted `SHA256SUMS` snapshot through
   final verification, and rehash every distribution and SBOM after semantic
-  checks. Symlink substitution, disappearing paths, or mutation of any accepted
-  evidence file now fail before deterministic handoff-manifest issuance.
+  checks. The handoff manifest is detached as strict JSON before filesystem
+  access, created owner-only through an exclusive non-clobbering descriptor,
+  durably synchronized, and path-bound again after writing. Symlink substitution,
+  stale-output overwrite, Python-only JSON coercion, disappearing paths, or
+  mutation of any accepted evidence file now fail before trusted manifest
+  issuance.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
