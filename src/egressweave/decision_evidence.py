@@ -45,6 +45,10 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         "dns_timeout_seconds": repr(policy.dns_timeout_seconds),
         "max_request_bytes": policy.max_request_bytes,
         "max_response_bytes": policy.max_response_bytes,
+        "request_timeout_policy": {
+            key: repr(value)
+            for key, value in policy.request_timeout_policy.as_httpcore_timeout().items()
+        },
     }
     return _sha256_canonical_json(payload)
 
