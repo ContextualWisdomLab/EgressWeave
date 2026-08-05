@@ -296,16 +296,16 @@ def test_checksum_contract_rejects_every_ambiguous_form(tmp_path: Path, monkeypa
     with pytest.raises(SystemExit, match="noncanonical"):
         verifier._load_checksums(checksum, set())
 
-    original_read = Path.read_bytes
+    original_open = Path.open
 
-    def bad_read(path: Path):
+    def bad_open(path: Path, *args, **kwargs):
         if path == checksum:
             raise OSError
-        return original_read(path)
+        return original_open(path, *args, **kwargs)
 
     checksum.write_text(line + "\n")
-    monkeypatch.setattr(Path, "read_bytes", bad_read)
-    with pytest.raises(SystemExit, match="canonical ASCII"):
+    monkeypatch.setattr(Path, "open", bad_open)
+    with pytest.raises(SystemExit, match="unreadable"):
         verifier._load_checksums(checksum, {"file.whl"})
 
     root = tmp_path / "evidence"
