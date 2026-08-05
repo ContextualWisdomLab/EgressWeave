@@ -11,10 +11,10 @@ identifiers and package URLs (purls).
 This repository change is a read-only evidence foundation. It does **not**
 authorize a pull-request branch to modify or execute a release workflow with
 write credentials. Signed attestation, checksum-set integration, and public
-publication must be implemented only by a separately reviewed protected-main or
-organization-level reusable workflow whose source is immutable before it
-receives OIDC or attestation permissions. No SLSA Build level is claimed merely
-because an SBOM or attestation exists.
+publication require a separately reviewed immutable integration source.
+Allowed integration source: protected-main or organization-level reusable workflow.
+That source must be immutable before it receives OIDC or attestation permissions.
+No SLSA Build level is claimed merely because an SBOM or attestation exists.
 
 ## Evidence model
 
