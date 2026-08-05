@@ -46,6 +46,8 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         "max_resolved_addresses": policy.max_resolved_addresses,
         "max_request_bytes": policy.max_request_bytes,
         "max_response_bytes": policy.max_response_bytes,
+        "max_response_header_fields": policy.max_response_header_fields,
+        "max_response_header_bytes": policy.max_response_header_bytes,
         "request_timeout_policy": {
             key: repr(value)
             for key, value in policy.request_timeout_policy.as_httpcore_timeout().items()
