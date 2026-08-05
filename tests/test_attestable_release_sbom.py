@@ -34,14 +34,14 @@ def _load_generator():
 def _metadata() -> bytes:
     """Return minimal valid EgressWeave core metadata for wheel fixtures."""
     return (
-        "Metadata-Version: 2.4\n"
-        "Name: egressweave\n"
-        "Version: 0.3.0\n"
-        "License-Expression: Apache-2.0\n"
-        "Requires-Dist: httpx>=0.28,<0.29\n"
-        "Requires-Dist: httpcore>=1.0,<2.0\n"
-        "Requires-Dist: idna>=3.18,<4\n\n"
-    ).encode("utf-8")
+        b"Metadata-Version: 2.4\n"
+        b"Name: egressweave\n"
+        b"Version: 0.3.0\n"
+        b"License-Expression: Apache-2.0\n"
+        b"Requires-Dist: httpx>=0.28,<0.29\n"
+        b"Requires-Dist: httpcore>=1.0,<2.0\n"
+        b"Requires-Dist: idna>=3.18,<4\n\n"
+    )
 
 
 def _write_wheel(path: Path, *, marker: bytes = b"") -> None:
