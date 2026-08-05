@@ -51,6 +51,7 @@ def test_attestation_job_has_only_required_signing_permissions() -> None:
     assert "id-token: write" in attest_job
     assert "attestations: write" in attest_job
     assert "artifact-metadata: write" in attest_job
+    assert "- verify-release-attestations" not in attest_job
     assert "contents: write" not in attest_job
     assert "packages: write" not in attest_job
     assert "actions/checkout@" not in attest_job
