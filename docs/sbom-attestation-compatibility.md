@@ -39,7 +39,10 @@ The adapter applies this fail-closed procedure:
    `version` value `1`. Reject drift before adding an attestable identity because
    the upstream action's format detector checks presence rather than these exact
    values.
-4. Serialize the complete document as sorted, compact, ASCII JSON.
+4. Serialize the complete document as sorted, compact, ASCII JSON with strict
+   RFC 8259 number semantics. Reject `NaN`, positive or negative infinity, and
+   values that are not JSON-serializable instead of relying on Python's optional
+   non-standard JavaScript-number extensions.
 5. Compute SHA-256 over those canonical bytes.
 6. Append that digest to the stable EgressWeave SBOM identity URL namespace.
 7. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
@@ -71,13 +74,13 @@ python scripts/ci/generate_attestable_release_sbom.py \
 Repeat for the source distribution. Generate each document twice and compare the
 bytes before signing. Reject the release if generation differs, the reviewed
 runtime dependency closure drifts from the hash-locked runtime subset, the
-foundation envelope is not exactly CycloneDX 1.7, the serial number is not an
-RFC 4122 UUID URN, or the predicate type is not exactly
-`https://cyclonedx.org/bom`.
+foundation envelope is not exactly CycloneDX 1.7, the document contains a
+non-standard or non-serializable JSON value, the serial number is not an RFC 4122
+UUID URN, or the predicate type is not exactly `https://cyclonedx.org/bom`.
 
-The Python API also requires the lock path. Direct callers therefore cannot
-produce attestable-looking evidence while silently bypassing dependency-lock
-parity.
+The Python build API also requires the lock path. Direct build callers therefore
+cannot produce adapter-generated attestable evidence while silently bypassing
+dependency-lock parity.
 
 ## Workflow trust boundary
 
@@ -135,6 +138,9 @@ was already published.
 Bradner, S. (1997). *Key words for use in RFCs to indicate requirement levels*
 (RFC 2119). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC2119
+
+Bray, T. (2017). *The JavaScript object notation (JSON) data interchange format*
+(RFC 8259). Internet Engineering Task Force. https://doi.org/10.17487/RFC8259
 
 Ecma International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
 (ECMA-424).* https://cyclonedx.org/specification/overview/
