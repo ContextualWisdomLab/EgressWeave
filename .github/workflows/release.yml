@@ -237,13 +237,15 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: ${{ steps.evidence.outputs.wheel }}
-          sbom-path: ${{ steps.evidence.outputs.wheel_sbom }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ steps.evidence.outputs.wheel_sbom }}
       - name: Attest source distribution SBOM
         id: attest_sdist
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: ${{ steps.evidence.outputs.sdist }}
-          sbom-path: ${{ steps.evidence.outputs.sdist_sbom }}
+          predicate-type: https://cyclonedx.org/bom
+          predicate-path: ${{ steps.evidence.outputs.sdist_sbom }}
       - name: Verify signed SBOM attestations against repository and predicates
         env:
           GH_TOKEN: ${{ github.token }}
