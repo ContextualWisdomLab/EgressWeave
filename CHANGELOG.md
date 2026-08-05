@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wheel and source distribution to its exact SHA-256 and a reviewed, hash-pinned
   runtime dependency graph. Protected attestation integration remains separate
   from branch-local workflows that contain release write credentials.
+- Attach each exact distribution SBOM and its signed GitHub artifact-attestation
+  bundle to the protected release evidence set, with offline-verification files
+  and checksums preserved alongside the canonical wheel and source distribution.
 - Add immutable provider-neutral `EgressConnectionPoolPolicy` with finite
   total-connection, retained-idle-connection, and idle-expiry limits shared by
   synchronous and asynchronous pinned transports. Both public policy
@@ -46,6 +49,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Gate PyPI and public GitHub Release publication on a credential-separated,
+  read-only verification of artifact digest, CycloneDX predicate type, signer
+  workflow, protected-main source ref, exact source commit, hosted runner, and
+  signed predicate equality. The OIDC signer never checks out or executes
+  repository code, and all attestation actions are pinned to immutable commits.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
