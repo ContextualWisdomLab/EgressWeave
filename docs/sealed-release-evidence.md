@@ -44,9 +44,11 @@ Each selected payload is opened as a descriptor-bound regular file. The verifier
 compares the current path's device and inode with the opened descriptor and
 rejects symlinks, non-regular descriptors, disappearing paths, or substitutions.
 For `SHA256SUMS` and each SBOM, the exact parsed byte snapshot must match bounded
-digests taken immediately before and after the read. After all CycloneDX
-semantics and artifact bindings have been checked, every distribution and SBOM
-is hashed again; any change prevents manifest issuance.
+digests taken immediately before and after the read. The accepted checksum-file
+digest is retained through semantic verification. After all CycloneDX semantics
+and artifact bindings have been checked, every distribution and SBOM is hashed
+again and `SHA256SUMS` is independently rehashed against its retained snapshot;
+any change to any of the five accepted files prevents manifest issuance.
 
 Each SBOM must satisfy the EgressWeave release profile:
 
@@ -102,7 +104,8 @@ credential-free build and a credentialed attestation boundary. It rejects:
 
 - stale or wrong repository/source identity;
 - symlinked directories or payloads, nested paths, non-files, and extra files;
-- path-to-descriptor identity changes and payload mutation during verification;
+- path-to-descriptor identity changes and mutation of any accepted evidence file
+  before manifest issuance;
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
