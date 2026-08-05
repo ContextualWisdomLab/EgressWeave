@@ -15,6 +15,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
 MANIFEST_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "release_runtime_dependencies.json"
+LOCK_PATH = REPOSITORY_ROOT / "requirements-ci.txt"
 
 
 def _load_generator():
@@ -123,6 +124,21 @@ def test_wheel_and_sdist_share_the_reviewed_runtime_dependency_graph(tmp_path: P
         "typing-extensions",
     }
     assert all(component["hashes"][0]["alg"] == "SHA-256" for component in wheel_sbom["components"])
+
+
+def test_manifest_is_bound_to_hash_locked_runtime_subset(tmp_path: Path) -> None:
+    """Reject reviewed dependency evidence that drifts from the executable lock."""
+    generator = _load_generator()
+    generator.validate_runtime_lock(MANIFEST_PATH, LOCK_PATH)
+
+    manifest_path = _manifest_copy(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["components"][0]["version"] = "99.0.0"
+    manifest["components"][0]["purl"] = "pkg:pypi/anyio@99.0.0"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="does not match the hash-locked runtime subset"):
+        generator.validate_runtime_lock(manifest_path, LOCK_PATH)
 
 
 def test_artifact_dependency_drift_fails_closed(tmp_path: Path) -> None:
