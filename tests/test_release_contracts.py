@@ -16,6 +16,11 @@ CI_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
 RELEASE_REQUIREMENTS_PATH = REPOSITORY_ROOT / "requirements-release.txt"
 RELEASE_DOCUMENTATION_PATH = REPOSITORY_ROOT / "docs" / "release.md"
+SBOM_DOCUMENTATION_PATH = REPOSITORY_ROOT / "docs" / "sbom-release-evidence.md"
+SBOM_GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
+SBOM_MANIFEST_PATH = (
+    REPOSITORY_ROOT / "scripts" / "ci" / "release_runtime_dependencies.json"
+)
 DISTRIBUTION_VERIFIER_PATH = (
     REPOSITORY_ROOT / "scripts" / "ci" / "verify_distribution.py"
 )
@@ -180,3 +185,24 @@ def test_distribution_verifier_and_release_runbook_are_present() -> None:
     assert "SHA256SUMS" in runbook
     assert "Run workflow" in runbook
     assert "only after PyPI publication succeeds" in runbook
+
+
+def test_sbom_foundation_is_deterministic_and_keeps_write_identity_separate() -> None:
+    """Require reviewed SBOM tooling without weakening the release trust boundary."""
+    assert SBOM_GENERATOR_PATH.is_file()
+    assert SBOM_MANIFEST_PATH.is_file()
+    assert SBOM_DOCUMENTATION_PATH.is_file()
+
+    generator = SBOM_GENERATOR_PATH.read_text(encoding="utf-8")
+    assert 'CYCLONEDX_SPEC_VERSION = "1.7"' in generator
+    assert "serialNumber" not in generator
+    assert '"timestamp"' not in generator
+    assert "_sha256_file" in generator
+    assert "runtime dependency manifest contains unreachable components" in generator
+
+    guidance = SBOM_DOCUMENTATION_PATH.read_text(encoding="utf-8")
+    assert "exact distribution bytes by SHA-256" in guidance
+    assert "protected-main or" in guidance
+    assert "organization-level reusable workflow" in guidance
+    assert "No SLSA Build level is claimed" in guidance
+    assert "must never add a temporary job" in guidance
