@@ -30,7 +30,15 @@ MAX_METADATA_BYTES = MAX_MANIFEST_BYTES = 1_048_576
 MAX_ARCHIVE_MEMBERS = 10_000
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
-SPDX_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*")
+REVIEWED_SPDX_LICENSE_IDS = frozenset(
+    {
+        "Apache-2.0",
+        "BSD-3-Clause",
+        "MIT",
+        "MPL-2.0",
+        "PSF-2.0",
+    }
+)
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -155,6 +163,14 @@ def _text(data: dict[str, Any], key: str, context: str) -> str:
     return value
 
 
+def _reviewed_spdx_license_id(data: dict[str, Any], key: str, context: str) -> str:
+    """Return one reviewed SPDX identifier accepted by CycloneDX 1.7."""
+    value = _text(data, key, context)
+    if value not in REVIEWED_SPDX_LICENSE_IDS:
+        raise SystemExit(f"{context} requires a reviewed SPDX license identifier")
+    return value
+
+
 def _list(data: dict[str, Any], key: str, context: str) -> list[str]:
     """Return one required unique list of safe strings."""
     value = data.get(key)
@@ -184,7 +200,7 @@ def _component(raw: object) -> dict[str, Any]:
     item = {
         "name": name,
         "version": _text(raw, "version", name),
-        "license": _text(raw, "license", name),
+        "license": _reviewed_spdx_license_id(raw, "license", name),
         "sha256": _text(raw, "sha256", name),
         "artifact_filename": _text(raw, "artifact_filename", name),
         "purl": _text(raw, "purl", name),
@@ -193,8 +209,6 @@ def _component(raw: object) -> dict[str, Any]:
     }
     if SHA256.fullmatch(item["sha256"]) is None:
         raise SystemExit(f"component {name} requires a lowercase SHA-256 digest")
-    if SPDX_ID.fullmatch(item["license"]) is None:
-        raise SystemExit(f"component {name} requires one SPDX license identifier")
     if "/" in item["artifact_filename"] or "\\" in item["artifact_filename"]:
         raise SystemExit(f"component {name} artifact filename must not contain a path")
     expected = f"pkg:pypi/{name}@{item['version']}"
@@ -249,7 +263,7 @@ def _load_manifest(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
         raise SystemExit("runtime dependency manifest requires a root object")
     root = {
         "name": _name(_text(raw_root, "name", "root")),
-        "license": _text(raw_root, "license", "root"),
+        "license": _reviewed_spdx_license_id(raw_root, "license", "root"),
         "depends_on": _names(raw_root, "depends_on", "root"),
         "requires_dist": sorted(
             _requirement(item) for item in _list(raw_root, "requires_dist", "root")
@@ -258,8 +272,6 @@ def _load_manifest(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
     required_names = sorted(_requirement_name(item) for item in root["requires_dist"])
     if required_names != sorted(root["depends_on"]):
         raise SystemExit("root requirement names must exactly match root dependencies")
-    if SPDX_ID.fullmatch(root["license"]) is None:
-        raise SystemExit("root requires one SPDX license identifier")
     raw_components = raw.get("components")
     if not isinstance(raw_components, list) or not raw_components:
         raise SystemExit("runtime dependency manifest requires components")
