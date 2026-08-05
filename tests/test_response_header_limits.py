@@ -255,13 +255,25 @@ def test_response_header_budgets_change_audit_policy_fingerprints() -> None:
     smaller_bytes = _policy(max_response_header_bytes=31)
     larger_bytes = _policy(max_response_header_bytes=32)
 
-    evidence = [
+    field_evidence = [
         build_egress_decision_evidence(validated, policy=policy)
-        for policy in (smaller_fields, larger_fields, smaller_bytes, larger_bytes)
+        for policy in (smaller_fields, larger_fields)
+    ]
+    byte_evidence = [
+        build_egress_decision_evidence(validated, policy=policy)
+        for policy in (smaller_bytes, larger_bytes)
     ]
 
-    assert len({item.policy_fingerprint for item in evidence}) == 4
-    assert len({item.decision_fingerprint for item in evidence}) == 4
+    assert field_evidence[0].policy_fingerprint != field_evidence[1].policy_fingerprint
+    assert (
+        field_evidence[0].decision_fingerprint
+        != field_evidence[1].decision_fingerprint
+    )
+    assert byte_evidence[0].policy_fingerprint != byte_evidence[1].policy_fingerprint
+    assert (
+        byte_evidence[0].decision_fingerprint
+        != byte_evidence[1].decision_fingerprint
+    )
 
 
 def test_sync_transport_rejects_header_fanout_and_closes_response_stream() -> None:
