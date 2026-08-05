@@ -39,12 +39,14 @@ The adapter applies this fail-closed procedure:
    `version` value `1`. Reject drift before adding an attestable identity because
    the upstream action's format detector checks presence rather than these exact
    values.
-4. Recursively require the exact RFC 8259 data model: built-in dictionaries with
-   built-in string keys, built-in lists, built-in strings, booleans, integers,
-   finite floating-point numbers, and `null`. Reject tuples, non-string object
-   keys, container or scalar subclasses, cycles, `NaN`, infinities, and arbitrary
-   Python objects instead of allowing `json.dumps` to coerce them into different
-   evidence semantics.
+4. Recursively require the RFC 8259 data model: built-in dictionaries with
+   built-in string keys, built-in lists, Unicode string values, built-in
+   booleans and integers, finite built-in floating-point numbers, and `null`.
+   Standards-library metadata string subclasses are accepted because they are
+   immutable Unicode values serialized directly as JSON strings. Reject tuples,
+   non-string object keys, container subclasses, non-string scalar subclasses,
+   cycles, `NaN`, infinities, and arbitrary Python objects instead of allowing
+   `json.dumps` to coerce them into different evidence semantics.
 5. Serialize the complete document as sorted, compact, ASCII JSON with strict
    number handling.
 6. Compute SHA-256 over those canonical bytes.
