@@ -67,7 +67,7 @@ def test_read_only_verifier_enforces_exact_sbom_attestation_identity() -> None:
     verify_job = _job(
         workflow,
         "  verify-release-attestations:",
-        "  publish-to-pypi:",
+        "  create-release-tag:",
     )
 
     assert "actions: read" in verify_job
@@ -83,6 +83,26 @@ def test_read_only_verifier_enforces_exact_sbom_attestation_identity() -> None:
     assert "--deny-self-hosted-runners" in verify_job
     assert "verificationResult.statement.predicate" in verify_job
     assert "verified-release-attestations-${{ github.sha }}" in verify_job
+
+
+def test_release_tag_is_created_only_after_attestation_verification() -> None:
+    """Avoid orphaning a public version tag when signed evidence fails."""
+    workflow = _workflow()
+    attest_job = _job(
+        workflow,
+        "  attest-release-evidence:",
+        "  verify-release-attestations:",
+    )
+    verify_job = _job(
+        workflow,
+        "  verify-release-attestations:",
+        "  create-release-tag:",
+    )
+    tag_job = _job(workflow, "  create-release-tag:", "  publish-to-pypi:")
+
+    assert "- create-release-tag" not in attest_job
+    assert "- create-release-tag" not in verify_job
+    assert "- verify-release-attestations" in tag_job
 
 
 def test_publication_waits_for_verified_attestations() -> None:
