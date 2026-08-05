@@ -15,19 +15,30 @@ attestation could be created.
 
 ## Deterministic document identity
 
-CycloneDX 1.7 recommends an RFC 4122 UUID URN for `serialNumber`. EgressWeave
-must not use a random UUID because repeated builds of the same exact source,
-artifact bytes, and reviewed dependency evidence must produce byte-identical
-SBOMs.
+CycloneDX 1.7 recommends an RFC 4122 UUID URN for `serialNumber`. It also states
+that every generated BOM should receive a unique serial even when content is
+unchanged. EgressWeave applies a documented reproducibility profile instead:
+identical exact artifacts and reviewed dependency evidence reuse one serial,
+while any semantic document change produces another serial.
+
+This deliberate `SHOULD` deviation is necessary because release acceptance
+requires repeated builds of the same exact source and lockfiles to produce
+byte-identical evidence before checksum and signature binding. A random serial
+would make two otherwise identical verified builds differ. The CycloneDX
+`version` remains `1` because one serial never identifies changed content; a
+changed document receives a new content-bound serial rather than a new revision
+of the old identity.
 
 The adapter applies this fail-closed procedure:
 
-1. Build the reviewed CycloneDX document without a serial number.
-2. Serialize the complete document as sorted, compact, ASCII JSON.
-3. Compute SHA-256 over those canonical bytes.
-4. Append that digest to the stable EgressWeave SBOM identity URL namespace.
-5. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
-6. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
+1. Validate every reviewed dependency version, marker, and digest against the
+   executable hash-locked runtime subset.
+2. Build the reviewed CycloneDX document without a serial number.
+3. Serialize the complete document as sorted, compact, ASCII JSON.
+4. Compute SHA-256 over those canonical bytes.
+5. Append that digest to the stable EgressWeave SBOM identity URL namespace.
+6. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
+7. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
 
 The UUID therefore identifies the complete SBOM semantics rather than only the
 artifact filename. Any artifact digest, package identity, dependency version,
@@ -56,6 +67,10 @@ Repeat for the source distribution. Generate each document twice and compare the
 bytes before signing. Reject the release if generation differs, the runtime lock
 does not equal the reviewed manifest, the serial number is not an RFC 4122 UUID
 URN, or the predicate type is not exactly `https://cyclonedx.org/bom`.
+
+The Python API also requires the lock path. Direct callers therefore cannot
+produce attestable-looking evidence while silently bypassing dependency-lock
+parity.
 
 ## Workflow trust boundary
 
@@ -89,6 +104,10 @@ exact protected-main head, and generate a new release version when any artifact
 was already published.
 
 ## Authoritative references
+
+Bradner, S. (1997). *Key words for use in RFCs to indicate requirement levels*
+(RFC 2119). Internet Engineering Task Force.
+https://doi.org/10.17487/RFC2119
 
 Ecma International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
 (ECMA-424).* https://cyclonedx.org/specification/overview/
