@@ -8,7 +8,7 @@ Typical protected assets are cloud metadata services, loopback listeners, RFC 19
 
 ## Attacker capabilities
 
-The model assumes an attacker may control the candidate URL, path, explicit port, HTTP method, request data, and low-level HTTPX request extensions; operate an allowlisted DNS zone; return multiple A or AAAA records; change DNS answers after validation; supply unusual URL syntax; attempt absolute-target, `Host`, or TLS Server Name Indication (SNI) authority drift; submit methods such as `CONNECT` that ask a remote proxy to open a second connection; and cause individual validated addresses to fail during connection establishment.
+The model assumes an attacker may control the candidate URL, path, explicit port, HTTP method, request data, and low-level HTTPX request extensions; operate an allowlisted DNS zone; return an excessive number of A or AAAA records; change DNS answers after validation; supply unusual URL syntax; attempt absolute-target, `Host`, or TLS Server Name Indication (SNI) authority drift; submit methods such as `CONNECT` that ask a remote proxy to open a second connection; and cause individual validated addresses to fail during connection establishment.
 
 The attacker is not assumed to control the embedding application's Python process, `EgressPolicy`, trust store, operating system, installed EgressWeave package, or the legitimate remote service behind an allowlisted origin. Code execution inside the process can bypass any in-process policy.
 
@@ -20,14 +20,15 @@ For a non-local target, EgressWeave:
 2. accepts only exact hostname entries when `EgressPolicy` is constructed, rejects wildcard, URL/authority, whitespace/control, non-string, and IP-literal forms, and then requires an exact normalized hostname match at request validation;
 3. accepts only positive destination ports from 1 through 65535 when the policy is constructed, defaults to port 443 only, and requires the URL's effective port to appear in that explicit allowlist before DNS resolution;
 4. authorizes only the policy's normalized HTTP-method allowlist at the transport boundary, defaults to ordinary API methods, and refuses `CONNECT` even when an operator attempts to configure it because a tunnel destination is independent of the validated URL authority;
-5. resolves every address returned by the system resolver and rejects the complete target if any address is not globally routable;
-6. signs the resulting `ValidatedEgressURL` with a process-local integrity key and revalidates its URL, hostname, port, address shape, signature, and address scope before transport construction;
+5. validates resolver destinations in order, rejects the complete target if any candidate is not globally routable, deduplicates platform rows, and rejects rather than truncates a result containing more than the policy's finite number of unique destinations;
+6. signs the resulting `ValidatedEgressURL` with a process-local integrity key and revalidates its URL, hostname, port, address shape, signature, address scope, and current address-cardinality policy before transport construction;
 7. connects only to the validated address set while preserving the original hostname for certificate verification and TLS Server Name Indication;
 8. rejects request scheme, user information, hostname, effective-port, method, or caller-supplied SNI drift before the request reaches the connection pool;
 9. replaces any caller-supplied `Host` header and binds the forwarded `sni_hostname` extension to the validated authority;
 10. disables redirects and environment-derived proxy configuration;
-11. refuses Unix-domain sockets; and
-12. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
+11. refuses Unix-domain sockets;
+12. bounds caller-provided request streams and identity-coded response streams with finite policy byte budgets; and
+13. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
 A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 
@@ -73,7 +74,7 @@ EgressWeave relies on:
 - the constrained `httpx` and `httpcore` versions declared by the package; and
 - the allowlisted remote service to enforce its own authentication and authorization.
 
-DNS pinning prevents a later DNS answer from changing the connection destination. It does not make the resolver available, authentic, or confidential. Applications should apply their own request deadlines, cancellation, concurrency limits, and circuit breakers.
+DNS pinning prevents a later DNS answer from changing the connection destination. The unique-address limit bounds EgressWeave's validated tuple, integrity payload, and connection candidates only after the platform resolver returns; it cannot constrain the resolver's own internal memory or network work. DNS controls do not make the resolver available, authentic, or confidential. Applications should apply their own request deadlines, cancellation, concurrency limits, and circuit breakers.
 
 ## Explicit non-goals
 
@@ -82,7 +83,7 @@ EgressWeave does not:
 - authorize paths, request bodies, or query parameters on an allowlisted service;
 - prevent an explicitly authorized non-`CONNECT` method from invoking sensitive behavior that the legitimate remote service exposes;
 - prevent data exfiltration to a legitimately allowlisted but malicious or compromised service;
-- inspect response bodies, enforce content types, scan malware, or cap response size;
+- inspect response semantics, enforce content types, or scan malware;
 - validate application credentials, API keys, OAuth scopes, or tenant boundaries;
 - replace a network firewall, service mesh egress gateway, sandbox, or operating-system isolation;
 - follow redirects safely across authorities—redirect following is disabled instead; or
@@ -90,13 +91,13 @@ EgressWeave does not:
 
 ## Integration requirements
 
-Use a distinct policy for each trust domain and keep hostname, port, and method allowlists as small as possible. Supply bare hostnames only—never schemes, credentials, ports, paths, wildcards, or IP literals—and construct the policy during application startup so configuration errors stop deployment before traffic is served. Local names are not implicit: add `localhost`, `localhost.localdomain`, or a container alias only when that exact service is intended. Keep the default port 443 for normal HTTPS APIs; explicitly add only the alternate TLS or local-development ports the integration actually requires. Narrow `allowed_methods` to the operations the integration needs; do not treat the default method set as a substitute for application authorization.
+Use a distinct policy for each trust domain and keep hostname, port, and method allowlists as small as possible. Supply bare hostnames only—never schemes, credentials, ports, paths, wildcards, or IP literals—and construct the policy during application startup so configuration errors stop deployment before traffic is served. Local names are not implicit: add `localhost`, `localhost.localdomain`, or a container alias only when that exact service is intended. Keep the default port 443 for normal HTTPS APIs; explicitly add only the alternate TLS or local-development ports the integration actually requires. Narrow `allowed_methods` to the operations the integration needs; do not treat the default method set as a substitute for application authorization. Keep the default finite DNS-address limit unless a reviewed multi-homed integration requires a different positive bound.
 
 Construct clients once per validated origin, close them deterministically, set application-appropriate HTTPX timeouts, and never fall back to an unguarded HTTP client after `EgressNotAllowedError`.
 
 An empty or absent base URL is not an authorization signal. The builder returns a deny-all client in that state; applications should treat `normalized_url is None` as disabled configuration and must not replace the returned client with a generic HTTPX client.
 
-Treat changes to `httpx`, `httpcore`, Python URL parsing, IP classification, resolver behavior, local-address policy, destination-port policy, or HTTP-method policy as security-sensitive. Re-run the complete transport and validation suite before widening the supported dependency range.
+Treat changes to `httpx`, `httpcore`, Python URL parsing, IP classification, resolver behavior, DNS cardinality, local-address policy, destination-port policy, or HTTP-method policy as security-sensitive. Re-run the complete transport and validation suite before widening the supported dependency range.
 
 ## Security regression expectations
 

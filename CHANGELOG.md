@@ -11,11 +11,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
   without exposing request paths or resolved IP addresses.
+- Add `EgressPolicy.max_resolved_addresses` with a finite default of 32
+  unique validated destinations and positive integer or ASCII decimal-string
+  configuration for authority-specific DNS resource policy.
 - Add `EgressPolicy.max_request_bytes` with a secure finite 16 MiB default,
   positive integer or ASCII decimal-string configuration, and fail-fast
   rejection of values that could silently remove the outbound resource bound.
 
 ### Security
+- Bound post-resolution destination cardinality in synchronous and
+  asynchronous validation. Duplicate resolver rows collapse without consuming
+  the allowance, while the first excess unique valid address rejects the
+  complete result and tighter current policies reject previously signed
+  candidate sets. This limits CWE-400 memory, validation, integrity-payload,
+  and connection-candidate growth without truncating RFC 8305 ordering.
 - Bound outbound request-body consumption in both pinned transports. Oversized
   declared `Content-Length` values fail before connection-pool dispatch, while
   chunked, missing-length, and dishonestly under-declared bodies are counted as

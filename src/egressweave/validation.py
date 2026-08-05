@@ -22,6 +22,7 @@ import secrets
 import socket
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
@@ -200,6 +201,32 @@ def _validate_global_address(
     return str(ip_address)
 
 
+def _validate_and_bound_addresses(
+    candidates: Iterable[str],
+    policy: EgressPolicy,
+    *,
+    hostname: str,
+) -> tuple[str, ...]:
+    """Validate, deduplicate, and cardinality-bound destination addresses.
+
+    Resolver order is preserved and duplicate platform rows do not consume the
+    unique-address allowance. The first additional unique valid address rejects
+    the complete result rather than silently truncating a server's advertised
+    candidate set.
+    """
+    addresses: list[str] = []
+    seen_addresses: set[str] = set()
+    for candidate in candidates:
+        address = _validate_global_address(candidate, policy, hostname=hostname)
+        if address in seen_addresses:
+            continue
+        if len(addresses) >= policy.max_resolved_addresses:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        seen_addresses.add(address)
+        addresses.append(address)
+    return tuple(addresses)
+
+
 def _resolve_all_global_addresses_blocking(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
@@ -211,16 +238,11 @@ def _resolve_all_global_addresses_blocking(
 
     if not address_infos:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-    addresses: list[str] = []
-    seen_addresses: set[str] = set()
-    for address_info in address_infos:
-        address = _validate_global_address(
-            str(address_info[4][0]), policy, hostname=hostname
-        )
-        if address not in seen_addresses:
-            seen_addresses.add(address)
-            addresses.append(address)
-    return tuple(addresses)
+    return _validate_and_bound_addresses(
+        (str(address_info[4][0]) for address_info in address_infos),
+        policy,
+        hostname=hostname,
+    )
 
 
 def _resolve_all_global_addresses(
@@ -415,11 +437,10 @@ def _revalidate_pinned_egress_url(
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
-    addresses = tuple(
-        dict.fromkeys(
-            _validate_global_address(address, policy, hostname=hostname)
-            for address in validated.addresses
-        )
+    addresses = _validate_and_bound_addresses(
+        validated.addresses,
+        policy,
+        hostname=hostname,
     )
     return _make_validated_egress_url(normalized_url, hostname, port, addresses)
 

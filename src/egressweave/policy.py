@@ -35,6 +35,7 @@ from numbers import Real
 import idna
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DEFAULT_MAX_RESOLVED_ADDRESSES = 32
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
@@ -214,6 +215,27 @@ def _normalize_positive_byte_count(value: object, field_name: str) -> int:
     return byte_count
 
 
+def _normalize_max_resolved_addresses(value: object) -> int:
+    """Return one positive unique destination-address budget."""
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or not normalized.isascii() or not normalized.isdigit():
+            raise ValueError(
+                "max_resolved_addresses must be a positive decimal address count"
+            )
+        address_count = int(normalized)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(
+                "max_resolved_addresses must be an integer address count"
+            )
+        address_count = value
+
+    if address_count <= 0:
+        raise ValueError("max_resolved_addresses must be greater than zero")
+    return address_count
+
+
 def _normalize_max_request_bytes(value: object) -> int:
     """Return one positive outbound request-body byte budget."""
     return _normalize_positive_byte_count(value, "max_request_bytes")
@@ -246,9 +268,11 @@ class EgressPolicy:
     cannot accidentally enable access to loopback or private networks.
 
     ``dns_timeout_seconds`` is a finite positive deadline applied to both
-    synchronous and asynchronous DNS resolution. Invalid timeout values are
-    rejected during construction so callers cannot accidentally disable the
-    fail-closed resolution budget.
+    synchronous and asynchronous DNS resolution. ``max_resolved_addresses``
+    independently bounds the number of unique validated destination addresses
+    retained from one resolver result. Invalid values are rejected during
+    construction so callers cannot accidentally disable either fail-closed DNS
+    resource budget.
 
     ``allowed_methods`` is the exhaustive set of HTTP methods that pinned
     clients may dispatch. The secure default covers ordinary API operations but
@@ -278,6 +302,7 @@ class EgressPolicy:
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     allowed_authorities: frozenset[tuple[str, int]] | None = None
     max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    max_resolved_addresses: int = DEFAULT_MAX_RESOLVED_ADDRESSES
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
@@ -352,6 +377,9 @@ class EgressPolicy:
         normalized_methods = frozenset(
             _normalize_allowed_method(method) for method in method_values
         )
+        normalized_max_resolved_addresses = _normalize_max_resolved_addresses(
+            self.max_resolved_addresses
+        )
         normalized_max_request_bytes = _normalize_max_request_bytes(
             self.max_request_bytes
         )
@@ -365,6 +393,9 @@ class EgressPolicy:
         object.__setattr__(self, "dns_timeout_seconds", float(timeout))
         object.__setattr__(self, "allowed_ports", frozenset(normalized_ports))
         object.__setattr__(self, "allowed_methods", normalized_methods)
+        object.__setattr__(
+            self, "max_resolved_addresses", normalized_max_resolved_addresses
+        )
         object.__setattr__(self, "max_request_bytes", normalized_max_request_bytes)
         object.__setattr__(self, "max_response_bytes", normalized_max_response_bytes)
         object.__setattr__(self, "allowed_authorities", normalized_authorities)
@@ -380,6 +411,7 @@ class EgressPolicy:
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
+        max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
     ) -> EgressPolicy:
         """Build an unambiguous policy from host and port projections.
 
@@ -415,6 +447,7 @@ class EgressPolicy:
             allowed_methods=frozenset(method_items),
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
+            max_resolved_addresses=max_resolved_addresses,
         )
 
     @classmethod
@@ -427,6 +460,7 @@ class EgressPolicy:
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
+        max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
     ) -> EgressPolicy:
         """Build a policy from exact normalized ``(hostname, port)`` pairs.
 
@@ -455,6 +489,7 @@ class EgressPolicy:
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
             allowed_authorities=normalized_authorities,
+            max_resolved_addresses=max_resolved_addresses,
         )
 
     def is_allowlisted_local_host(self, hostname: str) -> bool:

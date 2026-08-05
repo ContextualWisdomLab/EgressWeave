@@ -6,8 +6,9 @@
 authority pairs and an HTTP-method allowlist, refuses any target that resolves
 to a non-globally-routable address, and hands back a synchronous `httpx.Client` or
 asynchronous `httpx.AsyncClient` whose every connection is *pinned* to the
-validated addresses—rejecting authority drift and bounding both outbound
-request bodies and inbound identity-coded response bodies.
+validated addresses—rejecting authority drift while bounding the unique DNS
+candidate set, outbound request bodies, and inbound identity-coded response
+bodies.
 
 It exists because the naive pattern—resolve, check the IP, then
 `httpx.get(url)`—is unsafe. An attacker-controlled DNS answer can change between
@@ -44,8 +45,10 @@ unbounded request producer or an unbounded or compressed response (CWE-400).
   transfer-decoded identity body byte. Chunked, close-delimited, missing-length,
   and dishonestly under-declared bodies cannot exceed the finite policy budget.
 - **Bounded DNS resolution:** synchronous and asynchronous validation apply the
-  same finite positive `dns_timeout_seconds` deadline. Resolver workers are
-  concurrency-bounded and failures remain generic.
+  same finite positive `dns_timeout_seconds` deadline and reject a resolver
+  result containing more than `max_resolved_addresses` unique validated
+  destinations. Resolver workers are concurrency-bounded, duplicate platform
+  rows do not consume the address allowance, and failures remain generic.
 - **Exact egress allowlist:** only normalized `(hostname, port)` pairs explicitly
   present in the policy are reachable; wildcards and accidental cross-pair
   combinations are refused.
@@ -147,6 +150,7 @@ artifact_policy = EgressPolicy.from_hosts(
     "artifacts.example.com",
     max_request_bytes=8 * 1024 * 1024,
     max_response_bytes=64 * 1024 * 1024,
+    max_resolved_addresses=8,
 )
 ```
 
@@ -198,7 +202,14 @@ optional configuration shapes without silently bypassing the egress policy.
 
 DNS resolution for both builders is bounded by `policy.dns_timeout_seconds`.
 The value must be a finite positive number; invalid configuration is rejected
-at policy construction rather than silently disabling the deadline.
+at policy construction rather than silently disabling the deadline. The
+default `max_resolved_addresses` is 32 unique validated IP destinations per
+resolver result. Positive integers and ASCII decimal strings are accepted.
+Duplicate rows do not consume the allowance, but the first additional unique
+address rejects the complete result instead of silently truncating the
+resolver order or one address family. This limit bounds EgressWeave state and
+connection candidates after the platform resolver returns; it cannot bound
+the resolver implementation's own internal allocations.
 
 Hostname allowlist configuration is also validated when `EgressPolicy` is
 constructed. Supply bare hostnames only. Wildcards, URLs, credentials, ports,
@@ -234,7 +245,7 @@ policy = EgressPolicy.from_hosts(
 
 | Symbol | Purpose |
 |---|---|
-| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, unique resolved-address, local-address, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and request and response bodies are bounded. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and request and response bodies are bounded. |
@@ -244,9 +255,10 @@ policy = EgressPolicy.from_hosts(
 
 ## Compatibility note
 
-Exact authority-pair allowlisting, finite request/response body limits, and
-identity-only response coding are intentional pre-1.0 secure-default
-tightenings. Applications with several hosts and several ports must migrate
+Exact authority-pair allowlisting, finite DNS candidate and request/response
+body limits, and identity-only response coding are intentional pre-1.0
+secure-default tightenings. Applications with several hosts and several ports
+must migrate
 ambiguous `from_hosts(...)` configuration to explicit `from_authorities(...)`
 pairs. Integrations that legitimately upload or consume more than 16 MiB per
 message must set larger, still-finite `max_request_bytes` or
@@ -303,7 +315,9 @@ connect across asynchronously pinned addresses). The exact authority decision is
 specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
 outbound request limits in
 [`request-body-resource-limits.md`](docs/research/request-body-resource-limits.md),
-and response limits in
+DNS candidate bounds in
+[`dns-address-cardinality.md`](docs/research/dns-address-cardinality.md), and
+response limits in
 [`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
 
 ## License

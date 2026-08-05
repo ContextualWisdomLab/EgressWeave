@@ -24,7 +24,10 @@ The evidence includes:
 
 It deliberately excludes request paths, resolved IP addresses, credentials,
 headers, bodies, and response data. The fingerprints are canonical SHA-256
-correlation values. They are not cryptographic signatures and do not protect
+correlation values. The policy fingerprint includes normalized authority,
+method, DNS timeout and address-cardinality, request-body, and response-body
+controls so resource-policy drift changes both fingerprints. They are not
+cryptographic signatures and do not protect
 against arbitrary code execution inside the embedding process.
 
 ## Example
