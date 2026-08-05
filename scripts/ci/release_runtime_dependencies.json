@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "root": {
+    "name": "egressweave",
+    "license": "Apache-2.0",
+    "depends_on": [
+      "httpcore",
+      "httpx",
+      "idna"
+    ]
+  },
+  "components": [
+    {
+      "name": "anyio",
+      "version": "4.14.2",
+      "license": "MIT",
+      "sha256": "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494",
+      "artifact_filename": "anyio-4.14.2-py3-none-any.whl",
+      "purl": "pkg:pypi/anyio@4.14.2",
+      "depends_on": [
+        "exceptiongroup",
+        "idna",
+        "typing-extensions"
+      ]
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "license": "MPL-2.0",
+      "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775",
+      "artifact_filename": "certifi-2026.7.22-py3-none-any.whl",
+      "purl": "pkg:pypi/certifi@2026.7.22",
+      "depends_on": []
+    },
+    {
+      "name": "exceptiongroup",
+      "version": "1.3.1",
+      "license": "MIT",
+      "sha256": "a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598",
+      "artifact_filename": "exceptiongroup-1.3.1-py3-none-any.whl",
+      "purl": "pkg:pypi/exceptiongroup@1.3.1",
+      "depends_on": [
+        "typing-extensions"
+      ],
+      "marker": "python_version < '3.11'"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "license": "MIT",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "artifact_filename": "h11-0.16.0-py3-none-any.whl",
+      "purl": "pkg:pypi/h11@0.16.0",
+      "depends_on": []
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "license": "BSD-3-Clause",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+      "artifact_filename": "httpcore-1.0.9-py3-none-any.whl",
+      "purl": "pkg:pypi/httpcore@1.0.9",
+      "depends_on": [
+        "certifi",
+        "h11"
+      ]
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "license": "BSD-3-Clause",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+      "artifact_filename": "httpx-0.28.1-py3-none-any.whl",
+      "purl": "pkg:pypi/httpx@0.28.1",
+      "depends_on": [
+        "anyio",
+        "certifi",
+        "httpcore",
+        "idna"
+      ]
+    },
+    {
+      "name": "idna",
+      "version": "3.18",
+      "license": "BSD-3-Clause",
+      "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
+      "artifact_filename": "idna-3.18-py3-none-any.whl",
+      "purl": "pkg:pypi/idna@3.18",
+      "depends_on": []
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "license": "PSF-2.0",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "artifact_filename": "typing_extensions-4.16.0-py3-none-any.whl",
+      "purl": "pkg:pypi/typing-extensions@4.16.0",
+      "depends_on": [],
+      "marker": "python_version < '3.13'"
+    }
+  ]
+}
