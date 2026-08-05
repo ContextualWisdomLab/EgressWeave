@@ -114,6 +114,76 @@ jobs:
           print(egressweave.__version__)
           PY
           )
+      - name: Generate deterministic CycloneDX SBOM evidence
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          if [ "${#wheels[@]}" -ne 1 ] || [ "${#sdists[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one canonical wheel and source distribution."
+            exit 1
+          fi
+          wheel_sbom="${wheels[0]}.cdx.json"
+          sdist_sbom="${sdists[0]}.cdx.json"
+          case "$wheel_sbom" in
+            *.whl.cdx.json) ;;
+            *) echo "::error::Wheel SBOM filename is not canonical."; exit 1 ;;
+          esac
+          case "$sdist_sbom" in
+            *.tar.gz.cdx.json) ;;
+            *) echo "::error::Source SBOM filename is not canonical."; exit 1 ;;
+          esac
+          python scripts/ci/generate_release_sbom.py \
+            --artifact "${wheels[0]}" \
+            --manifest scripts/ci/release_runtime_dependencies.json \
+            --lock requirements-ci.txt \
+            --output "$wheel_sbom"
+          python scripts/ci/generate_release_sbom.py \
+            --artifact "${sdists[0]}" \
+            --manifest scripts/ci/release_runtime_dependencies.json \
+            --lock requirements-ci.txt \
+            --output "$sdist_sbom"
+      - name: Finalize complete release evidence checksums
+        run: |
+          set -euo pipefail
+          python - <<'PYTHON'
+          from __future__ import annotations
+
+          import hashlib
+          from pathlib import Path
+
+          dist_dir = Path("dist")
+          archives = sorted(
+              [*dist_dir.glob("*.whl"), *dist_dir.glob("*.tar.gz")],
+              key=lambda path: path.name,
+          )
+          sboms = sorted(dist_dir.glob("*.cdx.json"), key=lambda path: path.name)
+          evidence = sorted([*archives, *sboms], key=lambda path: path.name)
+          expected_evidence_count = 4
+          if len(archives) != 2 or len(sboms) != 2 or len(evidence) != expected_evidence_count:
+              raise SystemExit("release evidence must contain one wheel, one sdist, and two SBOMs")
+          expected_sboms = {Path(f"{archive}.cdx.json") for archive in archives}
+          if set(sboms) != expected_sboms:
+              raise SystemExit("each canonical distribution must have one exact SBOM")
+
+          checksum_lines: list[str] = []
+          for evidence_path in evidence:
+              digest = hashlib.sha256()
+              with evidence_path.open("rb") as evidence_file:
+                  for block in iter(lambda: evidence_file.read(1024 * 1024), b""):
+                      digest.update(block)
+              checksum_lines.append(f"{digest.hexdigest()}  {evidence_path.name}\n")
+          (dist_dir / "SHA256SUMS").write_text(
+              "".join(checksum_lines),
+              encoding="ascii",
+          )
+          PYTHON
+          (
+            cd dist
+            test "$(wc -l < SHA256SUMS)" -eq 4
+            sha256sum --check SHA256SUMS
+          )
       - name: Prepare the canonical PyPI-only artifact set
         run: |
           mkdir publish-dist
@@ -171,11 +241,198 @@ jobs:
             -f ref="refs/tags/${RELEASE_TAG}" \
             -f sha="$RELEASE_SHA"
 
+  attest-release-evidence:
+    name: Sign exact CycloneDX SBOM attestations
+    needs:
+      - build-distributions
+      - create-release-tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download complete checksummed release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence
+      - name: Select and verify the exact evidence paths
+        id: evidence
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(release-evidence/*.whl)
+          sdists=(release-evidence/*.tar.gz)
+          if [ "${#wheels[@]}" -ne 1 ] || [ "${#sdists[@]}" -ne 1 ]; then
+            echo "::error::Attestation requires one canonical wheel and source distribution."
+            exit 1
+          fi
+          wheel="${wheels[0]}"
+          sdist="${sdists[0]}"
+          wheel_sbom="${wheel}.cdx.json"
+          sdist_sbom="${sdist}.cdx.json"
+          for evidence_path in "$wheel" "$sdist" "$wheel_sbom" "$sdist_sbom"; do
+            if [ ! -f "$evidence_path" ]; then
+              echo "::error::Required release evidence is missing."
+              exit 1
+            fi
+          done
+          (
+            cd release-evidence
+            test "$(wc -l < SHA256SUMS)" -eq 4
+            sha256sum --check SHA256SUMS
+          )
+          {
+            echo "wheel_path=$wheel"
+            echo "wheel_name=$(basename "$wheel")"
+            echo "wheel_sbom_path=$wheel_sbom"
+            echo "sdist_path=$sdist"
+            echo "sdist_name=$(basename "$sdist")"
+            echo "sdist_sbom_path=$sdist_sbom"
+          } >>"$GITHUB_OUTPUT"
+      - name: Sign the wheel's exact CycloneDX SBOM
+        id: attest-wheel
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: ${{ steps.evidence.outputs.wheel_path }}
+          sbom-path: ${{ steps.evidence.outputs.wheel_sbom_path }}
+      - name: Sign the source distribution's exact CycloneDX SBOM
+        id: attest-sdist
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-path: ${{ steps.evidence.outputs.sdist_path }}
+          sbom-path: ${{ steps.evidence.outputs.sdist_sbom_path }}
+      - name: Stage immutable attestation bundles and checksums
+        env:
+          WHEEL_BUNDLE: ${{ steps.attest-wheel.outputs.bundle-path }}
+          WHEEL_NAME: ${{ steps.evidence.outputs.wheel_name }}
+          SDIST_BUNDLE: ${{ steps.attest-sdist.outputs.bundle-path }}
+          SDIST_NAME: ${{ steps.evidence.outputs.sdist_name }}
+        run: |
+          set -euo pipefail
+          mkdir release-attestations
+          cp "$WHEEL_BUNDLE" "release-attestations/${WHEEL_NAME}.sbom-attestation.json"
+          cp "$SDIST_BUNDLE" "release-attestations/${SDIST_NAME}.sbom-attestation.json"
+          (
+            cd release-attestations
+            sha256sum *.json | LC_ALL=C sort -k2 > ATTESTATION_SHA256SUMS
+            test "$(wc -l < ATTESTATION_SHA256SUMS)" -eq 2
+            sha256sum --check ATTESTATION_SHA256SUMS
+          )
+      - name: Upload signed attestation bundles
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-attestations-${{ github.sha }}
+          path: release-attestations/
+          if-no-files-found: error
+          retention-days: 14
+
+  verify-release-attestations:
+    name: Verify exact signed SBOM evidence
+    needs:
+      - build-distributions
+      - create-release-tag
+      - attest-release-evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out the exact protected release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Verify the exact source checkout
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+      - name: Download complete release evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-evidence-${{ github.sha }}
+          path: release-evidence
+      - name: Download signed attestation bundles
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-attestations-${{ github.sha }}
+          path: attestation-evidence
+      - name: Verify checksums and signed predicates against exact artifact bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          (
+            cd release-evidence
+            test "$(wc -l < SHA256SUMS)" -eq 4
+            sha256sum --check SHA256SUMS
+          )
+          (
+            cd attestation-evidence
+            test "$(wc -l < ATTESTATION_SHA256SUMS)" -eq 2
+            sha256sum --check ATTESTATION_SHA256SUMS
+          )
+          wheels=(release-evidence/*.whl)
+          sdists=(release-evidence/*.tar.gz)
+          if [ "${#wheels[@]}" -ne 1 ] || [ "${#sdists[@]}" -ne 1 ]; then
+            echo "::error::Verification requires one canonical wheel and source distribution."
+            exit 1
+          fi
+          mkdir verified-release-attestations
+          verify_one() {
+            artifact="$1"
+            sbom="${artifact}.cdx.json"
+            artifact_name="$(basename "$artifact")"
+            bundle="attestation-evidence/${artifact_name}.sbom-attestation.json"
+            verification="verified-release-attestations/${artifact_name}.verification.json"
+            observed_predicate="${RUNNER_TEMP}/${artifact_name}.observed-predicate.json"
+            expected_predicate="${RUNNER_TEMP}/${artifact_name}.expected-predicate.json"
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --bundle "$bundle" \
+              --predicate-type https://cyclonedx.org/bom \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --source-digest "$RELEASE_SHA" \
+              --source-ref refs/heads/main \
+              --deny-self-hosted-runners \
+              --format json >"$verification"
+            test "$(jq 'length' "$verification")" -eq 1
+            jq -S '.[0].verificationResult.statement.predicate' \
+              "$verification" >"$observed_predicate"
+            jq -S . "$sbom" >"$expected_predicate"
+            cmp "$observed_predicate" "$expected_predicate"
+            cp "$bundle" "verified-release-attestations/$(basename "$bundle")"
+          }
+          verify_one "${wheels[0]}"
+          verify_one "${sdists[0]}"
+          (
+            cd verified-release-attestations
+            sha256sum *.json | LC_ALL=C sort -k2 > ATTESTATION_SHA256SUMS
+            test "$(wc -l < ATTESTATION_SHA256SUMS)" -eq 4
+            sha256sum --check ATTESTATION_SHA256SUMS
+          )
+      - name: Upload independently verified attestation evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-release-attestations-${{ github.sha }}
+          path: verified-release-attestations/
+          if-no-files-found: error
+          retention-days: 14
+
   publish-to-pypi:
     name: Publish to PyPI with OIDC
     needs:
       - build-distributions
       - create-release-tag
+      - verify-release-attestations
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment:
@@ -203,6 +460,7 @@ jobs:
     needs:
       - build-distributions
       - create-release-tag
+      - verify-release-attestations
       - publish-to-pypi
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -215,6 +473,11 @@ jobs:
         with:
           name: release-evidence-${{ github.sha }}
           path: release-evidence
+      - name: Download independently verified attestation evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-release-attestations-${{ github.sha }}
+          path: attestation-evidence
       - name: Verify the immutable release tag
         env:
           GH_TOKEN: ${{ github.token }}
@@ -233,6 +496,9 @@ jobs:
       - name: Verify release evidence checksums
         working-directory: release-evidence
         run: sha256sum --check SHA256SUMS
+      - name: Verify signed attestation evidence checksums
+        working-directory: attestation-evidence
+        run: sha256sum --check ATTESTATION_SHA256SUMS
       - name: Replace only a recoverable draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -258,7 +524,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release-evidence/* \
+          gh release create "$RELEASE_TAG" release-evidence/* attestation-evidence/* \
             --verify-tag \
             --draft \
             --title "EgressWeave ${RELEASE_TAG#v}" \
