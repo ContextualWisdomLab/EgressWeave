@@ -123,7 +123,10 @@ def test_wheel_and_sdist_share_the_reviewed_runtime_dependency_graph(tmp_path: P
         "idna",
         "typing-extensions",
     }
-    assert all(component["hashes"][0]["alg"] == "SHA-256" for component in wheel_sbom["components"])
+    assert all(
+        component["hashes"][0]["alg"] == "SHA-256"
+        for component in wheel_sbom["components"]
+    )
 
 
 def test_manifest_is_bound_to_hash_locked_runtime_subset(tmp_path: Path) -> None:
@@ -261,3 +264,17 @@ def test_unsafe_or_ambiguous_archives_fail_closed(tmp_path: Path) -> None:
     unsupported_path.write_bytes(b"not a distribution")
     with pytest.raises(SystemExit, match="must be a .whl or .tar.gz"):
         generator.build_sbom(unsupported_path, MANIFEST_PATH)
+
+
+def test_manifest_rejects_unreviewed_spdx_license_identifier(tmp_path: Path) -> None:
+    """Reject a syntactically plausible token that CycloneDX cannot use as SPDX ID."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    _write_wheel(wheel_path)
+    manifest_path = _manifest_copy(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["components"][0]["license"] = "Not-A-Real-License"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="reviewed SPDX license identifier"):
+        generator.build_sbom(wheel_path, manifest_path)
