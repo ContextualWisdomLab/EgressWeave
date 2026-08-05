@@ -56,6 +56,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Bind the release-evidence directory to its canonical absolute real path and
+  reject any symbolic link in the final or ancestor path components. All payload
+  verification and manifest-output exclusion now use that same resolved root, so
+  retargeting a caller-supplied ancestor link cannot switch the verified directory
+  or place a handoff manifest inside the set that was actually accepted.
 - Recheck the manifest output parent against the verified evidence directory
   immediately before exclusive creation, after descriptor binding, and after
   durable synchronization. Redirecting a previously safe parent through a
