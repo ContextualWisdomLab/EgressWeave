@@ -12,11 +12,11 @@ from egressweave.request_safety import _bind_bounded_request_timeouts
 
 
 class _ExplodingTimeoutMapping(Mapping[str, object]):
-    """Expose one key but raise when the timeout value is retrieved."""
+    """Expose one key but fail through the standard mapping lookup protocol."""
 
     def __getitem__(self, key: str) -> object:
-        """Raise caller-controlled failure text instead of returning a value."""
-        raise RuntimeError("secret mapping failure")
+        """Raise a caller-controlled lookup failure instead of returning a value."""
+        raise KeyError("secret mapping failure")
 
     def __iter__(self) -> Iterator[str]:
         """Advertise one valid timeout phase key."""
@@ -28,11 +28,11 @@ class _ExplodingTimeoutMapping(Mapping[str, object]):
 
 
 class _ExplodingReal:
-    """Behave as a registered real number whose conversion raises."""
+    """Behave as a registered real number whose conversion is unsupported."""
 
     def __float__(self) -> float:
-        """Raise caller-controlled failure text during numeric conversion."""
-        raise RuntimeError("secret numeric failure")
+        """Raise a standard numeric-conversion error with caller-controlled text."""
+        raise TypeError("secret numeric failure")
 
 
 Real.register(_ExplodingReal)
