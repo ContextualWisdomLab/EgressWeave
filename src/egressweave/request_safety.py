@@ -183,7 +183,8 @@ def _bind_bounded_request_timeouts(
     capped. Malformed maps, unknown keys, booleans, negative numbers, and
     non-finite values fail through the generic policy boundary before HTTPCore
     can allocate a connection or wait on network I/O. Failures raised by
-    attacker-controlled mapping or numeric protocol methods are also masked.
+    attacker-controlled mapping, key-comparison, or numeric protocol methods
+    are also masked.
     """
     raw_timeout = extensions.get("timeout")
     if raw_timeout is None:
@@ -196,7 +197,7 @@ def _bind_bounded_request_timeouts(
     if requested_timeouts is None:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
     if any(
-        not isinstance(key, str) or key not in _REQUEST_TIMEOUT_EXTENSION_KEYS
+        type(key) is not str or key not in _REQUEST_TIMEOUT_EXTENSION_KEYS
         for key in requested_timeouts
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
