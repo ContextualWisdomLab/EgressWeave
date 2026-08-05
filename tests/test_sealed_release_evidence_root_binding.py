@@ -61,3 +61,23 @@ def test_cli_rejects_symlinked_evidence_parent(
         release_evidence.main()
 
     assert not output.exists()
+
+
+def test_public_verifier_normalizes_root_resolution_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Return one stable failure when the evidence root cannot canonicalize."""
+    evidence_dir = tmp_path / "evidence"
+    _evidence(evidence_dir)
+    original_resolve = Path.resolve
+
+    def fail_evidence_root(path: Path, *args, **kwargs):
+        if path == evidence_dir:
+            raise OSError("blocked")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_evidence_root)
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        _build(evidence_dir)
