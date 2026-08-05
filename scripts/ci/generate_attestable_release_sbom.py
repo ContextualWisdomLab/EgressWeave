@@ -34,7 +34,7 @@ def _parse_arguments() -> argparse.Namespace:
 
 
 def _load_foundation_generator() -> ModuleType:
-    """Load the repository-only deterministic SBOM foundation without importing the package."""
+    """Load the repository-only foundation without importing EgressWeave."""
     specification = importlib.util.spec_from_file_location(
         "egressweave_generate_release_sbom_foundation",
         FOUNDATION_GENERATOR_PATH,
@@ -67,9 +67,11 @@ def _serial_number(sbom: dict[str, Any]) -> str:
 def build_attestable_sbom(
     artifact_path: Path,
     manifest_path: Path,
+    lock_path: Path,
 ) -> dict[str, Any]:
-    """Build deterministic CycloneDX 1.7 evidence with content-bound document identity."""
+    """Build lock-bound CycloneDX 1.7 evidence with stable document identity."""
     foundation = _load_foundation_generator()
+    foundation.validate_runtime_lock(manifest_path, lock_path)
     sbom = foundation.build_sbom(artifact_path, manifest_path)
     if "serialNumber" in sbom:
         raise SystemExit("release SBOM foundation unexpectedly supplied document identity")
@@ -86,14 +88,12 @@ def write_attestable_sbom(sbom: dict[str, Any], output_path: Path) -> None:
 def main() -> int:
     """Validate reviewed runtime evidence and generate one attestable release SBOM."""
     arguments = _parse_arguments()
-    foundation = _load_foundation_generator()
-    artifact_path = arguments.artifact.resolve()
-    manifest_path = arguments.manifest.resolve()
-    foundation.validate_runtime_lock(manifest_path, arguments.lock.resolve())
-    foundation.write_sbom(
-        build_attestable_sbom(artifact_path, manifest_path),
-        arguments.output.resolve(),
+    sbom = build_attestable_sbom(
+        arguments.artifact.resolve(),
+        arguments.manifest.resolve(),
+        arguments.lock.resolve(),
     )
+    write_attestable_sbom(sbom, arguments.output.resolve())
     print(
         "wrote deterministic CycloneDX 1.7 SBOM for predicate "
         f"{ATTESTATION_PREDICATE_TYPE}: {arguments.output}"
