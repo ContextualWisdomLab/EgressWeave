@@ -14,6 +14,7 @@ REVIEW_WORKFLOW_PATH = (
 MAINTENANCE_DOCUMENTATION_PATH = (
     REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
 )
+README_PATH = REPOSITORY_ROOT / "README.md"
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
@@ -117,3 +118,13 @@ def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() ->
     assert NVIDIA_MODEL in documentation
     assert OPENCODE_LINUX_X64_SHA256 in documentation
     assert "OpenAI Codex Action" not in documentation
+
+
+def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
+    """Keep the public execution identity aligned with the audited workflow."""
+    readme = _read(README_PATH)
+
+    assert "bounded Codex maintainer" not in readme
+    assert "bounded OpenCode maintainer" in readme
+    assert "`NVIDIA_NIM_API_KEY`" in readme
+    assert "COPILOT_GITHUB_TOKEN" not in readme
