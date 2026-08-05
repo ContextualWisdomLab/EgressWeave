@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
+from numbers import Real
 from typing import Any
 
 from egressweave.policy import (
@@ -10,6 +12,7 @@ from egressweave.policy import (
     _normalize_allowed_method,
     _normalize_host,
 )
+from egressweave.timeout_policy import EgressTimeoutPolicy
 from egressweave.validation import (
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
@@ -28,6 +31,7 @@ _FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES = frozenset(
         b"upgrade",
     }
 )
+_REQUEST_TIMEOUT_EXTENSION_KEYS = ("connect", "read", "write", "pool")
 
 
 def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
@@ -145,6 +149,53 @@ def _build_safe_request_headers(
     _validate_http_message_framing(content_length_values, transfer_encoding_values)
     safe_headers.append((b"host", validated_authority))
     return safe_headers
+
+
+def _bind_bounded_request_timeouts(
+    extensions: Mapping[str, Any],
+    timeout_policy: EgressTimeoutPolicy,
+) -> dict[str, Any]:
+    """Return request extensions with finite phase-timeout ceilings.
+
+    HTTPX carries connect, read, write, and pool timeouts in the low-level
+    ``timeout`` extension. A caller can otherwise use ``None`` to disable one or
+    every phase after the destination has already passed policy validation.
+    Missing or disabled values therefore receive the immutable policy maximum;
+    stricter non-negative finite values are preserved and larger values are
+    capped. Malformed maps, unknown keys, booleans, negative numbers, and
+    non-finite values fail through the generic policy boundary before HTTPCore
+    can allocate a connection or wait on network I/O.
+    """
+    raw_timeout = extensions.get("timeout")
+    if raw_timeout is None:
+        requested_timeouts: dict[object, object] = {}
+    elif isinstance(raw_timeout, Mapping):
+        requested_timeouts = dict(raw_timeout)
+    else:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+    if any(
+        not isinstance(key, str) or key not in _REQUEST_TIMEOUT_EXTENSION_KEYS
+        for key in requested_timeouts
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+    bounded_timeouts: dict[str, float] = {}
+    for key, maximum in timeout_policy.as_httpcore_timeout().items():
+        requested_value = requested_timeouts.get(key)
+        if requested_value is None:
+            bounded_timeouts[key] = maximum
+            continue
+        if isinstance(requested_value, bool) or not isinstance(requested_value, Real):
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        normalized_value = float(requested_value)
+        if not math.isfinite(normalized_value) or normalized_value < 0:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        bounded_timeouts[key] = min(normalized_value, maximum)
+
+    safe_extensions = dict(extensions)
+    safe_extensions["timeout"] = bounded_timeouts
+    return safe_extensions
 
 
 def _bind_validated_tls_server_name(
