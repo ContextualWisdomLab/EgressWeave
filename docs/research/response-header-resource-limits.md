@@ -44,8 +44,9 @@ A denial closes the underlying synchronous or asynchronous response stream so
 the pooled connection is released. Cleanup failures are suppressed behind the
 same generic `EgressNotAllowedError` boundary; arbitrary peer-controlled or
 transport-controlled exception text is not attached as a cause or context.
-Malformed non-byte downstream metadata and malformed field tuples also fail
-closed through that generic boundary.
+Malformed non-byte metadata, malformed field tuples, and downstream iterators
+that fail while yielding fields all fail closed through that generic,
+context-free boundary.
 
 This control intentionally operates after the protocol parser. It bounds what
 EgressWeave retains and exposes, but it cannot reduce memory already consumed by
