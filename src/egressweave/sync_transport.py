@@ -4,8 +4,8 @@ This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
-outbound request bodies, request-phase waits, and identity-coded response bodies
-are bounded by the injected egress policy.
+outbound request bodies, request-phase waits, response-header metadata, and
+identity-coded response bodies are bounded by the injected egress policy.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ from egressweave.request_safety import (
 from egressweave.response_safety import (
     _BoundedSyncResponseStream,
     _enforce_declared_response_size,
+    _enforce_response_header_limits,
     _force_identity_accept_encoding,
 )
 from egressweave.tls import TLSConfiguration, create_egress_ssl_context
@@ -231,7 +232,13 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         with map_httpcore_exceptions():
             response = self._pool.handle_request(core_request)
 
+        response_denied = False
         try:
+            _enforce_response_header_limits(
+                response.headers,
+                self._policy.max_response_header_fields,
+                self._policy.max_response_header_bytes,
+            )
             _enforce_declared_response_size(
                 request.method,
                 response.status,
@@ -239,10 +246,13 @@ class _PinnedEgressTransport(httpx.BaseTransport):
                 self._policy.max_response_bytes,
             )
         except EgressNotAllowedError:
+            response_denied = True
+        if response_denied:
             try:
                 response.stream.close()
-            finally:
-                raise
+            except Exception:  # noqa: BLE001, S110
+                pass
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
         return httpx.Response(
             status_code=response.status,
@@ -272,9 +282,11 @@ def build_egress_sync_client(
     :class:`~egressweave.validation.EgressNotAllowedError`. Request bodies are
     limited to ``policy.max_request_bytes`` and must match a supplied
     ``Content-Length`` exactly. Request-phase timeout metadata is capped by
-    ``policy.request_timeout_policy``. Successful response bodies are requested
-    with identity coding and limited to ``policy.max_response_bytes`` during
-    streaming and buffered reads.
+    ``policy.request_timeout_policy``. Response headers are limited by
+    ``policy.max_response_header_fields`` and
+    ``policy.max_response_header_bytes`` before delivery. Successful response
+    bodies are requested with identity coding and limited to
+    ``policy.max_response_bytes`` during streaming and buffered reads.
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
@@ -310,8 +322,9 @@ def build_pinned_https_client(
     connection is pinned to its addresses, any forged result or authority change
     is rejected before network I/O, every outbound request body is constrained
     by ``policy.max_request_bytes`` and exact declared framing, every request
-    phase is capped by ``policy.request_timeout_policy``, and every identity-coded
-    response body is constrained by ``policy.max_response_bytes``.
+    phase is capped by ``policy.request_timeout_policy``, response metadata is
+    bounded by the finite header policy, and every identity-coded response body
+    is constrained by ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
