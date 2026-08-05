@@ -47,6 +47,7 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         "max_request_bytes": policy.max_request_bytes,
         "max_request_header_fields": policy.max_request_header_fields,
         "max_request_header_bytes": policy.max_request_header_bytes,
+        "max_request_target_bytes": policy.max_request_target_bytes,
         "max_response_bytes": policy.max_response_bytes,
         "max_response_header_fields": policy.max_response_header_fields,
         "max_response_header_bytes": policy.max_response_header_bytes,
