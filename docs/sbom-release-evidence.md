@@ -8,11 +8,13 @@ SBOM binds the exact distribution bytes by SHA-256, records package identity,
 and models the reviewed runtime dependency closure with SPDX license identifiers
 and package URLs (purls).
 
-This is a read-only evidence foundation. It does not authorize a pull-request
-branch to execute release logic with write credentials. The only permitted
-future integration source is a protected-main or organization-level reusable workflow
-whose source is immutable before receiving OIDC or attestation permissions.
-No SLSA Build level is claimed merely because an SBOM or attestation exists.
+The generator is a read-only evidence foundation and does not authorize a
+pull-request branch to execute release logic with write credentials. Signed
+integration exists only in `.github/workflows/release.yml`, which refuses to run
+unless the dispatched source equals the exact current protected `main` head. The
+attestation job is credential-separated from tag creation, PyPI publication, and
+GitHub Release publication. No SLSA Build level is claimed merely because an
+SBOM or attestation exists.
 
 ## Normative evidence contract
 
@@ -93,25 +95,57 @@ controls.
 
 ## Protected release integration
 
-A future protected integration may generate both SBOMs in a read-only exact-main
-build job after distribution verification. It may add the SBOMs to the complete
+The protected release workflow generates both SBOMs in its read-only exact-main
+build job after distribution verification. It adds them to the complete
 release-evidence artifact and `SHA256SUMS`, while keeping PyPI inputs limited to
 the wheel and source distribution.
 
-Attestation must run in a credential-separated job that consumes only the
-independently verified exact artifact set. Pin the current `actions/attest` SBOM
-mode to an immutable reviewed commit SHA. Grant only the permissions required by
-the reviewed action; repository contents remain read-only. Recheck GitHub's
-current permission contract during protected integration.
+A separate attestation job begins only after the exact immutable release tag has
+been created or verified. The job downloads the checksummed evidence, uses
+`actions/attest` pinned to reviewed commit
+`1e69f48acb82d1966a394da916b4c1698aa569d6`, and signs the wheel and source
+distribution separately with their corresponding CycloneDX 1.7 predicates. Its
+repository access remains read-only; the only elevated capabilities are the
+OIDC and attestation permissions required by the reviewed action.
 
-Before public GitHub Release publication, verify each attestation against the
-exact artifact SHA-256, repository identity, immutable workflow source, exact
-protected-main commit, CycloneDX predicate bytes, and release tag.
+Before PyPI or public GitHub Release publication, the job verifies the exact
+locally generated bundles with `gh attestation verify`. Verification constrains:
 
-Public release must fail closed on any mismatch.
-A branch must never add a temporary job that publishes, moves refs, writes contents,
-pushes to a pull-request branch, self-modifies workflows, or executes
-model-modified source under a write credential.
+- repository identity to `ContextualWisdomLab/EgressWeave`;
+- signer workflow to `.github/workflows/release.yml`;
+- source digest and source ref to the current workflow event;
+- runner provenance to GitHub-hosted infrastructure;
+- predicate type to `https://cyclonedx.org/bom`; and
+- predicate JSON to the exact generated SBOM bytes after JSON decoding.
+
+The Sigstore bundles are copied into the release-evidence set and a new sorted
+`SHA256SUMS` binds the distributions, SBOMs, and bundles. PyPI publication and
+public GitHub Release publication both depend on successful signed-evidence
+verification. A branch must never add a temporary job that publishes, moves
+refs, writes contents, pushes to a pull-request branch, self-modifies workflows,
+or executes model-modified source under a write credential.
+
+### Offline verification
+
+The GitHub Release carries the two distribution artifacts, two `.cdx.json`
+files, two signed bundle files, and `SHA256SUMS`. Verify the checksum set before
+parsing any artifact. On an authenticated online system, obtain the current
+trusted roots with `gh attestation trusted-root`; transfer the resulting
+`trusted_root.jsonl` through an independently authenticated channel. An
+air-gapped verifier can then run:
+
+```bash
+gh attestation verify egressweave-<version>-py3-none-any.whl \
+  --bundle wheel.sbom.attestation.json \
+  --custom-trusted-root trusted_root.jsonl \
+  -R ContextualWisdomLab/EgressWeave \
+  --predicate-type https://cyclonedx.org/bom \
+  --signer-workflow \
+    ContextualWisdomLab/EgressWeave/.github/workflows/release.yml
+```
+
+Repeat for the source distribution and compare each verified predicate to the
+corresponding attached CycloneDX document.
 
 ## Threats, failure, and recovery
 
