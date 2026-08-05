@@ -56,6 +56,23 @@ def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
+def _enforce_request_target_limit(
+    target: object,
+    max_request_target_bytes: int,
+) -> bytes:
+    """Return one exact bounded origin-form target or fail closed.
+
+    HTTPX exposes the percent-encoded path and optional query as ``URL.raw_path``.
+    Only an exact ``bytes`` value is accepted so alternate buffer protocols and
+    subclasses cannot execute attacker-controlled conversion methods or change
+    between validation and HTTPCore construction. Oversized values are rejected
+    rather than truncated because truncation can select a different resource.
+    """
+    if type(target) is not bytes or len(target) > max_request_target_bytes:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+    return target
+
+
 def _is_valid_http_field_value(value: bytes) -> bool:
     """Return whether ``value`` is one normalized RFC 9110 field value.
 

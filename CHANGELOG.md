@@ -23,6 +23,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   64 KiB of final field-name and field-value bytes. Both public policy
   constructors accept positive integers or ASCII decimal strings and reject
   ambiguous or non-positive configuration before network I/O.
+- Add `EgressPolicy.max_request_target_bytes` with a finite 8 KiB default. Both
+  public policy constructors accept positive integers or ASCII decimal strings
+  and reject ambiguous or non-positive configuration during trusted startup.
 - Add `EgressPolicy.max_response_header_fields` and
   `EgressPolicy.max_response_header_bytes` with finite defaults of 100 fields
   and 64 KiB of decoded field-name and field-value bytes. Both public policy
@@ -30,6 +33,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Security
+- Bound the exact percent-encoded outbound path and optional query delegated to
+  HTTPCore. Targets larger than `max_request_target_bytes` fail before pool
+  dispatch, denied request streams are released in synchronous and asynchronous
+  clients, hostile cleanup failures remain behind a fresh generic policy error,
+  targets are never truncated, and the normalized budget participates in
+  deterministic decision fingerprints.
 - Enforce immutable finite connect, read, write, and connection-pool timeout
   ceilings immediately before synchronous or asynchronous HTTPCore dispatch.
   Missing or disabled phase values receive policy maxima, larger values are

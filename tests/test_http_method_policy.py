@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator
+
 import httpx
 import pytest
 
@@ -14,6 +16,40 @@ from egressweave.validation import (
     EgressNotAllowedError,
     _make_validated_egress_url,
 )
+
+
+class _FailingCloseSyncStream(httpx.SyncByteStream):
+    """Record synchronous cleanup and expose hostile exception text."""
+
+    def __init__(self) -> None:
+        """Initialize the closure marker."""
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        """Yield one inert chunk if dispatch occurs unexpectedly."""
+        yield b"body"
+
+    def close(self) -> None:
+        """Record cleanup and simulate an attacker-controlled stream failure."""
+        self.closed = True
+        raise RuntimeError("attacker-controlled method-denial cleanup failure")
+
+
+class _FailingCloseAsyncStream(httpx.AsyncByteStream):
+    """Record asynchronous cleanup and expose hostile exception text."""
+
+    def __init__(self) -> None:
+        """Initialize the asynchronous closure marker."""
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        """Yield one inert chunk if dispatch occurs unexpectedly."""
+        yield b"body"
+
+    async def aclose(self) -> None:
+        """Record cleanup and simulate an attacker-controlled stream failure."""
+        self.closed = True
+        raise RuntimeError("attacker-controlled method-denial cleanup failure")
 
 
 def _validated_example_url():
@@ -104,6 +140,55 @@ async def test_async_transport_rejects_connect_before_network_io() -> None:
             match=f"^{EGRESS_NOT_ALLOWED}$",
         ):
             transport._verify_request_target(request)
+    finally:
+        await transport.aclose()
+
+
+def test_sync_method_denial_closes_request_stream_and_masks_cleanup_failure() -> None:
+    """Release a denied sync body before dispatch without leaking cleanup text."""
+    policy = EgressPolicy.from_hosts("api.example.com")
+    transport = _PinnedEgressTransport(_validated_example_url(), policy)
+    source = _FailingCloseSyncStream()
+    try:
+        request = httpx.Request(
+            "CONNECT",
+            "https://api.example.com/",
+            stream=source,
+        )
+        with pytest.raises(
+            EgressNotAllowedError,
+            match=f"^{EGRESS_NOT_ALLOWED}$",
+        ) as error:
+            transport.handle_request(request)
+
+        assert source.closed is True
+        assert error.value.__cause__ is None
+        assert error.value.__context__ is None
+    finally:
+        transport.close()
+
+
+@pytest.mark.asyncio
+async def test_async_method_denial_closes_request_stream_and_masks_cleanup_failure() -> None:
+    """Release a denied async body before dispatch without leaking cleanup text."""
+    policy = EgressPolicy.from_hosts("api.example.com")
+    transport = _PinnedEgressAsyncTransport(_validated_example_url(), policy)
+    source = _FailingCloseAsyncStream()
+    try:
+        request = httpx.Request(
+            "CONNECT",
+            "https://api.example.com/",
+            stream=source,
+        )
+        with pytest.raises(
+            EgressNotAllowedError,
+            match=f"^{EGRESS_NOT_ALLOWED}$",
+        ) as error:
+            await transport.handle_async_request(request)
+
+        assert source.closed is True
+        assert error.value.__cause__ is None
+        assert error.value.__context__ is None
     finally:
         await transport.aclose()
 
