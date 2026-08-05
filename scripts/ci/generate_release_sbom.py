@@ -19,6 +19,7 @@ from email.policy import default
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from packaging.markers import InvalidMarker, Marker
 from packaging.requirements import InvalidRequirement, Requirement
 
 MANIFEST_SCHEMA_VERSION = 1
@@ -35,7 +36,7 @@ SPDX_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+-]*")
 def _parse_arguments() -> argparse.Namespace:
     """Parse artifact, manifest, and output paths."""
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag in ("artifact", "manifest", "output"):
+    for flag in ("artifact", "manifest", "lock", "output"):
         parser.add_argument(f"--{flag}", type=Path, required=True)
     return parser.parse_args()
 
@@ -279,6 +280,75 @@ def _load_manifest(path: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]
     return root, components
 
 
+def _canonical_marker(value: str | None, context: str) -> str | None:
+    """Return a normalized environment marker or reject invalid syntax."""
+    if value is None:
+        return None
+    try:
+        return str(Marker(value))
+    except InvalidMarker as error:
+        raise SystemExit(f"{context} contains an invalid environment marker") from error
+
+
+def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:
+    """Load exact package versions, markers, and hashes from the CI lock."""
+    try:
+        if path.stat().st_size > MAX_MANIFEST_BYTES:
+            raise SystemExit("runtime lock exceeds the safety bound")
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise SystemExit("runtime lock is unreadable") from error
+    entries: dict[str, dict[str, str | None]] = {}
+    for raw_line in content.replace("\\\n", " ").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.count("--hash=sha256:") != 1:
+            raise SystemExit("runtime lock entries require exactly one SHA-256 hash")
+        requirement_text, digest = line.split("--hash=sha256:", 1)
+        digest = digest.strip()
+        if SHA256.fullmatch(digest) is None:
+            raise SystemExit("runtime lock contains a noncanonical SHA-256 hash")
+        try:
+            requirement = Requirement(requirement_text.strip())
+        except InvalidRequirement as error:
+            raise SystemExit("runtime lock contains an invalid requirement") from error
+        name = _name(requirement.name)
+        if name in entries:
+            raise SystemExit(f"runtime lock duplicates package {name!r}")
+        specifiers = list(requirement.specifier)
+        version = (
+            specifiers[0].version
+            if requirement.url is None
+            and len(specifiers) == 1
+            and specifiers[0].operator == "=="
+            else None
+        )
+        entries[name] = {
+            "version": version,
+            "sha256": digest,
+            "marker": str(requirement.marker) if requirement.marker is not None else None,
+        }
+    return entries
+
+
+def validate_runtime_lock(manifest_path: Path, lock_path: Path) -> None:
+    """Require every SBOM dependency to equal its executable lock evidence."""
+    _, components = _load_manifest(manifest_path)
+    lock_entries = _load_runtime_lock(lock_path)
+    for name, component in components.items():
+        locked = lock_entries.get(name)
+        expected = {
+            "version": component["version"],
+            "sha256": component["sha256"],
+            "marker": _canonical_marker(component["marker"], f"component {name}"),
+        }
+        if locked != expected:
+            raise SystemExit(
+                f"component {name!r} does not match the hash-locked runtime subset"
+            )
+
+
 def _identity(metadata: Message) -> tuple[str, str, str, list[str]]:
     """Return package identity and canonical direct requirements."""
     name = metadata.get("Name")
@@ -407,6 +477,7 @@ def write_sbom(sbom: dict[str, Any], output_path: Path) -> None:
 def main() -> int:
     """Generate one release SBOM and return zero on success."""
     arguments = _parse_arguments()
+    validate_runtime_lock(arguments.manifest.resolve(), arguments.lock.resolve())
     write_sbom(
         build_sbom(arguments.artifact.resolve(), arguments.manifest.resolve()),
         arguments.output.resolve(),
