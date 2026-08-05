@@ -95,6 +95,32 @@ def _sha256_file(path: Path, *, maximum_bytes: int, label: str) -> str:
     return digest.hexdigest()
 
 
+def _read_bounded_file(path: Path, *, maximum_bytes: int, label: str) -> bytes:
+    """Read at most one configured payload plus one detection byte.
+
+    The path is opened once, matched to its current regular-file descriptor, and
+    read in finite chunks. The final one-byte allowance detects growth beyond the
+    configured limit without first materializing an attacker-controlled file.
+    """
+    chunks: list[bytes] = []
+    total_bytes = 0
+    try:
+        with path.open("rb") as stream:
+            _require_open_regular_file(path, stream, label=label)
+            while True:
+                remaining = maximum_bytes - total_bytes
+                block = stream.read(min(1_048_576, remaining + 1))
+                if not block:
+                    break
+                total_bytes += len(block)
+                if total_bytes > maximum_bytes:
+                    raise SystemExit(f"{label} exceeds the safety bound")
+                chunks.append(block)
+    except OSError as error:
+        raise SystemExit(f"{label} is unreadable") from error
+    return b"".join(chunks)
+
+
 def _require_stable_read(
     content: bytes,
     *,
@@ -151,9 +177,13 @@ def _load_checksums(checksum_path: Path, expected_names: set[str]) -> dict[str, 
         label="SHA256SUMS",
     )
     try:
-        raw_content = checksum_path.read_bytes()
+        raw_content = _read_bounded_file(
+            checksum_path,
+            maximum_bytes=MAX_CHECKSUM_BYTES,
+            label="SHA256SUMS",
+        )
         content = raw_content.decode("ascii")
-    except (OSError, UnicodeError) as error:
+    except UnicodeError as error:
         raise SystemExit("SHA256SUMS must be readable canonical ASCII") from error
     digest_after = _sha256_file(
         checksum_path,
@@ -205,14 +235,18 @@ def _load_strict_json(path: Path) -> dict[str, Any]:
     label = f"SBOM {path.name}"
     digest_before = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
     try:
-        raw_content = path.read_bytes()
+        raw_content = _read_bounded_file(
+            path,
+            maximum_bytes=MAX_SBOM_BYTES,
+            label=label,
+        )
         content = raw_content.decode("utf-8")
         document = json.loads(
             content,
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=_reject_json_constant,
         )
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
         raise SystemExit(f"{label} is not strict JSON") from error
     digest_after = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
     _require_stable_read(
@@ -238,7 +272,7 @@ def _canonical_pre_serial_digest(document: dict[str, Any]) -> str:
             ensure_ascii=True,
             allow_nan=False,
         ).encode("utf-8")
-    except (TypeError, ValueError):
+    except (RecursionError, TypeError, ValueError):
         raise SystemExit("SBOM contains a value outside strict JSON") from None
     return hashlib.sha256(canonical).hexdigest()
 
