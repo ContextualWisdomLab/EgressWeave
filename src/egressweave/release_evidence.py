@@ -139,12 +139,30 @@ def _require_stable_read(
         raise SystemExit(f"{label} changed during verification")
 
 
+def _require_canonical_evidence_root(evidence_dir: Path) -> Path:
+    """Return one real evidence directory without symlinked path components.
+
+    The lexical absolute path must equal the strictly resolved path. Once this
+    check succeeds, callers use the returned real path so later retargeting of a
+    previously supplied ancestor symlink cannot change the verified directory.
+    """
+    if not evidence_dir.is_dir() or evidence_dir.is_symlink():
+        raise SystemExit("release evidence directory is missing or unsafe")
+    try:
+        lexical_root = Path(os.path.abspath(evidence_dir))
+        resolved_root = evidence_dir.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit("release evidence directory is missing or unsafe") from error
+    if lexical_root != resolved_root:
+        raise SystemExit("release evidence directory path must not traverse symlinks")
+    return resolved_root
+
+
 def _select_evidence_paths(
     evidence_dir: Path,
 ) -> tuple[Path, Path, Path, Path, Path, Path]:
     """Return the exact artifacts, SBOMs, source identity, and checksum file."""
-    if not evidence_dir.is_dir() or evidence_dir.is_symlink():
-        raise SystemExit("release evidence directory is missing or unsafe")
+    evidence_dir = _require_canonical_evidence_root(evidence_dir)
     try:
         entries = sorted(evidence_dir.iterdir(), key=lambda path: path.name)
     except OSError as error:
@@ -650,8 +668,8 @@ def write_evidence_manifest(
 def main() -> int:
     """Verify sealed evidence and write one deterministic credential handoff manifest."""
     arguments = _parse_arguments()
-    evidence_dir = arguments.evidence_dir
-    resolved_evidence_dir = evidence_dir.resolve()
+    evidence_dir = _require_canonical_evidence_root(arguments.evidence_dir)
+    resolved_evidence_dir = evidence_dir
     output_path = arguments.output.parent.resolve() / arguments.output.name
     if output_path == resolved_evidence_dir or output_path.is_relative_to(
         resolved_evidence_dir
