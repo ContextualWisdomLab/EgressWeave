@@ -36,7 +36,17 @@ noncanonical checksum syntax fail closed.
 
 The verifier applies a 256 MiB ceiling to each distribution, an 8 MiB ceiling to
 each SBOM, and a 64 KiB ceiling to `SHA256SUMS`. These are evidence-verification
-limits, not network or application response limits.
+limits, not network or application response limits. Size is enforced while each
+opened descriptor is consumed rather than trusted from a path-level metadata
+check.
+
+Each selected payload is opened as a descriptor-bound regular file. The verifier
+compares the current path's device and inode with the opened descriptor and
+rejects symlinks, non-regular descriptors, disappearing paths, or substitutions.
+For `SHA256SUMS` and each SBOM, the exact parsed byte snapshot must match bounded
+digests taken immediately before and after the read. After all CycloneDX
+semantics and artifact bindings have been checked, every distribution and SBOM
+is hashed again; any change prevents manifest issuance.
 
 Each SBOM must satisfy the EgressWeave release profile:
 
@@ -61,6 +71,11 @@ PYTHONPATH=src python -m egressweave.release_evidence \
   --source-sha "$GITHUB_SHA" \
   --output "$RUNNER_TEMP/release-evidence-manifest.json"
 ```
+
+The evidence directory should already be sealed against concurrent writes by the
+build system or artifact service. The descriptor and repeated-digest checks are
+a fail-closed verification boundary, not a substitute for an immutable storage
+handoff or an independently supplied container digest.
 
 The output path must remain outside the verified directory so manifest creation
 cannot change the set it just accepted. Repeating the command over identical
@@ -87,6 +102,7 @@ credential-free build and a credentialed attestation boundary. It rejects:
 
 - stale or wrong repository/source identity;
 - symlinked directories or payloads, nested paths, non-files, and extra files;
+- path-to-descriptor identity changes and payload mutation during verification;
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
