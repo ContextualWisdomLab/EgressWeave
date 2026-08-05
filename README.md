@@ -139,6 +139,23 @@ split_service_policy = EgressPolicy.from_authorities(
 )
 ```
 
+Configure private trust or mutual TLS without sharing mutable SSL contexts:
+
+```python
+from egressweave import TLSConfiguration
+
+tls_configuration = TLSConfiguration(
+    ca_file="/etc/company/private-ca.pem",
+    client_certificate_file="/etc/company/client.pem",
+    client_private_key_file="/etc/company/client.key",
+)
+normalized_url, client = build_egress_sync_client(
+    "https://api.example.com",
+    policy=EgressPolicy.from_hosts("api.example.com"),
+    tls_configuration=tls_configuration,
+)
+```
+
 Set integration-specific outbound and inbound body budgets when the 16 MiB
 defaults are not appropriate:
 
@@ -235,6 +252,7 @@ policy = EgressPolicy.from_hosts(
 | Symbol | Purpose |
 |---|---|
 | `EgressPolicy` | Injected exact `(hostname, port)` authority, HTTP-method, DNS-timeout, local-address, and finite request/response body resource policy; use `from_authorities(...)` when both host and port axes vary. |
+| `TLSConfiguration` | Immutable provider-neutral TLS 1.3/TLS 1.2 compatibility, private trust, and optional mutual-TLS client identity settings. |
 | `validate_egress_url` / `validate_egress_url_details` (+ `_async`) | Validate a URL and resolve pinnable addresses. |
 | `build_egress_sync_client(url, *, policy)` | Validate + build a synchronous DNS-pinned `httpx.Client`; empty URLs produce a deny-all client and request and response bodies are bounded. |
 | `build_egress_http_client(url, *, policy)` | Validate + build an asynchronous DNS-pinned `httpx.AsyncClient`; empty URLs produce a deny-all client and request and response bodies are bounded. |
@@ -304,7 +322,9 @@ specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md
 outbound request limits in
 [`request-body-resource-limits.md`](docs/research/request-body-resource-limits.md),
 and response limits in
-[`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md).
+[`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md),
+and enterprise TLS configuration in
+[`tls-configuration.md`](docs/research/tls-configuration.md).
 
 ## License
 

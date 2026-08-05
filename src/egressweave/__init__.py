@@ -33,6 +33,7 @@ from egressweave.sync_transport import (
     build_egress_sync_client,
     build_pinned_https_client,
 )
+from egressweave.tls import TLSConfiguration
 from egressweave.transport import (
     build_egress_http_client,
     build_pinned_https_async_client,
@@ -55,6 +56,7 @@ __all__ = [
     "EgressDecisionEvidence",
     "EgressNotAllowedError",
     "EgressPolicy",
+    "TLSConfiguration",
     "ValidatedEgressURL",
     "build_egress_decision_evidence",
     "build_egress_http_client",

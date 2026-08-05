@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add immutable provider-neutral `TLSConfiguration` dependency injection for
+  private trust stores and mutual-TLS client identities across synchronous and
+  asynchronous DNS-pinned builders. TLS 1.3 is the default; explicit TLS 1.2
+  compatibility remains restricted to forward-secret ECDHE suites.
 - Add explicit, deterministic `EgressDecisionEvidence` for successful egress
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
