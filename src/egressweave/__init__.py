@@ -23,23 +23,33 @@ Asynchronous usage::
     )
 """
 
-from egressweave.decision_evidence import (
+from egressweave import policy as _policy_module
+from egressweave._policy_normalization import (
+    DEFAULT_MAX_RESPONSE_HEADER_BYTES,
+    DEFAULT_MAX_RESPONSE_HEADER_FIELDS,
+)
+from egressweave.response_header_policy import EgressPolicy
+
+_policy_module.EgressPolicy = EgressPolicy
+_policy_module.DEFAULT_MAX_RESPONSE_HEADER_BYTES = DEFAULT_MAX_RESPONSE_HEADER_BYTES
+_policy_module.DEFAULT_MAX_RESPONSE_HEADER_FIELDS = DEFAULT_MAX_RESPONSE_HEADER_FIELDS
+
+from egressweave.decision_evidence import (  # noqa: E402
     DECISION_EVIDENCE_SCHEMA_VERSION,
     EgressDecisionEvidence,
     build_egress_decision_evidence,
 )
-from egressweave.policy import EgressPolicy
-from egressweave.sync_transport import (
+from egressweave.sync_transport import (  # noqa: E402
     build_egress_sync_client,
     build_pinned_https_client,
 )
-from egressweave.timeout_policy import EgressTimeoutPolicy
-from egressweave.tls import TLSConfiguration
-from egressweave.transport import (
+from egressweave.timeout_policy import EgressTimeoutPolicy  # noqa: E402
+from egressweave.tls import TLSConfiguration  # noqa: E402
+from egressweave.transport import (  # noqa: E402
     build_egress_http_client,
     build_pinned_https_async_client,
 )
-from egressweave.validation import (
+from egressweave.validation import (  # noqa: E402
     EGRESS_NOT_ALLOWED,
     EgressNotAllowedError,
     ValidatedEgressURL,
