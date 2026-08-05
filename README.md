@@ -326,8 +326,9 @@ product roadmap moving without bypassing normal governance:
 - at minute `07`, the repository calls the organization-owned review-fix and
   merge schedulers to inspect feedback, recheck current-head evidence, update
   eligible branches, and merge only when every central gate permits it;
-- at minute `37`, a bounded Codex maintainer runs only when there are zero open
-  pull requests and implements one test-driven improvement.
+- at minute `37`, a bounded OpenCode maintainer backed by
+  `NVIDIA_NIM_API_KEY` runs only when there are zero open pull requests and
+  implements one test-driven improvement.
 
 The product workflow uses three fresh runners. The model job has read-only
 GitHub permissions, no direct network access, and can emit only a guard-checked
