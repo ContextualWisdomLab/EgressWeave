@@ -89,8 +89,11 @@ a repository-secret fallback.
    rather than publishing stale evidence or moving the tag.
 5. A credential-separated attestation job downloads only the exact checksummed
    evidence, verifies it, and uses the immutable `actions/attest` v4 commit to
-   create one signed SBOM attestation for the wheel and one for the source
-   distribution. The job receives read-only repository access plus only
+   create one signed CycloneDX attestation for the wheel and one for the source
+   distribution. The workflow uses the action’s custom predicate mode because
+   EgressWeave intentionally omits random CycloneDX `serialNumber` values; the
+   predicate type remains `https://cyclonedx.org/bom` and predicate bytes remain
+   deterministic. The job receives read-only repository access plus only
    `id-token: write`, `attestations: write`, and the artifact-metadata permission
    required by the reviewed action. It does not receive tag, release, package, or
    pull-request write authority.
