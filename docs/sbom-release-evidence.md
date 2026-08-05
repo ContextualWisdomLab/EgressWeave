@@ -11,12 +11,13 @@ and package URLs (purls).
 The generator is a read-only evidence foundation and does not authorize a
 pull-request branch to execute release logic with write credentials. Signed
 integration is confined to the
-protected-main or organization-level reusable workflow boundary. This repository
-implements it in `.github/workflows/release.yml`, which refuses to run unless the
-dispatched source equals the exact current protected `main` head. The attestation
-job is credential-separated from tag creation, PyPI publication, and GitHub
-Release publication. No SLSA Build level is claimed merely because an SBOM or
-attestation exists.
+protected-main or organization-level reusable workflow boundary. This
+repository implements it in
+`.github/workflows/release.yml`, which refuses to run unless the dispatched
+source equals the exact current protected `main` head. The attestation job is
+credential-separated from tag creation, PyPI publication, and GitHub Release
+publication. No SLSA Build level is claimed merely because an
+SBOM or attestation exists.
 
 ## Normative evidence contract
 
@@ -106,7 +107,10 @@ A separate attestation job begins only after the exact immutable release tag has
 been created or verified. The job downloads the checksummed evidence, uses
 `actions/attest` pinned to reviewed commit
 `1e69f48acb82d1966a394da916b4c1698aa569d6`, and signs the wheel and source
-distribution separately with their corresponding CycloneDX 1.7 predicates. Its
+distribution separately with custom predicates whose type is
+`https://cyclonedx.org/bom`. Custom predicate mode is deliberate: the reviewed
+deterministic documents omit random CycloneDX `serialNumber` values, while the
+pinned action’s convenience SBOM detector currently requires that field. Its
 repository access remains read-only; the only elevated capabilities are the
 OIDC and attestation permissions required by the reviewed action.
 
