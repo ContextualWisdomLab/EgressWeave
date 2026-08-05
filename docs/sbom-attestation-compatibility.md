@@ -53,10 +53,12 @@ The adapter applies this fail-closed procedure:
 7. Append that digest to the stable EgressWeave SBOM identity URL namespace.
 8. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
 9. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
-10. Immediately before writing, remove the supplied serial from a detached
-    top-level copy, revalidate the exact CycloneDX and strict-JSON profile,
-    recompute the expected serial, and refuse output when the mutable document
-    was changed or its identity was removed.
+10. Immediately before writing, serialize the complete caller-owned document
+    into a detached strict-JSON snapshot. Mutation-induced encoding failures are
+    masked behind the stable strict-evidence error before any file is created.
+11. Remove the supplied serial from that detached snapshot, revalidate the exact
+    CycloneDX profile, recompute the expected serial, and write only the detached
+    snapshot when the identity still binds every emitted byte.
 
 The UUID therefore identifies the complete SBOM semantics rather than only the
 artifact filename. Any artifact digest, package identity, dependency version,
@@ -86,15 +88,15 @@ bytes before signing. Reject the release if generation differs, the reviewed
 runtime dependency closure drifts from the hash-locked runtime subset, the
 foundation envelope is not exactly CycloneDX 1.7, the document contains a
 Python-only coercion or another non-strict JSON value, the serial number is not
-an RFC 4122 UUID URN, the serial no longer matches the complete document at the
-write boundary, or the predicate type is not exactly
-`https://cyclonedx.org/bom`.
+an RFC 4122 UUID URN, the serial no longer matches the complete detached output
+snapshot, or the predicate type is not exactly `https://cyclonedx.org/bom`.
 
 The Python build API also requires the lock path. Direct build callers therefore
 cannot produce adapter-generated attestable evidence while silently bypassing
-dependency-lock parity. The writer does not trust a previously computed serial:
-it rebinds the identity immediately before output and creates no file when the
-serial is absent or stale.
+dependency-lock parity. The writer does not trust a previously computed serial
+or continue serializing the caller-owned mapping after validation. It first
+creates one strict detached snapshot, rebinds identity on that snapshot, and
+creates no file when serialization, identity, or document semantics are invalid.
 
 ## Workflow trust boundary
 
