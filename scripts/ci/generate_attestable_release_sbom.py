@@ -127,20 +127,24 @@ def _validate_strict_json_value(root: object) -> None:
         raise SystemExit(STRICT_JSON_ERROR)
 
 
-def _canonical_document_digest(sbom: dict[str, Any]) -> str:
-    """Return SHA-256 over strict stable JSON before document identity is added."""
-    _validate_strict_json_value(sbom)
+def _canonical_document_bytes(sbom: dict[str, Any]) -> bytes:
+    """Return strict, deterministic JSON bytes for one complete document."""
     try:
-        canonical = json.dumps(
+        _validate_strict_json_value(sbom)
+        return json.dumps(
             sbom,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
             allow_nan=False,
         ).encode("utf-8")
-    except (RecursionError, TypeError, ValueError):
+    except (RecursionError, RuntimeError, TypeError, ValueError):
         raise SystemExit(STRICT_JSON_ERROR) from None
-    return hashlib.sha256(canonical).hexdigest()
+
+
+def _canonical_document_digest(sbom: dict[str, Any]) -> str:
+    """Return SHA-256 over strict stable JSON before document identity is added."""
+    return hashlib.sha256(_canonical_document_bytes(sbom)).hexdigest()
 
 
 def _serial_number(sbom: dict[str, Any]) -> str:
@@ -190,8 +194,9 @@ def build_attestable_sbom(
 
 
 def write_attestable_sbom(sbom: dict[str, Any], output_path: Path) -> None:
-    """Rebind identity and write stable JSON through the foundation writer."""
-    validated_sbom = _validate_attestable_sbom(sbom)
+    """Detach, rebind, and write one stable exact-document JSON snapshot."""
+    snapshot = json.loads(_canonical_document_bytes(sbom))
+    validated_sbom = _validate_attestable_sbom(snapshot)
     foundation = _load_foundation_generator()
     foundation.write_sbom(validated_sbom, output_path)
 
