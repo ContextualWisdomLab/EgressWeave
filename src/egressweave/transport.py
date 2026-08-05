@@ -11,8 +11,9 @@ policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
 (``trust_env=False``), Unix sockets refused, outbound request targets, headers,
 and streams are bounded and tied to exact framing, request-phase waits are
-capped, response header metadata is bounded, and identity-coded response bodies
-are bounded by the injected policy.
+capped, connection-pool allocation and idle retention are bounded, response
+header metadata is bounded, and identity-coded response bodies are bounded by
+the injected policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -27,7 +28,6 @@ from urllib.parse import urlsplit
 import httpcore
 import httpx
 from httpcore._backends.auto import AutoBackend
-from httpx._config import DEFAULT_LIMITS
 from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
@@ -251,9 +251,11 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         ssl_context = create_egress_ssl_context(tls_configuration)
         self._pool = httpcore.AsyncConnectionPool(
             ssl_context=ssl_context,
-            max_connections=DEFAULT_LIMITS.max_connections,
-            max_keepalive_connections=DEFAULT_LIMITS.max_keepalive_connections,
-            keepalive_expiry=DEFAULT_LIMITS.keepalive_expiry,
+            max_connections=policy.connection_policy.max_connections,
+            max_keepalive_connections=(
+                policy.connection_policy.max_keepalive_connections
+            ),
+            keepalive_expiry=policy.connection_policy.keepalive_expiry_seconds,
             http1=True,
             http2=False,
             network_backend=_PinnedEgressNetworkBackend(
@@ -388,8 +390,9 @@ async def build_egress_http_client(
     ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
-    ``policy.request_timeout_policy``. Response headers are limited by
-    ``policy.max_response_header_fields`` and
+    ``policy.request_timeout_policy``. Connection-pool allocation and idle
+    retention are bounded by ``policy.connection_policy``. Response headers are
+    limited by ``policy.max_response_header_fields`` and
     ``policy.max_response_header_bytes`` before delivery. Successful response
     bodies are requested with identity coding and limited to
     ``policy.max_response_bytes``.
@@ -422,7 +425,7 @@ def build_pinned_https_async_client(
     policy: EgressPolicy,
     tls_configuration: TLSConfiguration | None = None,
 ) -> httpx.AsyncClient:
-    """Build an async client with bounded request, timeout, and response policy."""
+    """Build an async client with bounded request, pool, and response policy."""
     return httpx.AsyncClient(
         follow_redirects=False,
         trust_env=False,
