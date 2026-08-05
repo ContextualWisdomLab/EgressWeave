@@ -10,8 +10,9 @@ addresses returned at validation time, each address is re-validated against the
 policy immediately before ``connect``, and any host/port that differs from the
 validated one is rejected. Redirects are disabled, environment proxies ignored
 (``trust_env=False``), Unix sockets refused, outbound request streams are
-bounded and tied to declared framing, request-phase waits are capped, and
-identity-coded response bodies are bounded by the injected policy.
+bounded and tied to declared framing, request-phase waits are capped, response
+header metadata is bounded, and identity-coded response bodies are bounded by
+the injected policy.
 
 The transport depends on a few httpx / httpcore internals; those libraries are
 version-pinned in ``pyproject.toml`` and exercised by the test-suite so an
@@ -43,6 +44,7 @@ from egressweave.request_safety import (
 from egressweave.response_safety import (
     _BoundedAsyncResponseStream,
     _enforce_declared_response_size,
+    _enforce_response_header_limits,
     _force_identity_accept_encoding,
 )
 from egressweave.tls import TLSConfiguration, create_egress_ssl_context
@@ -321,7 +323,14 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         )
         with map_httpcore_exceptions():
             resp = await self._pool.handle_async_request(req)
+
+        response_denied = False
         try:
+            _enforce_response_header_limits(
+                resp.headers,
+                self._policy.max_response_header_fields,
+                self._policy.max_response_header_bytes,
+            )
             _enforce_declared_response_size(
                 request.method,
                 resp.status,
@@ -329,10 +338,14 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 self._policy.max_response_bytes,
             )
         except EgressNotAllowedError:
+            response_denied = True
+        if response_denied:
             try:
                 await resp.stream.aclose()
-            finally:
-                raise
+            except Exception:  # noqa: BLE001, S110
+                pass
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
         return httpx.Response(
             status_code=resp.status,
             headers=resp.headers,
@@ -358,8 +371,11 @@ async def build_egress_http_client(
     Empty or absent URLs return a deny-all client. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
-    ``policy.request_timeout_policy``. Successful response bodies are requested
-    with identity coding and limited to ``policy.max_response_bytes``.
+    ``policy.request_timeout_policy``. Response headers are limited by
+    ``policy.max_response_header_fields`` and
+    ``policy.max_response_header_bytes`` before delivery. Successful response
+    bodies are requested with identity coding and limited to
+    ``policy.max_response_bytes``.
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:

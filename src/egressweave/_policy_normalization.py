@@ -15,6 +15,8 @@ DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
 DEFAULT_MAX_RESOLVED_ADDRESSES = 16
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+DEFAULT_MAX_RESPONSE_HEADER_FIELDS = 100
+DEFAULT_MAX_RESPONSE_HEADER_BYTES = 64 * 1024
 DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
 DEFAULT_ALLOWED_HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
@@ -192,6 +194,23 @@ def _normalize_max_resolved_addresses(value: object) -> int:
     return address_count
 
 
+def _normalize_positive_count(value: object, field_name: str) -> int:
+    """Return one positive item count with field-specific safe errors."""
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or not normalized.isascii() or not normalized.isdigit():
+            raise ValueError(f"{field_name} must be a positive decimal count")
+        item_count = int(normalized)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError(f"{field_name} must be an integer count")
+        item_count = value
+
+    if item_count <= 0:
+        raise ValueError(f"{field_name} must be greater than zero")
+    return item_count
+
+
 def _normalize_positive_byte_count(value: object, field_name: str) -> int:
     """Return one positive byte budget with field-specific safe errors."""
     if isinstance(value, str):
@@ -219,3 +238,13 @@ def _normalize_max_request_bytes(value: object) -> int:
 def _normalize_max_response_bytes(value: object) -> int:
     """Return one positive inbound response-body byte budget."""
     return _normalize_positive_byte_count(value, "max_response_bytes")
+
+
+def _normalize_max_response_header_fields(value: object) -> int:
+    """Return one positive inbound response-header field-count budget."""
+    return _normalize_positive_count(value, "max_response_header_fields")
+
+
+def _normalize_max_response_header_bytes(value: object) -> int:
+    """Return one positive inbound response-header name/value byte budget."""
+    return _normalize_positive_byte_count(value, "max_response_header_bytes")
