@@ -3,10 +3,10 @@
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
 HTTP methods those authorities may receive, finite DNS-candidate, request-body,
-response-header, and response-body budgets, finite request-phase timeout
-ceilings, and an ``allow_local`` escape hatch for local development stacks:
-built-in local names are bound to loopback, while explicit Docker-container
-names may resolve to RFC 1918 or RFC 4193 addresses.
+request-header, response-header, and response-body budgets, finite request-phase
+timeout ceilings, and an ``allow_local`` escape hatch for local development
+stacks: built-in local names are bound to loopback, while explicit
+Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
 
 Construct a concise one-port policy explicitly::
 
@@ -37,6 +37,8 @@ from egressweave._policy_normalization import (
     DEFAULT_ALLOWED_HTTP_METHODS,
     DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
     DEFAULT_MAX_REQUEST_BYTES,
+    DEFAULT_MAX_REQUEST_HEADER_BYTES,
+    DEFAULT_MAX_REQUEST_HEADER_FIELDS,
     DEFAULT_MAX_RESOLVED_ADDRESSES,
     DEFAULT_MAX_RESPONSE_BYTES,
     DEFAULT_MAX_RESPONSE_HEADER_BYTES,
@@ -47,6 +49,8 @@ from egressweave._policy_normalization import (
     _normalize_allowed_port,
     _normalize_host,
     _normalize_max_request_bytes,
+    _normalize_max_request_header_bytes,
+    _normalize_max_request_header_fields,
     _normalize_max_resolved_addresses,
     _normalize_max_response_bytes,
     _normalize_max_response_header_bytes,
@@ -105,6 +109,12 @@ class EgressPolicy:
     declared length before pool dispatch and also counts actual synchronous or
     asynchronous stream bytes, including chunked and under-declared content.
 
+    ``max_request_header_fields`` is the largest number of final outbound fields
+    a returned client will dispatch after replacing caller authority and content-
+    coding preferences. ``max_request_header_bytes`` is the cumulative byte count
+    of those final field names and values. The finite defaults bound credential,
+    tracing, cookie, and custom metadata fanout before connection-pool dispatch.
+
     ``max_response_header_fields`` is the largest number of separate response
     fields a returned client will expose. Repeated fields, including
     ``Set-Cookie``, count independently. ``max_response_header_bytes`` is the
@@ -132,6 +142,8 @@ class EgressPolicy:
     request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY
     max_response_header_fields: int = DEFAULT_MAX_RESPONSE_HEADER_FIELDS
     max_response_header_bytes: int = DEFAULT_MAX_RESPONSE_HEADER_BYTES
+    max_request_header_fields: int = DEFAULT_MAX_REQUEST_HEADER_FIELDS
+    max_request_header_bytes: int = DEFAULT_MAX_REQUEST_HEADER_BYTES
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
@@ -227,6 +239,14 @@ class EgressPolicy:
         normalized_max_response_header_bytes = (
             _normalize_max_response_header_bytes(self.max_response_header_bytes)
         )
+        normalized_max_request_header_fields = (
+            _normalize_max_request_header_fields(
+                self.max_request_header_fields
+            )
+        )
+        normalized_max_request_header_bytes = (
+            _normalize_max_request_header_bytes(self.max_request_header_bytes)
+        )
 
         # Frozen dataclass: bypass the immutability guard exactly once per field
         # to store normalized caller input and canonical scalar values.
@@ -251,6 +271,16 @@ class EgressPolicy:
             "max_response_header_bytes",
             normalized_max_response_header_bytes,
         )
+        object.__setattr__(
+            self,
+            "max_request_header_fields",
+            normalized_max_request_header_fields,
+        )
+        object.__setattr__(
+            self,
+            "max_request_header_bytes",
+            normalized_max_request_header_bytes,
+        )
         object.__setattr__(self, "allowed_authorities", normalized_authorities)
 
     @classmethod
@@ -271,6 +301,12 @@ class EgressPolicy:
         ),
         max_response_header_bytes: int | str = (
             DEFAULT_MAX_RESPONSE_HEADER_BYTES
+        ),
+        max_request_header_fields: int | str = (
+            DEFAULT_MAX_REQUEST_HEADER_FIELDS
+        ),
+        max_request_header_bytes: int | str = (
+            DEFAULT_MAX_REQUEST_HEADER_BYTES
         ),
     ) -> EgressPolicy:
         """Build an unambiguous policy from host and port projections.
@@ -311,6 +347,8 @@ class EgressPolicy:
             max_response_bytes=max_response_bytes,
             max_response_header_fields=max_response_header_fields,
             max_response_header_bytes=max_response_header_bytes,
+            max_request_header_fields=max_request_header_fields,
+            max_request_header_bytes=max_request_header_bytes,
         )
 
     @classmethod
@@ -330,6 +368,12 @@ class EgressPolicy:
         ),
         max_response_header_bytes: int | str = (
             DEFAULT_MAX_RESPONSE_HEADER_BYTES
+        ),
+        max_request_header_fields: int | str = (
+            DEFAULT_MAX_REQUEST_HEADER_FIELDS
+        ),
+        max_request_header_bytes: int | str = (
+            DEFAULT_MAX_REQUEST_HEADER_BYTES
         ),
     ) -> EgressPolicy:
         """Build a policy from exact normalized ``(hostname, port)`` pairs.
@@ -362,6 +406,8 @@ class EgressPolicy:
             max_response_bytes=max_response_bytes,
             max_response_header_fields=max_response_header_fields,
             max_response_header_bytes=max_response_header_bytes,
+            max_request_header_fields=max_request_header_fields,
+            max_request_header_bytes=max_request_header_bytes,
             allowed_authorities=normalized_authorities,
         )
 
