@@ -226,3 +226,26 @@ def test_cli_refuses_output_parent_redirected_into_verified_evidence(
         release_evidence.main()
 
     assert not (evidence_dir / "manifest.json").exists()
+
+
+def test_output_boundary_normalizes_parent_resolution_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Return one stable error when the current output parent cannot resolve."""
+    output = tmp_path / "handoff" / "manifest.json"
+    output.parent.mkdir()
+    original_resolve = Path.resolve
+
+    def fail_output_parent(path: Path, *args, **kwargs):
+        if path == output.parent:
+            raise OSError("blocked")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_output_parent)
+
+    with pytest.raises(SystemExit, match="parent directory"):
+        release_evidence._require_output_outside_verified_set(
+            output,
+            tmp_path / "evidence",
+        )
