@@ -27,6 +27,7 @@ CYCLONEDX_DOCUMENT_VERSION = 1
 FOUNDATION_PROFILE_ERROR = (
     "release SBOM foundation must produce exact CycloneDX 1.7 evidence"
 )
+STRICT_JSON_ERROR = "release SBOM foundation must produce strict JSON evidence"
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -71,13 +72,17 @@ def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
 
 
 def _canonical_document_digest(sbom: dict[str, Any]) -> str:
-    """Return SHA-256 over stable semantic JSON before document identity is added."""
-    canonical = json.dumps(
-        sbom,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    ).encode("utf-8")
+    """Return SHA-256 over strict stable JSON before document identity is added."""
+    try:
+        canonical = json.dumps(
+            sbom,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise SystemExit(STRICT_JSON_ERROR) from None
     return hashlib.sha256(canonical).hexdigest()
 
 
