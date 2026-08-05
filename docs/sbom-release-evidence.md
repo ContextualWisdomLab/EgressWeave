@@ -10,10 +10,12 @@ and package URLs (purls).
 
 The generator is a read-only evidence foundation and does not authorize a
 pull-request branch to execute release logic with write credentials. Signed
-integration exists only in `.github/workflows/release.yml`, which refuses to run
-unless the dispatched source equals the exact current protected `main` head. The
-attestation job is credential-separated from tag creation, PyPI publication, and
-GitHub Release publication. No SLSA Build level is claimed merely because an
+integration is confined to the protected-main or organization-level reusable
+workflow boundary. This repository implements it in
+`.github/workflows/release.yml`, which refuses to run unless the dispatched
+source equals the exact current protected `main` head. The attestation job is
+credential-separated from tag creation, PyPI publication, and GitHub Release
+publication. No SLSA Build level is claimed merely because an
 SBOM or attestation exists.
 
 ## Normative evidence contract
