@@ -50,6 +50,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Serialize attestable CycloneDX evidence from one detached exact-document
+  snapshot immediately before output. The writer revalidates the content-bound
+  serial on that snapshot, while mutation-induced encoding failures fail closed
+  before file creation so validated identity cannot diverge from emitted bytes.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
