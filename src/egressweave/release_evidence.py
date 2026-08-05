@@ -444,13 +444,62 @@ def build_evidence_manifest(
     }
 
 
+def _encode_evidence_manifest(manifest: dict[str, Any]) -> bytes:
+    """Return one detached deterministic payload containing strict JSON data."""
+    if type(manifest) is not dict:
+        raise SystemExit("evidence manifest must be a strict JSON object")
+    try:
+        text = json.dumps(
+            manifest,
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        snapshot = json.loads(
+            text,
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_json_constant,
+        )
+    except (RecursionError, RuntimeError, TypeError, ValueError, json.JSONDecodeError):
+        raise SystemExit("evidence manifest must be a strict JSON object") from None
+    if snapshot != manifest:
+        raise SystemExit("evidence manifest must be a strict JSON object")
+    return (text + "\n").encode("utf-8")
+
+
+def _open_exclusive_manifest(path: str, flags: int) -> int:
+    """Create a private descriptor without following or replacing the final path."""
+    return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+
+
 def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None:
-    """Write stable UTF-8 JSON outside the verified evidence directory."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
-        encoding="utf-8",
-    )
+    """Create one private descriptor-bound manifest without replacing a path."""
+    payload = _encode_evidence_manifest(manifest)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise SystemExit("evidence manifest parent directory is unavailable") from error
+
+    try:
+        with open(output_path, "xb", opener=_open_exclusive_manifest) as stream:
+            _require_open_regular_file(
+                output_path,
+                stream,
+                label="evidence manifest output",
+            )
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+            _require_open_regular_file(
+                output_path,
+                stream,
+                label="evidence manifest output",
+            )
+    except FileExistsError:
+        raise SystemExit("evidence manifest output already exists") from None
+    except OSError as error:
+        raise SystemExit("evidence manifest output cannot be created safely") from error
 
 
 def main() -> int:
