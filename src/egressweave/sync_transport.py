@@ -5,8 +5,8 @@ Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
 outbound request targets, headers, request bodies, request-phase waits,
-response-header metadata, and identity-coded response bodies are bounded by the
-injected egress policy.
+connection-pool allocation, response-header metadata, and identity-coded response
+bodies are bounded by the injected egress policy.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from urllib.parse import urlsplit
 
 import httpcore
 import httpx
-from httpx._config import DEFAULT_LIMITS
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
@@ -159,9 +158,11 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         ssl_context = create_egress_ssl_context(tls_configuration)
         self._pool = httpcore.ConnectionPool(
             ssl_context=ssl_context,
-            max_connections=DEFAULT_LIMITS.max_connections,
-            max_keepalive_connections=DEFAULT_LIMITS.max_keepalive_connections,
-            keepalive_expiry=DEFAULT_LIMITS.keepalive_expiry,
+            max_connections=policy.connection_policy.max_connections,
+            max_keepalive_connections=(
+                policy.connection_policy.max_keepalive_connections
+            ),
+            keepalive_expiry=policy.connection_policy.keepalive_expiry_seconds,
             http1=True,
             http2=False,
             network_backend=_PinnedEgressSyncNetworkBackend(
@@ -300,8 +301,9 @@ def build_egress_sync_client(
     ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
-    ``policy.request_timeout_policy``. Response headers are limited by
-    ``policy.max_response_header_fields`` and
+    ``policy.request_timeout_policy``. Connection-pool allocation and idle
+    retention are bounded by ``policy.connection_policy``. Response headers are
+    limited by ``policy.max_response_header_fields`` and
     ``policy.max_response_header_bytes`` before delivery. Successful response
     bodies are requested with identity coding and limited to
     ``policy.max_response_bytes`` during streaming and buffered reads.
@@ -341,9 +343,10 @@ def build_pinned_https_client(
     is rejected before network I/O, every exact outbound target and request
     header section is bounded after trusted rewriting, every request body is
     constrained by ``policy.max_request_bytes`` and exact declared framing,
-    every request phase is capped by ``policy.request_timeout_policy``, response
-    metadata is bounded by the finite header policy, and every identity-coded
-    response body is constrained by ``policy.max_response_bytes``.
+    every request phase is capped by ``policy.request_timeout_policy``, connection
+    allocation is bounded by ``policy.connection_policy``, response metadata is
+    bounded by the finite header policy, and every identity-coded response body
+    is constrained by ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
