@@ -18,8 +18,12 @@ repository-level completion remains tracked in
 
 ## Exact six-file input contract
 
-The evidence directory must be a real directory, not a symlink, and contain
-exactly six regular direct-child files for one stable `X.Y.Z` version:
+The evidence directory must be a canonical absolute path to a real directory.
+Neither the final directory nor any ancestor component may be a symbolic link.
+After this check, the verifier uses the resolved real path for every subsequent
+read so retargeting a caller-supplied ancestor link cannot change the verified
+root. The directory must contain exactly six regular direct-child files for one
+stable `X.Y.Z` version:
 
 ```text
 egressweave-X.Y.Z-py3-none-any.whl
@@ -117,6 +121,12 @@ PYTHONPATH=src python -m egressweave.release_evidence \
   --output "$RUNNER_TEMP/release-evidence-manifest.json"
 ```
 
+Supply the real evidence-directory path rather than a symlinked workspace alias,
+bind mount alias represented by a symlink, or convenience link. The CLI rejects
+any path whose lexical absolute form differs from its strict filesystem-resolved
+form. This makes the directory authority used for payload verification identical
+to the root excluded from manifest output.
+
 The evidence directory should already be sealed against concurrent writes by the
 build system or artifact service. Descriptor and repeated-digest checks are a
 fail-closed verification boundary, not a substitute for immutable storage or an
@@ -159,7 +169,8 @@ credential-free build and a credentialed attestation boundary. It rejects:
 
 - missing, malformed, mixed, stale, or caller-mismatched repository/source
   identity;
-- symlinked directories or payloads, nested paths, non-files, and extra files;
+- an evidence root reached through a symlinked final or ancestor path component;
+- symlinked payloads, nested paths, non-files, and extra files;
 - path-to-descriptor identity changes and mutation of any accepted evidence file
   before manifest issuance;
 - an alternate valid SBOM or source identity exposed only during semantic parsing
@@ -226,6 +237,14 @@ https://docs.github.com/en/actions/how-to/secure-your-work/use-artifact-attestat
 GitHub. (n.d.). *Using artifact attestations and reusable workflows to achieve
 SLSA v1 Build Level 3.* GitHub Docs. Retrieved August 6, 2026, from
 https://docs.github.com/en/actions/how-to/secure-your-work/use-artifact-attestations/increase-security-rating
+
+IEEE Computer Society. (2018). *IEEE standard for information technology—Portable
+operating system interface (POSIX®) base specifications, Issue 7* (IEEE Std
+1003.1-2017). The Open Group.
+https://pubs.opengroup.org/onlinepubs/9699919799/
+
+MITRE. (2024). *CWE-59: Improper link resolution before file access ('link
+following').* https://cwe.mitre.org/data/definitions/59.html
 
 The in-toto Project. (n.d.). *Attestation framework specification.* GitHub.
 Retrieved August 6, 2026, from
