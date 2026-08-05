@@ -110,10 +110,9 @@ attestation against the exact artifact SHA-256, repository identity, immutable
 workflow source, exact protected-main commit, CycloneDX predicate bytes, hosted
 runner policy, and release tag.
 
-Public release fails closed on any mismatch. A branch must never add a temporary
-job that publishes, moves refs, writes contents, pushes to a pull-request branch,
-self-modifies workflows, or executes model-modified source under a write
-credential.
+Public release fails closed on any mismatch. A branch must never add a temporary job that publishes, moves refs, writes
+contents, pushes to a pull-request branch, self-modifies workflows, or executes
+model-modified source under a write credential.
 
 ## Threats, failure, and recovery
 
