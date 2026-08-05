@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Integrate deterministic CycloneDX 1.7 SBOMs into the protected release path,
+  sign each exact distribution with a credential-separated GitHub artifact
+  attestation, verify repository identity and predicate bytes before external
+  publication, and include the Sigstore bundles in checksummed release evidence.
 - Add deterministic CycloneDX 1.7 SBOM generation that binds each canonical
   wheel and source distribution to its exact SHA-256 and a reviewed, hash-pinned
   runtime dependency graph. Protected attestation integration remains separate
@@ -40,12 +44,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   constructors accept positive integers or ASCII decimal strings and reject
   ambiguous or non-positive configuration before network I/O.
 
-### Fixed
-- Correct the buyer-facing autonomous-maintainer identity from the retired Codex
-  wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
-  without changing the centrally managed review-agent credential contract.
-
 ### Security
+- Align the public autonomous-maintenance description with the executable
+  supply-chain boundary: the zero-PR product worker is pinned OpenCode backed by
+  `NVIDIA_NIM_API_KEY`, while the centrally managed review-agent identity and
+  inherited-secret contract remain unchanged.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
