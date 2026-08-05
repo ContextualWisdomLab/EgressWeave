@@ -54,7 +54,7 @@ def test_manifest_output_refuses_symlink_without_changing_target(tmp_path: Path)
 
 @pytest.mark.parametrize(
     "manifest",
-    [[], {"bad": float("nan")}, {"bad": object()}],
+    [[], {"bad": float("nan")}, {"bad": object()}, {"bad": (1,)}],
 )
 def test_manifest_output_rejects_non_strict_json_before_file_creation(
     tmp_path: Path,
@@ -88,3 +88,54 @@ def test_manifest_output_normalizes_unusable_parent(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="parent directory"):
         release_evidence.write_evidence_manifest(MANIFEST, parent / "manifest.json")
+
+
+def test_manifest_output_detects_final_path_replacement(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Refuse a manifest path replaced after its descriptor was written."""
+    output = tmp_path / "manifest.json"
+    original_fsync = release_evidence.os.fsync
+
+    def replace_after_sync(descriptor: int) -> None:
+        original_fsync(descriptor)
+        output.unlink()
+        output.write_bytes(b"replacement\n")
+
+    monkeypatch.setattr(release_evidence.os, "fsync", replace_after_sync)
+
+    with pytest.raises(SystemExit, match="unreadable or unsafe"):
+        release_evidence.write_evidence_manifest(MANIFEST, output)
+
+    assert output.read_bytes() == b"replacement\n"
+
+
+def test_manifest_output_normalizes_creation_failure(tmp_path: Path, monkeypatch) -> None:
+    """Return one stable error when exclusive descriptor creation fails."""
+    output = tmp_path / "manifest.json"
+
+    def fail_open(*args, **kwargs):
+        raise OSError("blocked")
+
+    monkeypatch.setattr(release_evidence.os, "open", fail_open)
+
+    with pytest.raises(SystemExit, match="cannot be created safely"):
+        release_evidence.write_evidence_manifest(MANIFEST, output)
+
+    assert not output.exists()
+
+
+def test_manifest_output_normalizes_write_failure(tmp_path: Path, monkeypatch) -> None:
+    """Return one stable error when durable output synchronization fails."""
+    output = tmp_path / "manifest.json"
+
+    def fail_sync(descriptor: int) -> None:
+        raise OSError("blocked")
+
+    monkeypatch.setattr(release_evidence.os, "fsync", fail_sync)
+
+    with pytest.raises(SystemExit, match="cannot be created safely"):
+        release_evidence.write_evidence_manifest(MANIFEST, output)
+
+    assert output.is_file()
