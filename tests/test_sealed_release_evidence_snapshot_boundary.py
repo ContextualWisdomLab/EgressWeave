@@ -134,13 +134,15 @@ def test_descriptor_identity_error_is_masked_as_unsafe(
 
     original_lstat = Path.lstat
     monkeypatch.setattr(Path, "lstat", fail_lstat)
-    with path.open("rb") as stream:
-        with pytest.raises(SystemExit, match="unreadable or unsafe"):
-            release_evidence._require_open_regular_file(
-                path,
-                stream,
-                label="payload",
-            )
+    with (
+        path.open("rb") as stream,
+        pytest.raises(SystemExit, match="unreadable or unsafe"),
+    ):
+        release_evidence._require_open_regular_file(
+            path,
+            stream,
+            label="payload",
+        )
 
 
 @pytest.mark.parametrize("mismatch", ["before", "after"])
