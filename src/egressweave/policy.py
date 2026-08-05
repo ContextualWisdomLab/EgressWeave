@@ -2,11 +2,12 @@
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
-HTTP methods those authorities may receive, finite DNS-candidate, request-target,
-request-body, request-header, response-header, and response-body budgets, finite
-request-phase timeout ceilings, and an ``allow_local`` escape hatch for local
-development stacks: built-in local names are bound to loopback, while explicit
-Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
+HTTP methods those authorities may receive, finite DNS-candidate, connection,
+request-target, request-body, request-header, response-header, and response-body
+budgets, finite request-phase timeout ceilings, and an ``allow_local`` escape
+hatch for local development stacks: built-in local names are bound to loopback,
+while explicit Docker-container names may resolve to RFC 1918 or RFC 4193
+addresses.
 
 Construct a concise one-port policy explicitly::
 
@@ -58,6 +59,10 @@ from egressweave._policy_normalization import (
     _normalize_max_response_header_bytes,
     _normalize_max_response_header_fields,
 )
+from egressweave.connection_policy import (
+    DEFAULT_EGRESS_CONNECTION_POLICY,
+    EgressConnectionPolicy,
+)
 from egressweave.timeout_policy import (
     DEFAULT_EGRESS_TIMEOUT_POLICY,
     EgressTimeoutPolicy,
@@ -106,6 +111,12 @@ class EgressPolicy:
     values delegated to HTTPCore. Missing or explicitly disabled request values
     receive the finite policy maximum, while stricter caller values are retained.
 
+    ``connection_policy`` bounds simultaneous and idle connections retained by
+    each synchronous or asynchronous pinned HTTPCore pool. The immutable default
+    preserves HTTPX's ordinary 100 total, 20 idle, and five-second idle expiry,
+    while integrations can inject stricter finite limits without altering the
+    transport implementation.
+
     ``max_request_bytes`` is the largest outbound request body a returned client
     will consume from its caller. The finite 16 MiB default rejects an oversized
     declared length before pool dispatch and also counts actual synchronous or
@@ -153,6 +164,7 @@ class EgressPolicy:
     max_request_header_fields: int = DEFAULT_MAX_REQUEST_HEADER_FIELDS
     max_request_header_bytes: int = DEFAULT_MAX_REQUEST_HEADER_BYTES
     max_request_target_bytes: int = DEFAULT_MAX_REQUEST_TARGET_BYTES
+    connection_policy: EgressConnectionPolicy = DEFAULT_EGRESS_CONNECTION_POLICY
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
@@ -162,6 +174,8 @@ class EgressPolicy:
             raise TypeError(
                 "request_timeout_policy must be an EgressTimeoutPolicy"
             )
+        if not isinstance(self.connection_policy, EgressConnectionPolicy):
+            raise TypeError("connection_policy must be an EgressConnectionPolicy")
 
         timeout = self.dns_timeout_seconds
         if (
@@ -311,6 +325,7 @@ class EgressPolicy:
         allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
+        connection_policy: EgressConnectionPolicy = DEFAULT_EGRESS_CONNECTION_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
         max_response_header_fields: int | str = (
@@ -361,6 +376,7 @@ class EgressPolicy:
             allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
             request_timeout_policy=request_timeout_policy,
+            connection_policy=connection_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
             max_response_header_fields=max_response_header_fields,
@@ -380,6 +396,7 @@ class EgressPolicy:
         max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         request_timeout_policy: EgressTimeoutPolicy = DEFAULT_EGRESS_TIMEOUT_POLICY,
+        connection_policy: EgressConnectionPolicy = DEFAULT_EGRESS_CONNECTION_POLICY,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
         max_response_header_fields: int | str = (
@@ -422,6 +439,7 @@ class EgressPolicy:
             allowed_ports=frozenset(port for _, port in normalized_authorities),
             allowed_methods=frozenset(method_items),
             request_timeout_policy=request_timeout_policy,
+            connection_policy=connection_policy,
             max_request_bytes=max_request_bytes,
             max_response_bytes=max_response_bytes,
             max_response_header_fields=max_response_header_fields,
