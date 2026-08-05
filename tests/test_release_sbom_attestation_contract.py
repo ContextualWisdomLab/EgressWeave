@@ -54,7 +54,9 @@ def test_attestation_job_has_only_the_required_signing_identity() -> None:
     assert "pull-requests: write" not in attestation_job
     assert attestation_job.count(ATTEST_ACTION) == 2
     assert attestation_job.count("subject-path:") == 2
-    assert attestation_job.count("sbom-path:") == 2
+    assert attestation_job.count("predicate-type: https://cyclonedx.org/bom") == 2
+    assert attestation_job.count("predicate-path:") == 2
+    assert "sbom-path:" not in attestation_job
 
 
 def test_attestations_are_verified_and_preserved_before_public_release() -> None:
