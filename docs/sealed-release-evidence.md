@@ -80,8 +80,14 @@ a fail-closed verification boundary, not a substitute for an immutable storage
 handoff or an independently supplied container digest.
 
 The output path must remain outside the verified directory so manifest creation
-cannot change the set it just accepted. Repeating the command over identical
-inputs produces byte-identical JSON. The manifest records:
+cannot change the set it just accepted. Before touching the output path, the
+writer detaches one strict RFC 8259 JSON snapshot and rejects non-object,
+non-finite, Python-only, or structurally coerced values. It then creates a new
+owner-only file through an exclusive descriptor, refuses an existing path or
+final-path symlink, flushes and durably synchronizes the bytes, and rechecks that
+the path still names the same regular descriptor. It never overwrites a prior
+manifest. Repeating the command with a fresh output path over identical inputs
+produces byte-identical JSON. The manifest records:
 
 - format name and version;
 - exact repository and source commit;
@@ -106,18 +112,23 @@ credential-free build and a credentialed attestation boundary. It rejects:
 - symlinked directories or payloads, nested paths, non-files, and extra files;
 - path-to-descriptor identity changes and mutation of any accepted evidence file
   before manifest issuance;
+- pre-existing, symlinked, replaced, non-private, or non-strict handoff-manifest
+  output paths and payloads;
 - version disagreement between wheel and source distribution;
 - missing, duplicate, malformed, unsorted, or mismatched checksums;
 - oversized evidence intended to exhaust memory or runner storage;
 - ambiguous JSON, downgraded CycloneDX envelopes, copied/random identifiers,
   and SBOMs bound to different distribution bytes.
 
-Every rejection exits nonzero before a handoff manifest is written. Error text
-identifies the failed evidence class but does not make the evidence trusted.
-Operators must discard the complete candidate set, rebuild from the exact
-protected-main head in a clean credential-free environment, and rerun all
-quality, security, package, SBOM, checksum, and manifest gates. Editing a failed
-manifest or checksum file in place is not a recovery procedure.
+Every rejection exits nonzero before a trusted handoff manifest is issued. A
+low-level storage failure can leave a newly created but untrusted partial output;
+operators must never reuse it. Error text identifies the failed evidence class
+but does not make the evidence trusted. Operators must discard the complete
+candidate set and any failed output, rebuild from the exact protected-main head
+in a clean credential-free environment, choose a fresh manifest path, and rerun
+all quality, security, package, SBOM, checksum, and manifest gates. Editing or
+overwriting a failed manifest or checksum file in place is not a recovery
+procedure.
 
 The verifier does not defend against a compromised runner kernel, a malicious
 credentialed reusable workflow, or a party that can replace both the sealed
