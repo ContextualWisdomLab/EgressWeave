@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
 import uuid
 from pathlib import Path
 from typing import Any
@@ -60,22 +62,50 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _sha256_file(path: Path, *, maximum_bytes: int, label: str) -> str:
-    """Return a bounded file SHA-256 without loading the file into memory."""
+def _require_open_regular_file(path: Path, stream: Any, *, label: str) -> None:
+    """Require the opened descriptor to match one current regular path."""
     try:
-        file_size = path.stat().st_size
+        path_state = path.lstat()
+        opened_state = os.fstat(stream.fileno())
     except OSError as error:
-        raise SystemExit(f"{label} is unreadable") from error
-    if file_size > maximum_bytes:
-        raise SystemExit(f"{label} exceeds the safety bound")
+        raise SystemExit(f"{label} is unreadable or unsafe") from error
+    if (
+        not stat.S_ISREG(path_state.st_mode)
+        or not stat.S_ISREG(opened_state.st_mode)
+        or (path_state.st_dev, path_state.st_ino)
+        != (opened_state.st_dev, opened_state.st_ino)
+    ):
+        raise SystemExit(f"{label} is unreadable or unsafe")
+
+
+def _sha256_file(path: Path, *, maximum_bytes: int, label: str) -> str:
+    """Return a bounded SHA-256 from one descriptor-bound regular file."""
     digest = hashlib.sha256()
+    total_bytes = 0
     try:
         with path.open("rb") as stream:
+            _require_open_regular_file(path, stream, label=label)
             for block in iter(lambda: stream.read(1_048_576), b""):
+                total_bytes += len(block)
+                if total_bytes > maximum_bytes:
+                    raise SystemExit(f"{label} exceeds the safety bound")
                 digest.update(block)
     except OSError as error:
         raise SystemExit(f"{label} is unreadable") from error
     return digest.hexdigest()
+
+
+def _require_stable_read(
+    content: bytes,
+    *,
+    digest_before: str,
+    digest_after: str,
+    label: str,
+) -> None:
+    """Require one separately read byte snapshot to match both file digests."""
+    content_digest = hashlib.sha256(content).hexdigest()
+    if content_digest != digest_before or content_digest != digest_after:
+        raise SystemExit(f"{label} changed during verification")
 
 
 def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, Path]:
@@ -115,15 +145,27 @@ def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, 
 
 def _load_checksums(checksum_path: Path, expected_names: set[str]) -> dict[str, str]:
     """Return one canonical sorted SHA-256 entry for every evidence payload."""
-    _sha256_file(
+    digest_before = _sha256_file(
         checksum_path,
         maximum_bytes=MAX_CHECKSUM_BYTES,
         label="SHA256SUMS",
     )
     try:
-        content = checksum_path.read_bytes().decode("ascii")
+        raw_content = checksum_path.read_bytes()
+        content = raw_content.decode("ascii")
     except (OSError, UnicodeError) as error:
         raise SystemExit("SHA256SUMS must be readable canonical ASCII") from error
+    digest_after = _sha256_file(
+        checksum_path,
+        maximum_bytes=MAX_CHECKSUM_BYTES,
+        label="SHA256SUMS",
+    )
+    _require_stable_read(
+        raw_content,
+        digest_before=digest_before,
+        digest_after=digest_after,
+        label="SHA256SUMS",
+    )
     if not content.endswith("\n") or "\r" in content:
         raise SystemExit("SHA256SUMS must use LF lines with one trailing newline")
     lines = content.splitlines()
@@ -159,19 +201,28 @@ def _reject_json_constant(value: str) -> None:
 
 
 def _load_strict_json(path: Path) -> dict[str, Any]:
-    """Load one bounded RFC 8259 JSON object without duplicate member names."""
-    _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=f"SBOM {path.name}")
+    """Load one stable bounded RFC 8259 object without duplicate names."""
+    label = f"SBOM {path.name}"
+    digest_before = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
     try:
-        content = path.read_text(encoding="utf-8")
+        raw_content = path.read_bytes()
+        content = raw_content.decode("utf-8")
         document = json.loads(
             content,
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=_reject_json_constant,
         )
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as error:
-        raise SystemExit(f"SBOM {path.name} is not strict JSON") from error
+        raise SystemExit(f"{label} is not strict JSON") from error
+    digest_after = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
+    _require_stable_read(
+        raw_content,
+        digest_before=digest_before,
+        digest_after=digest_after,
+        label=label,
+    )
     if type(document) is not dict:
-        raise SystemExit(f"SBOM {path.name} must be a JSON object")
+        raise SystemExit(f"{label} must be a JSON object")
     return document
 
 
@@ -270,6 +321,16 @@ def _verify_sbom(
     return serial_number
 
 
+def _payload_digests(
+    payload_specs: tuple[tuple[Path, int, str], ...],
+) -> dict[str, str]:
+    """Hash every selected payload through its bounded regular-file boundary."""
+    return {
+        path.name: _sha256_file(path, maximum_bytes=maximum_bytes, label=label)
+        for path, maximum_bytes, label in payload_specs
+    }
+
+
 def build_evidence_manifest(
     evidence_dir: Path,
     *,
@@ -285,30 +346,15 @@ def build_evidence_manifest(
     wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path = (
         _select_evidence_paths(evidence_dir)
     )
-    payload_paths = (wheel_path, sdist_path, wheel_sbom, sdist_sbom)
+    payload_specs = (
+        (wheel_path, MAX_ARTIFACT_BYTES, "wheel"),
+        (sdist_path, MAX_ARTIFACT_BYTES, "source distribution"),
+        (wheel_sbom, MAX_SBOM_BYTES, "wheel SBOM"),
+        (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
+    )
+    payload_paths = tuple(path for path, _, _ in payload_specs)
     checksums = _load_checksums(checksum_path, {path.name for path in payload_paths})
-    observed_digests = {
-        wheel_path.name: _sha256_file(
-            wheel_path,
-            maximum_bytes=MAX_ARTIFACT_BYTES,
-            label="wheel",
-        ),
-        sdist_path.name: _sha256_file(
-            sdist_path,
-            maximum_bytes=MAX_ARTIFACT_BYTES,
-            label="source distribution",
-        ),
-        wheel_sbom.name: _sha256_file(
-            wheel_sbom,
-            maximum_bytes=MAX_SBOM_BYTES,
-            label="wheel SBOM",
-        ),
-        sdist_sbom.name: _sha256_file(
-            sdist_sbom,
-            maximum_bytes=MAX_SBOM_BYTES,
-            label="source-distribution SBOM",
-        ),
-    }
+    observed_digests = _payload_digests(payload_specs)
     if checksums != observed_digests:
         raise SystemExit("release evidence digest mismatch")
 
@@ -335,6 +381,8 @@ def build_evidence_manifest(
                 "sbomSha256": observed_digests[sbom_path.name],
             }
         )
+    if _payload_digests(payload_specs) != observed_digests:
+        raise SystemExit("release evidence changed during verification")
     artifacts.sort(key=lambda item: item["artifactFilename"])
     return {
         "artifacts": artifacts,
