@@ -71,6 +71,54 @@ def _is_valid_http_field_value(value: bytes) -> bool:
     )
 
 
+def _coerce_request_header_item(item: object) -> tuple[bytes, bytes] | None:
+    """Return one exact byte header pair or ``None`` without leaking failures."""
+    try:
+        name, value = item  # type: ignore[misc]
+    except Exception:  # noqa: BLE001
+        return None
+    if type(name) is not bytes or type(value) is not bytes:
+        return None
+    return name, value
+
+
+def _enforce_request_header_limits(
+    headers: Iterable[tuple[bytes, bytes]],
+    max_request_header_fields: int,
+    max_request_header_bytes: int,
+) -> None:
+    """Reject final outbound fields exceeding count or name/value budgets.
+
+    The caller authority and content-coding preferences have already been
+    replaced when transports invoke this control. Counting the final list makes
+    the trusted ``Host`` and ``Accept-Encoding: identity`` fields part of the
+    exact outbound resource budget. Repeated fields count independently, and
+    the byte budget sums every field name and value exactly once. Malformed
+    metadata or an iterator failure is masked behind the generic policy boundary.
+    """
+    denied = False
+    field_bytes = 0
+    try:
+        for field_count, item in enumerate(headers, start=1):
+            if field_count > max_request_header_fields:
+                denied = True
+                break
+            normalized_item = _coerce_request_header_item(item)
+            if normalized_item is None:
+                denied = True
+                break
+            name, value = normalized_item
+            field_bytes += len(name) + len(value)
+            if field_bytes > max_request_header_bytes:
+                denied = True
+                break
+    except Exception:  # noqa: BLE001
+        denied = True
+
+    if denied:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+
 def _validate_http_message_framing(
     content_length_values: list[bytes], transfer_encoding_values: list[bytes]
 ) -> None:
