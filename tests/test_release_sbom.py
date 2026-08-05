@@ -135,6 +135,43 @@ def test_artifact_dependency_drift_fails_closed(tmp_path: Path) -> None:
         generator.build_sbom(wheel_path, MANIFEST_PATH)
 
 
+def test_artifact_dependency_specifier_drift_fails_closed(tmp_path: Path) -> None:
+    """Reject changed dependency ranges even when distribution names still match."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    _write_wheel(
+        wheel_path,
+        metadata=_metadata(
+            requires_dist=(
+                "httpx>=0.28,<0.30",
+                "httpcore>=1.0,<2.0",
+                "idna>=3.18,<4",
+            )
+        ),
+    )
+
+    with pytest.raises(SystemExit, match="runtime requirement declarations do not match"):
+        generator.build_sbom(wheel_path, MANIFEST_PATH)
+
+
+def test_compressed_metadata_size_is_checked_before_decompression(tmp_path: Path) -> None:
+    """Reject a declared oversized wheel metadata member before allocating it."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    with zipfile.ZipFile(
+        wheel_path,
+        mode="w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        archive.writestr(
+            "egressweave-0.3.0.dist-info/METADATA",
+            b"X" * (generator.MAX_METADATA_BYTES + 1),
+        )
+
+    with pytest.raises(SystemExit, match="metadata exceeds the safety bound"):
+        generator.build_sbom(wheel_path, MANIFEST_PATH)
+
+
 def test_manifest_duplicate_component_fails_closed(tmp_path: Path) -> None:
     """Reject ambiguous dependency identity before generating buyer evidence."""
     generator = _load_generator()
