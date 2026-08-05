@@ -20,6 +20,10 @@ from typing import Any
 
 FOUNDATION_GENERATOR_PATH = Path(__file__).with_name("generate_release_sbom.py")
 ATTESTATION_PREDICATE_TYPE = "https://cyclonedx.org/bom"
+CYCLONEDX_SCHEMA = "https://cyclonedx.org/schema/bom-1.7.schema.json"
+CYCLONEDX_FORMAT = "CycloneDX"
+CYCLONEDX_SPEC_VERSION = "1.7"
+CYCLONEDX_DOCUMENT_VERSION = 1
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -44,6 +48,23 @@ def _load_foundation_generator() -> ModuleType:
     module = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(module)
     return module
+
+
+def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
+    """Return exact CycloneDX 1.7 foundation output or fail closed."""
+    if type(sbom) is not dict or any(
+        sbom.get(field_name) != expected_value
+        for field_name, expected_value in (
+            ("$schema", CYCLONEDX_SCHEMA),
+            ("bomFormat", CYCLONEDX_FORMAT),
+            ("specVersion", CYCLONEDX_SPEC_VERSION),
+            ("version", CYCLONEDX_DOCUMENT_VERSION),
+        )
+    ):
+        raise SystemExit(
+            "release SBOM foundation must produce exact CycloneDX 1.7 evidence"
+        )
+    return sbom
 
 
 def _canonical_document_digest(sbom: dict[str, Any]) -> str:
@@ -72,7 +93,9 @@ def build_attestable_sbom(
     """Build lock-bound CycloneDX 1.7 evidence with stable document identity."""
     foundation = _load_foundation_generator()
     foundation.validate_runtime_lock(manifest_path, lock_path)
-    sbom = foundation.build_sbom(artifact_path, manifest_path)
+    sbom = _validate_foundation_sbom(
+        foundation.build_sbom(artifact_path, manifest_path)
+    )
     if "serialNumber" in sbom:
         raise SystemExit("release SBOM foundation unexpectedly supplied document identity")
     sbom["serialNumber"] = _serial_number(sbom)
