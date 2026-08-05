@@ -42,6 +42,15 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
         ],
         "allowed_methods": sorted(policy.allowed_methods),
         "allow_local": policy.allow_local,
+        "connection_pool_policy": {
+            "keepalive_expiry_seconds": repr(
+                policy.connection_pool_policy.keepalive_expiry_seconds
+            ),
+            "max_connections": policy.connection_pool_policy.max_connections,
+            "max_keepalive_connections": (
+                policy.connection_pool_policy.max_keepalive_connections
+            ),
+        },
         "dns_timeout_seconds": repr(policy.dns_timeout_seconds),
         "max_resolved_addresses": policy.max_resolved_addresses,
         "max_request_bytes": policy.max_request_bytes,

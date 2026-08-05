@@ -4,7 +4,8 @@ The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
 HTTP methods those authorities may receive, finite DNS-candidate, request-target,
 request-body, request-header, response-header, and response-body budgets, finite
-request-phase timeout ceilings, and an ``allow_local`` escape hatch for local
+request-phase timeout ceilings, finite connection-pool capacity, and an
+``allow_local`` escape hatch for local
 development stacks: built-in local names are bound to loopback, while explicit
 Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
 
@@ -58,6 +59,10 @@ from egressweave._policy_normalization import (
     _normalize_max_response_header_bytes,
     _normalize_max_response_header_fields,
 )
+from egressweave.connection_pool_policy import (
+    DEFAULT_EGRESS_CONNECTION_POOL_POLICY,
+    EgressConnectionPoolPolicy,
+)
 from egressweave.timeout_policy import (
     DEFAULT_EGRESS_TIMEOUT_POLICY,
     EgressTimeoutPolicy,
@@ -106,6 +111,11 @@ class EgressPolicy:
     values delegated to HTTPCore. Missing or explicitly disabled request values
     receive the finite policy maximum, while stricter caller values are retained.
 
+    ``connection_pool_policy`` bounds concurrent connections, retained idle
+    connections, and idle connection lifetime for both pinned transports. The
+    immutable provider-neutral object replaces reliance on HTTPX private defaults
+    and lets each integration choose stricter finite capacity.
+
     ``max_request_bytes`` is the largest outbound request body a returned client
     will consume from its caller. The finite 16 MiB default rejects an oversized
     declared length before pool dispatch and also counts actual synchronous or
@@ -153,6 +163,9 @@ class EgressPolicy:
     max_request_header_fields: int = DEFAULT_MAX_REQUEST_HEADER_FIELDS
     max_request_header_bytes: int = DEFAULT_MAX_REQUEST_HEADER_BYTES
     max_request_target_bytes: int = DEFAULT_MAX_REQUEST_TARGET_BYTES
+    connection_pool_policy: EgressConnectionPoolPolicy = (
+        DEFAULT_EGRESS_CONNECTION_POOL_POLICY
+    )
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
@@ -161,6 +174,12 @@ class EgressPolicy:
         if not isinstance(self.request_timeout_policy, EgressTimeoutPolicy):
             raise TypeError(
                 "request_timeout_policy must be an EgressTimeoutPolicy"
+            )
+        if not isinstance(
+            self.connection_pool_policy, EgressConnectionPoolPolicy
+        ):
+            raise TypeError(
+                "connection_pool_policy must be an EgressConnectionPoolPolicy"
             )
 
         timeout = self.dns_timeout_seconds
@@ -326,6 +345,9 @@ class EgressPolicy:
             DEFAULT_MAX_REQUEST_HEADER_BYTES
         ),
         max_request_target_bytes: int | str = DEFAULT_MAX_REQUEST_TARGET_BYTES,
+        connection_pool_policy: EgressConnectionPoolPolicy = (
+            DEFAULT_EGRESS_CONNECTION_POOL_POLICY
+        ),
     ) -> EgressPolicy:
         """Build an unambiguous policy from host and port projections.
 
@@ -368,6 +390,7 @@ class EgressPolicy:
             max_request_header_fields=max_request_header_fields,
             max_request_header_bytes=max_request_header_bytes,
             max_request_target_bytes=max_request_target_bytes,
+            connection_pool_policy=connection_pool_policy,
         )
 
     @classmethod
@@ -395,6 +418,9 @@ class EgressPolicy:
             DEFAULT_MAX_REQUEST_HEADER_BYTES
         ),
         max_request_target_bytes: int | str = DEFAULT_MAX_REQUEST_TARGET_BYTES,
+        connection_pool_policy: EgressConnectionPoolPolicy = (
+            DEFAULT_EGRESS_CONNECTION_POOL_POLICY
+        ),
     ) -> EgressPolicy:
         """Build a policy from exact normalized ``(hostname, port)`` pairs.
 
@@ -429,6 +455,7 @@ class EgressPolicy:
             max_request_header_fields=max_request_header_fields,
             max_request_header_bytes=max_request_header_bytes,
             max_request_target_bytes=max_request_target_bytes,
+            connection_pool_policy=connection_pool_policy,
             allowed_authorities=normalized_authorities,
         )
 
