@@ -8,9 +8,6 @@ well before an outbound request can reach DNS or transport code.
 from __future__ import annotations
 
 import ipaddress
-import math
-from collections.abc import Iterable
-from numbers import Real
 
 import idna
 
