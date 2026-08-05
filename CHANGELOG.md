@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add immutable provider-neutral `EgressConnectionPolicy` dependency injection
+  for synchronous and asynchronous pinned pools. The bounded defaults preserve
+  HTTPX's 100 total connections, 20 idle keep-alive connections, and five-second
+  idle expiry while allowing stricter per-integration allocation policy.
 - Add immutable provider-neutral `TLSConfiguration` dependency injection for
   private trust stores and mutual-TLS client identities across synchronous and
   asynchronous DNS-pinned builders. TLS 1.3 is the default; explicit TLS 1.2
@@ -33,6 +37,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Security
+- Bind finite total-connection, idle-connection, and idle-retention limits into
+  both HTTPCore pools instead of inheriting library globals. Unbounded, negative,
+  non-finite, ambiguous, or contradictory configuration fails during trusted
+  startup; normalized values participate in deterministic policy fingerprints,
+  and synchronous and asynchronous enforcement retains 100% branch coverage.
 - Bound the exact percent-encoded outbound path and optional query delegated to
   HTTPCore. Targets larger than `max_request_target_bytes` fail before pool
   dispatch, denied request streams are released in synchronous and asynchronous
