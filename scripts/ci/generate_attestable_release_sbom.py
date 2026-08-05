@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import uuid
 from pathlib import Path
 from types import ModuleType
@@ -71,8 +72,58 @@ def _validate_foundation_sbom(sbom: object) -> dict[str, Any]:
     return sbom
 
 
+def _validate_strict_json_value(root: object) -> None:
+    """Require only exact RFC 8259 value types without Python coercions.
+
+    Python's JSON encoder accepts tuples as arrays and integer mapping keys as
+    object names. Those conveniences can collapse distinct Python structures
+    into the same serialized evidence. This iterative validator accepts only
+    exact built-in dictionaries with exact string keys, exact lists, strings,
+    booleans, integers, finite floats, and ``None``. Active-container tracking
+    rejects cycles while allowing one immutable value or completed container to
+    be referenced from more than one part of the source object.
+    """
+    stack: list[tuple[object, bool]] = [(root, False)]
+    active_container_ids: set[int] = set()
+
+    while stack:
+        value, leaving = stack.pop()
+        if leaving:
+            active_container_ids.remove(id(value))
+            continue
+
+        value_type = type(value)
+        if value_type is dict:
+            container_id = id(value)
+            if container_id in active_container_ids:
+                raise SystemExit(STRICT_JSON_ERROR)
+            active_container_ids.add(container_id)
+            stack.append((value, True))
+            for key, item in value.items():
+                if type(key) is not str:
+                    raise SystemExit(STRICT_JSON_ERROR)
+                stack.append((item, False))
+            continue
+
+        if value_type is list:
+            container_id = id(value)
+            if container_id in active_container_ids:
+                raise SystemExit(STRICT_JSON_ERROR)
+            active_container_ids.add(container_id)
+            stack.append((value, True))
+            stack.extend((item, False) for item in value)
+            continue
+
+        if value is None or value_type in {str, bool, int}:
+            continue
+        if value_type is float and math.isfinite(value):
+            continue
+        raise SystemExit(STRICT_JSON_ERROR)
+
+
 def _canonical_document_digest(sbom: dict[str, Any]) -> str:
     """Return SHA-256 over strict stable JSON before document identity is added."""
+    _validate_strict_json_value(sbom)
     try:
         canonical = json.dumps(
             sbom,
@@ -81,7 +132,7 @@ def _canonical_document_digest(sbom: dict[str, Any]) -> str:
             ensure_ascii=True,
             allow_nan=False,
         ).encode("utf-8")
-    except (TypeError, ValueError):
+    except (RecursionError, TypeError, ValueError):
         raise SystemExit(STRICT_JSON_ERROR) from None
     return hashlib.sha256(canonical).hexdigest()
 
