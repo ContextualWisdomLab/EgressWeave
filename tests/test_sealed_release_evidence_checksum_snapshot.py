@@ -131,6 +131,7 @@ def test_manifest_rejects_checksum_mutation_after_sbom_verification(
         artifact_name: str,
         artifact_digest: str,
         version: str,
+        expected_digest: str,
     ) -> str:
         """Replace SHA256SUMS only after both SBOMs and payloads were accepted."""
         serial = original_verify(
@@ -138,6 +139,7 @@ def test_manifest_rejects_checksum_mutation_after_sbom_verification(
             artifact_name=artifact_name,
             artifact_digest=artifact_digest,
             version=version,
+            expected_digest=expected_digest,
         )
         if artifact_name.endswith(".whl"):
             paths["checksum"].write_text("replaced after verification\n", encoding="ascii")
