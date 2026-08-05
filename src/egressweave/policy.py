@@ -2,10 +2,10 @@
 
 The policy decouples the SSRF / DNS-rebinding guard from any one
 application's settings object. It carries exact host-and-port authorities, the
-HTTP methods those authorities may receive, finite request- and response-body
-budgets, and an ``allow_local`` escape hatch for local development stacks:
-built-in local names are bound to loopback, while explicit Docker-container
-names may resolve to RFC 1918 or RFC 4193 addresses.
+HTTP methods those authorities may receive, finite DNS candidate, request-body,
+and response-body budgets, and an ``allow_local`` escape hatch for local
+development stacks: built-in local names are bound to loopback, while explicit
+Docker-container names may resolve to RFC 1918 or RFC 4193 addresses.
 
 Construct a concise one-port policy explicitly::
 
@@ -35,6 +35,7 @@ from numbers import Real
 import idna
 
 DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS = 5.0
+DEFAULT_MAX_RESOLVED_ADDRESSES = 16
 DEFAULT_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 DEFAULT_ALLOWED_EGRESS_PORTS = frozenset({443})
@@ -195,6 +196,25 @@ def _normalize_allowed_method(value: object) -> str:
     return normalized
 
 
+def _normalize_max_resolved_addresses(value: object) -> int:
+    """Return one positive limit for unique DNS-derived connection candidates."""
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized or not normalized.isascii() or not normalized.isdigit():
+            raise ValueError(
+                "max_resolved_addresses must be a positive decimal count"
+            )
+        address_count = int(normalized)
+    else:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("max_resolved_addresses must be an integer count")
+        address_count = value
+
+    if address_count <= 0:
+        raise ValueError("max_resolved_addresses must be greater than zero")
+    return address_count
+
+
 def _normalize_positive_byte_count(value: object, field_name: str) -> int:
     """Return one positive byte budget with field-specific safe errors."""
     if isinstance(value, str):
@@ -250,6 +270,12 @@ class EgressPolicy:
     rejected during construction so callers cannot accidentally disable the
     fail-closed resolution budget.
 
+    ``max_resolved_addresses`` limits the number of unique validated addresses
+    one DNS answer may contribute to a pinned result. The finite default bounds
+    retained memory and later TCP attempts. Duplicate resolver rows do not
+    consume additional capacity, while an answer containing more unique
+    candidates fails closed instead of silently truncating resolver preference.
+
     ``allowed_methods`` is the exhaustive set of HTTP methods that pinned
     clients may dispatch. The secure default covers ordinary API operations but
     excludes TRACE, WebDAV extension methods, and every other unrequested method.
@@ -278,6 +304,7 @@ class EgressPolicy:
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     allowed_authorities: frozenset[tuple[str, int]] | None = None
     max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    max_resolved_addresses: int = DEFAULT_MAX_RESOLVED_ADDRESSES
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
@@ -352,6 +379,9 @@ class EgressPolicy:
         normalized_methods = frozenset(
             _normalize_allowed_method(method) for method in method_values
         )
+        normalized_max_resolved_addresses = _normalize_max_resolved_addresses(
+            self.max_resolved_addresses
+        )
         normalized_max_request_bytes = _normalize_max_request_bytes(
             self.max_request_bytes
         )
@@ -363,6 +393,11 @@ class EgressPolicy:
         # to store normalized caller input and canonical scalar values.
         object.__setattr__(self, "allowed_hosts", frozenset(normalized_hosts))
         object.__setattr__(self, "dns_timeout_seconds", float(timeout))
+        object.__setattr__(
+            self,
+            "max_resolved_addresses",
+            normalized_max_resolved_addresses,
+        )
         object.__setattr__(self, "allowed_ports", frozenset(normalized_ports))
         object.__setattr__(self, "allowed_methods", normalized_methods)
         object.__setattr__(self, "max_request_bytes", normalized_max_request_bytes)
@@ -376,6 +411,7 @@ class EgressPolicy:
         *,
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+        max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
         allowed_ports: str | Iterable[int | str] = DEFAULT_ALLOWED_EGRESS_PORTS,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
@@ -411,6 +447,7 @@ class EgressPolicy:
             allowed_hosts=frozenset(items),
             allow_local=allow_local,
             dns_timeout_seconds=dns_timeout_seconds,
+            max_resolved_addresses=max_resolved_addresses,
             allowed_ports=frozenset(port_items),
             allowed_methods=frozenset(method_items),
             max_request_bytes=max_request_bytes,
@@ -424,6 +461,7 @@ class EgressPolicy:
         *,
         allow_local: bool = False,
         dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS,
+        max_resolved_addresses: int | str = DEFAULT_MAX_RESOLVED_ADDRESSES,
         allowed_methods: str | Iterable[str] = DEFAULT_ALLOWED_HTTP_METHODS,
         max_request_bytes: int | str = DEFAULT_MAX_REQUEST_BYTES,
         max_response_bytes: int | str = DEFAULT_MAX_RESPONSE_BYTES,
@@ -450,6 +488,7 @@ class EgressPolicy:
             ),
             allow_local=allow_local,
             dns_timeout_seconds=dns_timeout_seconds,
+            max_resolved_addresses=max_resolved_addresses,
             allowed_ports=frozenset(port for _, port in normalized_authorities),
             allowed_methods=frozenset(method_items),
             max_request_bytes=max_request_bytes,

@@ -20,6 +20,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rejection of values that could silently remove the outbound resource bound.
 
 ### Security
+- Bound each DNS validation result to at most
+  `EgressPolicy.max_resolved_addresses` unique candidates, defaulting to 16.
+  Duplicate resolver rows collapse without consuming capacity, over-limit
+  answers fail closed instead of being truncated, stricter current policies are
+  reapplied to signed validation state, and audit fingerprints include the
+  normalized limit before synchronous or asynchronous connection attempts.
 - Replace the hourly product-development model executor with SHA-256-verified
   OpenCode 1.18.13 using the existing `NVIDIA_NIM_API_KEY` secret through
   OpenCode's `NVIDIA_API_KEY` contract. Block-mode runner egress, deny-by-default
