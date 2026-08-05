@@ -118,6 +118,49 @@ def test_hashing_rejects_a_symlink_even_when_target_bytes_are_valid(
         )
 
 
+def test_descriptor_identity_error_is_masked_as_unsafe(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep descriptor metadata failures behind the stable evidence boundary."""
+    path = tmp_path / "payload"
+    path.write_bytes(b"payload")
+
+    def fail_lstat(candidate: Path):
+        """Model a path disappearing after its descriptor has opened."""
+        if candidate == path:
+            raise OSError("replaced")
+        return original_lstat(candidate)
+
+    original_lstat = Path.lstat
+    monkeypatch.setattr(Path, "lstat", fail_lstat)
+    with path.open("rb") as stream:
+        with pytest.raises(SystemExit, match="unreadable or unsafe"):
+            release_evidence._require_open_regular_file(
+                path,
+                stream,
+                label="payload",
+            )
+
+
+@pytest.mark.parametrize("mismatch", ["before", "after"])
+def test_stable_read_rejects_each_digest_mismatch(mismatch: str) -> None:
+    """Reject either a stale pre-read digest or a changed post-read digest."""
+    content = b"stable payload"
+    digest = hashlib.sha256(content).hexdigest()
+    wrong_digest = "0" * 64
+    digest_before = wrong_digest if mismatch == "before" else digest
+    digest_after = wrong_digest if mismatch == "after" else digest
+
+    with pytest.raises(SystemExit, match="changed during verification"):
+        release_evidence._require_stable_read(
+            content,
+            digest_before=digest_before,
+            digest_after=digest_after,
+            label="payload",
+        )
+
+
 def test_manifest_rejects_payload_mutation_during_sbom_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
