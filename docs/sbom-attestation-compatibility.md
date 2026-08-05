@@ -6,8 +6,8 @@ EgressWeave keeps the deterministic CycloneDX 1.7 evidence foundation in
 `scripts/ci/generate_release_sbom.py` and adds a narrow compatibility adapter in
 `scripts/ci/generate_attestable_release_sbom.py`.
 
-The adapter exists because the reviewed `actions/attest` CycloneDX parser at
-commit `1e69f48acb82d1966a394da916b4c1698aa569d6` accepts a document only when
+The adapter exists because the reviewed `actions/attest` v4.1.0 CycloneDX parser
+at commit `59d89421af93a897026c735860bf21b6eb4f7b26` accepts a document only when
 `bomFormat`, `specVersion`, and `serialNumber` are all present. The foundation
 intentionally omitted `serialNumber` to avoid random output. Passing the
 foundation output directly to that action would therefore fail before an SBOM
@@ -34,11 +34,16 @@ The adapter applies this fail-closed procedure:
 1. Validate every reviewed dependency version, marker, and digest against the
    executable hash-locked runtime subset.
 2. Build the reviewed CycloneDX document without a serial number.
-3. Serialize the complete document as sorted, compact, ASCII JSON.
-4. Compute SHA-256 over those canonical bytes.
-5. Append that digest to the stable EgressWeave SBOM identity URL namespace.
-6. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
-7. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
+3. Require an exact built-in JSON object with the CycloneDX 1.7 schema URL,
+   `bomFormat` value `CycloneDX`, `specVersion` value `1.7`, and document
+   `version` value `1`. Reject drift before adding an attestable identity because
+   the upstream action's format detector checks presence rather than these exact
+   values.
+4. Serialize the complete document as sorted, compact, ASCII JSON.
+5. Compute SHA-256 over those canonical bytes.
+6. Append that digest to the stable EgressWeave SBOM identity URL namespace.
+7. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
+8. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
 
 The UUID therefore identifies the complete SBOM semantics rather than only the
 artifact filename. Any artifact digest, package identity, dependency version,
@@ -64,9 +69,11 @@ python scripts/ci/generate_attestable_release_sbom.py \
 ```
 
 Repeat for the source distribution. Generate each document twice and compare the
-bytes before signing. Reject the release if generation differs, the runtime lock
-does not equal the reviewed manifest, the serial number is not an RFC 4122 UUID
-URN, or the predicate type is not exactly `https://cyclonedx.org/bom`.
+bytes before signing. Reject the release if generation differs, the reviewed
+runtime dependency closure drifts from the hash-locked runtime subset, the
+foundation envelope is not exactly CycloneDX 1.7, the serial number is not an
+RFC 4122 UUID URN, or the predicate type is not exactly
+`https://cyclonedx.org/bom`.
 
 The Python API also requires the lock path. Direct callers therefore cannot
 produce attestable-looking evidence while silently bypassing dependency-lock
@@ -80,13 +87,16 @@ tag, publish through PyPI OIDC, and publish a GitHub Release. A pull-request
 branch must not introduce or retain new branch-controlled release behavior that
 receives those identities.
 
-Protected integration remains a separate, independently reviewed action:
+Protected integration remains a separate, independently reviewed action tracked
+by `ContextualWisdomLab/.github#783`:
 
 - generate SBOMs only from the exact verified wheel and source distribution;
 - add them to release evidence and `SHA256SUMS`, not the canonical PyPI input;
-- use an immutable commit-pinned attestation action;
+- use an immutable commit-pinned organization-owned reusable workflow and
+  attestation action;
 - grant the attestation job only the permissions required by the reviewed
   action, with repository contents remaining read-only;
+- execute no caller-controlled source under OIDC or attestation credentials;
 - verify the downloaded attestation bundle and exact predicate before public
   GitHub Release publication; and
 - fail closed when protected main, the tag, artifact digest, workflow source,
@@ -113,9 +123,9 @@ Ecma International, & OWASP Foundation. (2025). *CycloneDX specification 1.7
 (ECMA-424).* https://cyclonedx.org/specification/overview/
 
 GitHub. (2026). *CycloneDX SBOM parsing and predicate generation* [Source code].
-`actions/attest` (Commit
-`1e69f48acb82d1966a394da916b4c1698aa569d6`).
-https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/src/sbom.ts
+`actions/attest` (Version 4.1.0, commit
+`59d89421af93a897026c735860bf21b6eb4f7b26`).
+https://github.com/actions/attest/blob/59d89421af93a897026c735860bf21b6eb4f7b26/src/sbom.ts
 
 GitHub. (n.d.). *Using artifact attestations to establish provenance for
 builds.* GitHub Docs. Retrieved August 5, 2026, from
