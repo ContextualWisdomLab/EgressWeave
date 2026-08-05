@@ -17,7 +17,6 @@ from urllib.parse import urlsplit
 
 import httpcore
 import httpx
-from httpx._config import DEFAULT_LIMITS
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
 from egressweave.policy import EgressPolicy, _normalize_host
@@ -159,9 +158,13 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         ssl_context = create_egress_ssl_context(tls_configuration)
         self._pool = httpcore.ConnectionPool(
             ssl_context=ssl_context,
-            max_connections=DEFAULT_LIMITS.max_connections,
-            max_keepalive_connections=DEFAULT_LIMITS.max_keepalive_connections,
-            keepalive_expiry=DEFAULT_LIMITS.keepalive_expiry,
+            max_connections=policy.connection_pool_policy.max_connections,
+            max_keepalive_connections=(
+                policy.connection_pool_policy.max_keepalive_connections
+            ),
+            keepalive_expiry=(
+                policy.connection_pool_policy.keepalive_expiry_seconds
+            ),
             http1=True,
             http2=False,
             network_backend=_PinnedEgressSyncNetworkBackend(
