@@ -48,6 +48,7 @@ def test_attestation_job_has_only_the_required_signing_identity() -> None:
     assert "contents: read" in attestation_job
     assert "id-token: write" in attestation_job
     assert "attestations: write" in attestation_job
+    assert "artifact-metadata: write" in attestation_job
     assert "contents: write" not in attestation_job
     assert "packages: write" not in attestation_job
     assert "pull-requests: write" not in attestation_job
@@ -65,7 +66,12 @@ def test_attestations_are_verified_and_preserved_before_public_release() -> None
     release_job = workflow.split("  publish-github-release:", maxsplit=1)[1]
 
     assert attestation_job.count("gh attestation verify") == 2
+    assert attestation_job.count("--bundle") == 2
     assert attestation_job.count(f"--predicate-type {CYCLONEDX_PREDICATE_TYPE}") == 2
+    assert attestation_job.count("--signer-workflow") == 2
+    assert attestation_job.count('--source-digest "$GITHUB_SHA"') == 2
+    assert attestation_job.count('--source-ref "$GITHUB_REF"') == 2
+    assert attestation_job.count("--deny-self-hosted-runners") == 2
     assert "attested-release-evidence-${{ github.sha }}" in attestation_job
     assert "attest-release-evidence" in release_job
     assert "attested-release-evidence-${{ github.sha }}" in release_job
