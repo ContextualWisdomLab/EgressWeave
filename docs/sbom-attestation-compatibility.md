@@ -39,14 +39,18 @@ The adapter applies this fail-closed procedure:
    `version` value `1`. Reject drift before adding an attestable identity because
    the upstream action's format detector checks presence rather than these exact
    values.
-4. Serialize the complete document as sorted, compact, ASCII JSON with strict
-   RFC 8259 number semantics. Reject `NaN`, positive or negative infinity, and
-   values that are not JSON-serializable instead of relying on Python's optional
-   non-standard JavaScript-number extensions.
-5. Compute SHA-256 over those canonical bytes.
-6. Append that digest to the stable EgressWeave SBOM identity URL namespace.
-7. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
-8. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
+4. Recursively require the exact RFC 8259 data model: built-in dictionaries with
+   built-in string keys, built-in lists, built-in strings, booleans, integers,
+   finite floating-point numbers, and `null`. Reject tuples, non-string object
+   keys, container or scalar subclasses, cycles, `NaN`, infinities, and arbitrary
+   Python objects instead of allowing `json.dumps` to coerce them into different
+   evidence semantics.
+5. Serialize the complete document as sorted, compact, ASCII JSON with strict
+   number handling.
+6. Compute SHA-256 over those canonical bytes.
+7. Append that digest to the stable EgressWeave SBOM identity URL namespace.
+8. Derive an RFC 4122 UUID version 5 with the standard URL namespace.
+9. Store the result as `urn:uuid:<uuid>` in `serialNumber`.
 
 The UUID therefore identifies the complete SBOM semantics rather than only the
 artifact filename. Any artifact digest, package identity, dependency version,
@@ -75,8 +79,9 @@ Repeat for the source distribution. Generate each document twice and compare the
 bytes before signing. Reject the release if generation differs, the reviewed
 runtime dependency closure drifts from the hash-locked runtime subset, the
 foundation envelope is not exactly CycloneDX 1.7, the document contains a
-non-standard or non-serializable JSON value, the serial number is not an RFC 4122
-UUID URN, or the predicate type is not exactly `https://cyclonedx.org/bom`.
+Python-only coercion or another non-strict JSON value, the serial number is not
+an RFC 4122 UUID URN, or the predicate type is not exactly
+`https://cyclonedx.org/bom`.
 
 The Python build API also requires the lock path. Direct build callers therefore
 cannot produce adapter-generated attestable evidence while silently bypassing
