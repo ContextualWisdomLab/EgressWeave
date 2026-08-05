@@ -313,6 +313,8 @@ def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:
             requirement = Requirement(requirement_text.strip())
         except InvalidRequirement as error:
             raise SystemExit("runtime lock contains an invalid requirement") from error
+        if requirement.extras:
+            raise SystemExit("runtime lock requirements must not use extras")
         name = _name(requirement.name)
         if name in entries:
             raise SystemExit(f"runtime lock duplicates package {name!r}")
