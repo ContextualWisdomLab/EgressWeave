@@ -169,8 +169,11 @@ def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, 
     return wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path
 
 
-def _load_checksums(checksum_path: Path, expected_names: set[str]) -> dict[str, str]:
-    """Return one canonical sorted SHA-256 entry for every evidence payload."""
+def _load_checksums(
+    checksum_path: Path,
+    expected_names: set[str],
+) -> tuple[dict[str, str], str]:
+    """Return canonical payload checksums and the accepted file snapshot digest."""
     digest_before = _sha256_file(
         checksum_path,
         maximum_bytes=MAX_CHECKSUM_BYTES,
@@ -212,7 +215,7 @@ def _load_checksums(checksum_path: Path, expected_names: set[str]) -> dict[str, 
         raise SystemExit("SHA256SUMS entries must be sorted by filename")
     if set(parsed) != expected_names:
         raise SystemExit("SHA256SUMS does not cover the exact evidence payload set")
-    return parsed
+    return parsed, digest_after
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -387,7 +390,10 @@ def build_evidence_manifest(
         (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
     )
     payload_paths = tuple(path for path, _, _ in payload_specs)
-    checksums = _load_checksums(checksum_path, {path.name for path in payload_paths})
+    checksums, checksum_digest = _load_checksums(
+        checksum_path,
+        {path.name for path in payload_paths},
+    )
     observed_digests = _payload_digests(payload_specs)
     if checksums != observed_digests:
         raise SystemExit("release evidence digest mismatch")
@@ -417,6 +423,15 @@ def build_evidence_manifest(
         )
     if _payload_digests(payload_specs) != observed_digests:
         raise SystemExit("release evidence changed during verification")
+    if (
+        _sha256_file(
+            checksum_path,
+            maximum_bytes=MAX_CHECKSUM_BYTES,
+            label="SHA256SUMS",
+        )
+        != checksum_digest
+    ):
+        raise SystemExit("SHA256SUMS changed during verification")
     artifacts.sort(key=lambda item: item["artifactFilename"])
     return {
         "artifacts": artifacts,
