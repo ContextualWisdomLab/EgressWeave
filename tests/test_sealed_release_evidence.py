@@ -8,7 +8,6 @@ import uuid
 from pathlib import Path
 
 import pytest
-
 from test_sealed_release_evidence_source_identity import (
     REPOSITORY,
     SOURCE_SHA,
