@@ -47,6 +47,31 @@ def test_checksum_snapshot_never_uses_an_unbounded_path_read(
         release_evidence._load_checksums(checksum, set())
 
 
+def test_bounded_snapshot_masks_open_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep bounded snapshot filesystem failures behind a stable error."""
+    payload = tmp_path / "payload"
+    payload.write_bytes(b"payload")
+    original_open = Path.open
+
+    def fail_open(path: Path, *args, **kwargs):
+        """Model an unreadable path at the bounded snapshot boundary."""
+        if path == payload:
+            raise OSError("unreadable")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_open)
+
+    with pytest.raises(SystemExit, match="payload is unreadable"):
+        release_evidence._read_bounded_file(
+            payload,
+            maximum_bytes=64,
+            label="payload",
+        )
+
+
 def test_deeply_nested_json_is_masked_by_the_strict_evidence_boundary(
     tmp_path: Path,
 ) -> None:
