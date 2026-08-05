@@ -173,6 +173,25 @@ Primary references:
 - [RFC 8305 section 8: Summary of Configurable Values](https://www.rfc-editor.org/rfc/rfc8305.html#section-8)
 - [CWE-400: Uncontrolled Resource Consumption](https://cwe.mitre.org/data/definitions/400.html)
 
+## Request timeout boundaries — HTTPX / HTTPCore / CWE-400
+
+HTTPX exposes independent connect, read, write, and pool timeout values through
+its low-level request extension, and `None` disables a timeout. Forwarding that
+metadata unchanged would let request code weaken a resource policy after the
+URL had already passed egress validation.
+
+EgressWeave therefore injects immutable finite maxima and rewrites the timeout
+extension at the synchronous and asynchronous transport boundary. Missing or
+disabled values receive policy maxima, stricter non-negative values are
+preserved, larger values are capped, and malformed extension shapes fail with
+the same generic error as other policy denials. The normalized maxima are also
+included in deterministic decision-evidence fingerprints.
+
+See [Finite outbound request-timeout boundaries](request-timeout-boundaries.md)
+for phase semantics, the operational distinction between inactivity limits and
+end-to-end deadlines, and APA 7th references to the primary HTTPX/HTTPCore
+extension documentation, RFC 9112, CWE-400, and OWASP denial-of-service guidance.
+
 ## Provenance
 
 Extracted behaviour-preserving from the naruon control plane's LLM-provider
