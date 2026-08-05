@@ -4,9 +4,9 @@ This module provides the blocking counterpart to the asynchronous transport.
 Every connection is restricted to addresses returned by the normal egress
 validation path, each pinned address is rechecked immediately before connect,
 request authority drift is rejected before reaching the connection pool, and
-outbound request headers, request bodies, request-phase waits, response-header
-metadata, and identity-coded response bodies are bounded by the injected egress
-policy.
+outbound request targets, headers, request bodies, request-phase waits,
+response-header metadata, and identity-coded response bodies are bounded by the
+injected egress policy.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from egressweave.request_safety import (
     _build_safe_request_headers,
     _enforce_allowed_http_method,
     _enforce_request_header_limits,
+    _enforce_request_target_limit,
 )
 from egressweave.response_safety import (
     _BoundedSyncResponseStream,
@@ -190,10 +191,14 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        """Send one metadata- and framing-exact request and bounded response."""
+        """Send one target-, metadata-, and framing-exact bounded request."""
         self._verify_request_target(request)
         parsed_url = urlsplit(self._validated.normalized_url)
         try:
+            safe_target = _enforce_request_target_limit(
+                request.url.raw_path,
+                self._policy.max_request_target_bytes,
+            )
             safe_extensions = _bind_bounded_request_timeouts(
                 _bind_validated_tls_server_name(
                     request.extensions, self._validated.hostname
@@ -226,7 +231,7 @@ class _PinnedEgressTransport(httpx.BaseTransport):
                 scheme=parsed_url.scheme.encode("ascii"),
                 host=self._validated.hostname.encode("ascii"),
                 port=self._validated.port,
-                target=request.url.raw_path,
+                target=safe_target,
             ),
             headers=safe_headers,
             content=_BoundedSyncRequestStream(
@@ -286,8 +291,9 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Final outbound fields
-    are limited by ``policy.max_request_header_fields`` and
+    :class:`~egressweave.validation.EgressNotAllowedError`. Exact outbound
+    targets are limited by ``policy.max_request_target_bytes``. Final outbound
+    fields are limited by ``policy.max_request_header_fields`` and
     ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
@@ -329,12 +335,12 @@ def build_pinned_https_client(
 
     The supplied result is revalidated without another DNS lookup. Every
     connection is pinned to its addresses, any forged result or authority change
-    is rejected before network I/O, every outbound request header section is
-    bounded after trusted rewriting, every request body is constrained by
-    ``policy.max_request_bytes`` and exact declared framing, every request phase
-    is capped by ``policy.request_timeout_policy``, response metadata is bounded
-    by the finite header policy, and every identity-coded response body is
-    constrained by ``policy.max_response_bytes``.
+    is rejected before network I/O, every exact outbound target and request
+    header section is bounded after trusted rewriting, every request body is
+    constrained by ``policy.max_request_bytes`` and exact declared framing,
+    every request phase is capped by ``policy.request_timeout_policy``, response
+    metadata is bounded by the finite header policy, and every identity-coded
+    response body is constrained by ``policy.max_response_bytes``.
     """
     return httpx.Client(
         follow_redirects=False,
