@@ -27,7 +27,8 @@ file as untrusted input and never imports EgressWeave. It must:
 5. verify package identity, license expression, and complete direct runtime
    requirement declarations against the reviewed manifest;
 6. verify every dependency version, SHA-256, and environment marker against the
-   executable hash-locked subset in `requirements-ci.txt`;
+   executable hash-locked subset in `requirements-ci.txt`, while rejecting
+   dependency extras that could activate packages outside the reviewed graph;
 7. validate identities, SPDX license identifiers, purls, graph references,
    relationships, reachability, and acyclicity;
 8. compute the artifact SHA-256 without trusting its filename; and
@@ -40,10 +41,12 @@ packages retain their environment markers as explicit properties.
 
 The reviewed manifest is
 `scripts/ci/release_runtime_dependencies.json`. Its versions, hashes, and
-markers must match `requirements-ci.txt`. This prevents buyer-facing evidence
-from describing one dependency set while CI executes another. A dependency
-change is incomplete until the lock, manifest, tests, license evidence, and SBOM
-semantics are reviewed together.
+markers must match `requirements-ci.txt`. Lock entries with PEP 508 extras are
+invalid for SBOM parity because an extra can introduce additional runtime
+requirements that are absent from the reviewed component graph. This prevents
+buyer-facing evidence from describing one dependency set while CI executes
+another. A dependency change is incomplete until the lock, manifest, tests,
+license evidence, and SBOM semantics are reviewed together.
 
 ## Generate and verify locally
 
@@ -113,9 +116,10 @@ model-modified source under a write credential.
 ## Threats, failure, and recovery
 
 These controls address omitted inventory, evidence bound to the wrong artifact,
-filename substitution, manifest-versus-lock drift, mutable dependency resolution,
-nondeterministic evidence, unsafe archives, metadata decompression, stale or
-wrong-workflow attestations, and publication before exact verification.
+filename substitution, manifest-versus-lock drift, undeclared dependency extras,
+mutable dependency resolution, nondeterministic evidence, unsafe archives,
+metadata decompression, stale or wrong-workflow attestations, and publication
+before exact verification.
 
 They do not detect every compromised upstream source, malicious but correctly
 hashed package, license obligation, build-host compromise, or undisclosed
