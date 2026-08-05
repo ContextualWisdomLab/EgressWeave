@@ -200,6 +200,7 @@ def test_manifest_rejects_payload_mutation_during_sbom_verification(
         artifact_name: str,
         artifact_digest: str,
         version: str,
+        expected_digest: str,
     ) -> str:
         """Change the wheel only after the verifier captured all initial digests."""
         serial = original_verify(
@@ -207,6 +208,7 @@ def test_manifest_rejects_payload_mutation_during_sbom_verification(
             artifact_name=artifact_name,
             artifact_digest=artifact_digest,
             version=version,
+            expected_digest=expected_digest,
         )
         if artifact_name.endswith(".tar.gz"):
             paths["wheel"].write_bytes(b"changed after initial digest verification")
