@@ -56,6 +56,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Recheck the manifest output parent against the verified evidence directory
+  immediately before exclusive creation, after descriptor binding, and after
+  durable synchronization. Redirecting a previously safe parent through a
+  directory symlink during evidence verification now fails closed before a
+  trusted handoff can be issued inside the sealed set.
 - Reject legacy five-file release evidence whose repository and source commit
   exist only as caller assertions. The canonical source-identity payload is
   strict, bounded, descriptor-bound, checksum-covered, and rehashed through final
