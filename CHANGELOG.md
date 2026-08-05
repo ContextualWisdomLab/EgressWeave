@@ -7,6 +7,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add deterministic CycloneDX 1.7 SBOM generation that binds each canonical
+  wheel and source distribution to its exact SHA-256 and a reviewed, hash-pinned
+  runtime dependency graph. Protected attestation integration remains separate
+  from branch-local workflows that contain release write credentials.
 - Add immutable provider-neutral `EgressConnectionPoolPolicy` with finite
   total-connection, retained-idle-connection, and idle-expiry limits shared by
   synchronous and asynchronous pinned transports. Both public policy
