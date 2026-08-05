@@ -299,12 +299,12 @@ class EgressPolicy:
     allowed_hosts: frozenset[str]
     allow_local: bool = False
     dns_timeout_seconds: float = DEFAULT_DNS_RESOLUTION_TIMEOUT_SECONDS
-    max_resolved_addresses: int = DEFAULT_MAX_RESOLVED_ADDRESSES
     allowed_ports: frozenset[int] = DEFAULT_ALLOWED_EGRESS_PORTS
     allowed_methods: frozenset[str] = DEFAULT_ALLOWED_HTTP_METHODS
     max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
     allowed_authorities: frozenset[tuple[str, int]] | None = None
     max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    max_resolved_addresses: int = DEFAULT_MAX_RESOLVED_ADDRESSES
 
     def __post_init__(self) -> None:
         """Validate and canonicalize every immutable policy field."""
