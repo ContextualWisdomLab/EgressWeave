@@ -109,3 +109,23 @@ def test_cli_rechecks_manifest_bytes_after_close(
 
     with pytest.raises(SystemExit, match="output changed after publication"):
         _run_cli(evidence_dir, output_path, monkeypatch)
+
+
+def test_cli_rejects_a_missing_manifest_after_close(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject disappearance of the output before the final bounded reread."""
+    evidence_dir = tmp_path / "evidence"
+    _evidence(evidence_dir)
+    output_path = tmp_path / "manifest.json"
+    original_writer = release_evidence.write_evidence_manifest
+
+    def remove_after_write(*args, **kwargs) -> None:
+        original_writer(*args, **kwargs)
+        output_path.unlink()
+
+    monkeypatch.setattr(release_evidence, "write_evidence_manifest", remove_after_write)
+
+    with pytest.raises(SystemExit, match="output changed after publication"):
+        _run_cli(evidence_dir, output_path, monkeypatch)
