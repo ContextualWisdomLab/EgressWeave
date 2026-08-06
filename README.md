@@ -331,16 +331,17 @@ product roadmap moving without bypassing normal governance:
   implements one test-driven improvement.
 
 The product workflow uses two fresh runners. The model job has read-only GitHub
-permissions, no direct network access, and can emit only a guard-checked patch.
-A second credential-free job builds trusted dependencies before applying the
-patch and executes modified source only inside an offline, non-root,
-capability-free, read-only verifier container. The product workflow ends at the
-independently reverified credential-free patch handoff and does not create
-branches, pull requests, repository writes, or auto-merge requests. Any future
-external, independently reviewed, credential-separated promotion must reconstruct
-and verify the exact tree before any repository write. CI, security scans,
-independent reviews, branch protection, and guarded merge policy remain
-authoritative. See
+permissions and can emit only a guard-checked patch. Model web/network tools are
+denied, while runner egress is restricted to reviewed package sources, GitHub,
+and the NVIDIA NIM endpoint. A second credential-free job builds trusted
+dependencies before applying the patch and executes modified source only inside
+an offline, non-root, capability-free, read-only verifier container. The product
+workflow ends at the independently reverified credential-free patch handoff and
+does not create branches, pull requests, repository writes, or auto-merge
+requests. Any future external, independently reviewed, credential-separated
+promotion must reconstruct and verify the exact tree before any repository
+write. CI, security scans, independent reviews, branch protection, and guarded
+merge policy remain authoritative. See
 [`docs/hourly-autonomous-maintenance.md`](docs/hourly-autonomous-maintenance.md)
 for the complete control and configuration contract.
 
