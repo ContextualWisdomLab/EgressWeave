@@ -35,10 +35,22 @@ runtime requirements must also be existing canonical regular files.
 
 Each selected wheel and source distribution is preflighted as a current regular
 file with a finite compressed-byte bound before the deterministic generator is
-loaded or any ZIP or tar archive parser runs. This preflight limits early parser
-CPU and memory exposure; archive-member cardinality, path, metadata, and semantic
-validation remain separate controls, and later descriptor-bound hashing and final
-verification reapply the byte and identity checks as defense in depth.
+loaded or any ZIP or tar archive parser runs. The preparer records that exact
+device, inode, and size identity, opens the pathname with no-follow semantics,
+and requires the opened descriptor and current pathname to match the accepted
+identity. It then copies the bounded descriptor bytes into a fresh owner-only
+parser-only snapshot with the same canonical filename. The parser receives only
+that private snapshot and never the caller-controlled evidence pathname, so a
+post-preflight path replacement cannot redirect parser work to an alternate or
+oversized archive.
+
+The preparer rechecks the accepted descriptor and pathname after the bounded
+copy. Archive-member cardinality, path, metadata, and semantic validation remain
+separate controls. The original distributions are independently descriptor-bound,
+hashed, and revalidated again while checksums and the final sealed evidence set
+are produced. A writer that mutates the same accepted inode can still make the
+candidate fail at a later digest or identity check; the control does not claim
+immutable local storage and never converts such a race into trusted evidence.
 
 The handoff-manifest parent must already exist as a real canonical directory. The
 handoff path must remain outside the evidence directory. The preparer never
@@ -67,10 +79,13 @@ attestation credentials.
 
 ## Generated contract
 
-The preparer computes both deterministic CycloneDX 1.7 JSON documents in memory,
-constructs canonical strict-JSON source identity, computes sorted lowercase
-SHA-256 entries, and then exclusively creates owner-only generated files. After
-successful preparation, the evidence directory contains exactly:
+The preparer computes both deterministic CycloneDX 1.7 JSON documents from the
+private identity-bound parser snapshots, constructs canonical strict-JSON source
+identity, computes sorted lowercase SHA-256 entries over the original accepted
+distributions and generated payloads, and then exclusively creates owner-only
+generated files. The private parser snapshots are deleted with their temporary
+directory before any generated evidence is published. After successful
+preparation, the evidence directory contains exactly:
 
 ```text
 egressweave-X.Y.Z-py3-none-any.whl
