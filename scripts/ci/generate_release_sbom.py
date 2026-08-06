@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import re
+import stat
 import tarfile
 import zipfile
 from email.message import Message
@@ -28,6 +29,7 @@ CYCLONEDX_SCHEMA = "https://cyclonedx.org/schema/bom-1.7.schema.json"
 CYCLONEDX_SPEC_VERSION = "1.7"
 MAX_METADATA_BYTES = MAX_MANIFEST_BYTES = 1_048_576
 MAX_ARCHIVE_MEMBERS = 10_000
+MAX_RELEASE_ARTIFACT_BYTES = 256 * 1024 * 1024
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REVIEWED_SPDX_LICENSE_IDS = frozenset(
@@ -47,6 +49,18 @@ def _parse_arguments() -> argparse.Namespace:
     for flag in ("artifact", "manifest", "lock", "output"):
         parser.add_argument(f"--{flag}", type=Path, required=True)
     return parser.parse_args()
+
+
+def _preflight_release_artifact(path: Path) -> None:
+    """Reject an unsafe or oversized release archive before parser execution."""
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise SystemExit("release artifact is missing or unsafe") from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit("release artifact is missing or unsafe")
+    if metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+        raise SystemExit("release artifact exceeds the compressed-byte safety bound")
 
 
 def _name(value: str) -> str:
@@ -413,8 +427,7 @@ def _component_json(item: dict[str, Any]) -> dict[str, Any]:
 
 def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Build deterministic CycloneDX evidence for one exact distribution."""
-    if not artifact_path.is_file():
-        raise SystemExit("release artifact does not exist or is not a regular file")
+    _preflight_release_artifact(artifact_path)
     package, version, license_id, requirements = _identity(
         _artifact_metadata(artifact_path)
     )
