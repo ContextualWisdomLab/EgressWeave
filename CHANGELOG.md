@@ -60,6 +60,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Revalidate the complete canonical evidence set and the closed owner-only
+  manifest after publication but before reporting success. A second independent
+  bounded evidence pass must reproduce the exact strict manifest bytes, while a
+  bounded descriptor-bound reread must equal the published output. Late evidence
+  additions, removals, substitutions, semantic drift, output replacement,
+  disappearance, redirection, or growth now fail closed without creating a
+  trusted handoff.
 - Bind the release-evidence directory to its canonical absolute real path and
   reject any symbolic link in the final or ancestor path components. All payload
   verification and manifest-output exclusion now use that same resolved root, so
