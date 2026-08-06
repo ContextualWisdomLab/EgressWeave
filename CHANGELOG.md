@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Enforce one coordinator-owned absolute monotonic deadline across asynchronous
+  pinned staggered connection attempts and coordinator waits. Deadline exhaustion
+  cancels and awaits pending attempts and returns the generic egress failure even
+  after an earlier child-specific error, without widening exact authority, DNS
+  pinning, TLS identity, proxy isolation, or network policy.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
