@@ -53,17 +53,47 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _unsafe_artifact_error(error: BaseException | None = None) -> SystemExit:
+    """Return one stable non-leaking failure for unsafe parser-visible state."""
+    failure = SystemExit("release artifact is missing or unsafe")
+    if error is not None:
+        failure.__cause__ = error
+    return failure
+
+
 def _require_live_artifact_descriptor(stream: BinaryIO) -> int:
     """Return the live regular-file size or fail through a stable public error."""
     try:
-        metadata = os.fstat(stream.fileno())
-    except OSError as error:
-        raise SystemExit("release artifact is missing or unsafe") from error
-    if not stat.S_ISREG(metadata.st_mode):
-        raise SystemExit("release artifact is missing or unsafe")
+        descriptor = stream.fileno()
+        metadata = os.fstat(descriptor)
+    except (OSError, TypeError, ValueError) as error:
+        raise _unsafe_artifact_error(error)
+    if (
+        isinstance(descriptor, bool)
+        or not isinstance(descriptor, int)
+        or descriptor < 0
+        or not stat.S_ISREG(metadata.st_mode)
+    ):
+        raise _unsafe_artifact_error()
     if metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
         raise SystemExit("release artifact exceeds the compressed-byte safety bound")
     return metadata.st_size
+
+
+def _require_artifact_position(stream: BinaryIO) -> int:
+    """Return one finite nonnegative parser position inside the byte ceiling."""
+    try:
+        position = stream.tell()
+    except (OSError, TypeError, ValueError) as error:
+        raise _unsafe_artifact_error(error)
+    if (
+        isinstance(position, bool)
+        or not isinstance(position, int)
+        or position < 0
+        or position > MAX_RELEASE_ARTIFACT_BYTES
+    ):
+        raise _unsafe_artifact_error()
+    return position
 
 
 class _LiveBoundedArtifactReader(io.BufferedIOBase):
@@ -82,47 +112,76 @@ class _LiveBoundedArtifactReader(io.BufferedIOBase):
         return True
 
     def fileno(self) -> int:
-        """Return the underlying descriptor for live regular-file validation."""
-        return self._stream.fileno()
+        """Return the validated underlying descriptor without leaking failures."""
+        try:
+            descriptor = self._stream.fileno()
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if isinstance(descriptor, bool) or not isinstance(descriptor, int) or descriptor < 0:
+            raise _unsafe_artifact_error()
+        return descriptor
 
     def tell(self) -> int:
-        """Return the current parser position within the accepted descriptor."""
-        return self._stream.tell()
+        """Return one validated finite parser position."""
+        return _require_artifact_position(self._stream)
 
     def read(self, size: int = -1) -> bytes:
         """Read no more than the finite ceiling and reject concurrent growth."""
         _require_live_artifact_descriptor(self._stream)
-        remaining_with_tripwire = (
-            MAX_RELEASE_ARTIFACT_BYTES - self._stream.tell() + 1
-        )
+        position_before = _require_artifact_position(self._stream)
+        if isinstance(size, bool) or not isinstance(size, int):
+            raise _unsafe_artifact_error()
+        remaining_with_tripwire = MAX_RELEASE_ARTIFACT_BYTES - position_before + 1
         bounded_size = (
             remaining_with_tripwire
             if size < 0 or size > remaining_with_tripwire
             else size
         )
-        payload = self._stream.read(bounded_size)
+        try:
+            payload = self._stream.read(bounded_size)
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if not isinstance(payload, (bytes, bytearray, memoryview)):
+            raise _unsafe_artifact_error()
+        payload_bytes = bytes(payload)
+        if len(payload_bytes) > bounded_size:
+            raise _unsafe_artifact_error()
         _require_live_artifact_descriptor(self._stream)
-        if len(payload) > MAX_RELEASE_ARTIFACT_BYTES:
+        position_after = _require_artifact_position(self._stream)
+        if position_after != position_before + len(payload_bytes):
+            raise _unsafe_artifact_error()
+        if len(payload_bytes) > MAX_RELEASE_ARTIFACT_BYTES:
             raise SystemExit(
                 "release artifact exceeds the compressed-byte safety bound"
             )
-        return payload
+        return payload_bytes
 
     def readinto(self, buffer: bytearray | memoryview) -> int:
         """Fill a parser buffer through the same bounded read contract."""
-        payload = self.read(len(buffer))
-        buffer[: len(payload)] = payload
+        try:
+            payload = self.read(len(buffer))
+            buffer[: len(payload)] = payload
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
         return len(payload)
 
     def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
-        """Seek only while the descriptor remains regular and within the ceiling."""
+        """Seek only while descriptor state and parser position remain safe."""
         _require_live_artifact_descriptor(self._stream)
-        position = self._stream.seek(offset, whence)
+        try:
+            position = self._stream.seek(offset, whence)
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if (
+            isinstance(position, bool)
+            or not isinstance(position, int)
+            or position < 0
+            or position > MAX_RELEASE_ARTIFACT_BYTES
+        ):
+            raise _unsafe_artifact_error()
         _require_live_artifact_descriptor(self._stream)
-        if position > MAX_RELEASE_ARTIFACT_BYTES:
-            raise SystemExit(
-                "release artifact exceeds the compressed-byte safety bound"
-            )
+        if _require_artifact_position(self._stream) != position:
+            raise _unsafe_artifact_error()
         return position
 
 
