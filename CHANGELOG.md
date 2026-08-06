@@ -60,6 +60,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- End the hourly product-development scheduler at a credential-free,
+  exact-base- and SHA-256-bound verified patch handoff. It no longer obtains
+  repository-write or OIDC authority, reapplies model-generated changes under a
+  write identity, pushes branches, opens pull requests, or queues auto-merge.
+  Any future promotion must be external, independently reviewed,
+  credential-separated, and reconstruct and verify the exact tree before any
+  repository write.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
@@ -128,9 +135,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tools, credential-disclosure detection, isolated reverification, and normal PR
   protections remain mandatory; the central review scheduler and inherited review
   agent identity contract are unchanged.
-- Paginate and aggregate every GitHub REST page at all three zero-open-PR
-  boundaries so an open pull request beyond the first 100 results still blocks
-  model execution, independent reverification, and publication.
+- Paginate and aggregate every GitHub REST page at both zero-open-PR boundaries
+  so an open pull request beyond the first 100 results still blocks model
+  execution and independent reverification.
 - Bound outbound request-body consumption in both pinned transports. Oversized
   declared `Content-Length` values fail before connection-pool dispatch, while
   chunked, missing-length, and dishonestly under-declared bodies are counted as
