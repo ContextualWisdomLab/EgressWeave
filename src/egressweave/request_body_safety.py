@@ -7,11 +7,12 @@ module applies a finite byte budget twice: it rejects an oversized declared
 produced by synchronous and asynchronous streams. When a content length is
 present, actual stream consumption must also equal that declaration exactly.
 Each bounded request stream is single-consumption so an exhausted or replayable
-source cannot be retried under stale framing or a reset allowance. Non-byte
-chunks fail before downstream protocol code can serialize or report them. The
-stream that would cross any boundary is closed before the invalid chunk can be
-sent, while callers continue to receive EgressWeave's generic non-leaking denial
-error.
+source cannot be retried under stale framing or a reset allowance. Only exact
+built-in ``bytes`` chunks are accepted before length accounting, preventing a
+subclass or arbitrary object from executing attacker-controlled conversion or
+length behavior at this trust boundary. The stream that would cross any boundary
+is closed before the invalid chunk can be sent, while callers continue to
+receive EgressWeave's generic non-leaking denial error.
 """
 
 from __future__ import annotations
@@ -89,14 +90,14 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
         self._iteration_started = False
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield one byte-only request under cumulative and exact bounds."""
+        """Yield exact bytes only after cumulative and framing-limit checks."""
         if self._iteration_started:
             self.close()
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         for chunk in self._stream:
-            if not isinstance(chunk, bytes):
+            if type(chunk) is not bytes:
                 self.close()
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
@@ -142,14 +143,14 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
         self._iteration_started = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield one byte-only async request under cumulative exact bounds."""
+        """Yield exact async bytes after cumulative and framing-limit checks."""
         if self._iteration_started:
             await self.aclose()
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         async for chunk in self._stream:
-            if not isinstance(chunk, bytes):
+            if type(chunk) is not bytes:
                 await self.aclose()
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
