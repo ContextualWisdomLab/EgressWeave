@@ -180,3 +180,17 @@ def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
     assert "bounded OpenCode maintainer" in readme
     assert "`NVIDIA_NIM_API_KEY`" in readme
     assert "COPILOT_GITHUB_TOKEN" not in readme
+
+
+def test_buyer_readme_forbids_repository_local_patch_publication() -> None:
+    """Keep buyer-facing workflow claims aligned with the read-only handoff."""
+    readme = " ".join(_read(README_PATH).split())
+
+    assert "A third publisher" not in readme
+    assert "ends at the independently reverified credential-free patch handoff" in readme
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in readme
+    )
+    assert "external, independently reviewed, credential-separated promotion" in readme
+    assert "reconstruct and verify the exact tree before any repository write" in readme
