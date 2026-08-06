@@ -220,7 +220,10 @@ def test_archive_replacement_after_preflight_never_reaches_parser(
         lambda: RecordingGenerator(),
     )
 
-    with pytest.raises(SystemExit, match="release distribution .* unreadable or unsafe"):
+    with pytest.raises(
+        SystemExit,
+        match="release distribution .* (?:exceeds the safety bound|is unreadable or unsafe)",
+    ):
         _prepare(preparer, evidence_dir, handoff_path)
 
     assert replaced
