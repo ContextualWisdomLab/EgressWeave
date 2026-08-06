@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add a credential-free six-file release-evidence preparer that requires exactly
+  one matching wheel and source distribution, enforces compressed-byte bounds
+  before archive parsing, generates paired deterministic CycloneDX 1.7 SBOMs,
+  canonical source identity, and filename-sorted checksums, creates owner-only
+  exclusive outputs and a separately stored handoff, and independently
+  re-verifies the complete set after publication without claiming hosted
+  provenance or a SLSA Build level.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
