@@ -134,3 +134,70 @@ def test_directory_archive_is_rejected_as_unsafe(tmp_path: Path) -> None:
 
     with pytest.raises(SystemExit, match="missing or unsafe"):
         generator.build_sbom(directory, MANIFEST_PATH)
+
+
+def test_path_replacement_after_lstat_fails_before_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bind parser input to the file identity accepted by the path preflight."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    replacement = tmp_path / "replacement.whl"
+    with zipfile.ZipFile(wheel_path, mode="w") as archive:
+        archive.writestr("egressweave-0.3.0.dist-info/METADATA", b"original")
+    with zipfile.ZipFile(replacement, mode="w") as archive:
+        archive.writestr("egressweave-0.3.0.dist-info/METADATA", b"replacement")
+    original_lstat = Path.lstat
+    replaced = False
+
+    def replace_after_artifact_lstat(path: Path, *args, **kwargs):
+        nonlocal replaced
+        metadata = original_lstat(path, *args, **kwargs)
+        if path == wheel_path and not replaced:
+            wheel_path.unlink()
+            replacement.replace(wheel_path)
+            replaced = True
+        return metadata
+
+    def unexpected_parser(*args, **kwargs):
+        pytest.fail("parser opened a pathname replacement after preflight")
+
+    monkeypatch.setattr(Path, "lstat", replace_after_artifact_lstat)
+    monkeypatch.setattr(generator.zipfile, "ZipFile", unexpected_parser)
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        generator.build_sbom(wheel_path, MANIFEST_PATH)
+
+
+def test_archive_mutation_during_metadata_parse_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject metadata evidence when the bound archive bytes change mid-read."""
+    generator = _load_generator()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    metadata = (
+        "Metadata-Version: 2.4\n"
+        "Name: egressweave\n"
+        "Version: 0.3.0\n"
+        "License-Expression: Apache-2.0\n"
+        "Requires-Dist: httpcore==1.0.9\n"
+        "Requires-Dist: httpx==0.28.1\n"
+        "Requires-Dist: idna==3.10\n"
+        "Requires-Dist: sniffio==1.3.1\n\n"
+    )
+    with zipfile.ZipFile(wheel_path, mode="w") as archive:
+        archive.writestr("egressweave-0.3.0.dist-info/METADATA", metadata)
+    original_metadata = generator._artifact_metadata
+
+    def mutate_after_metadata(*args, **kwargs):
+        result = original_metadata(*args, **kwargs)
+        with wheel_path.open("ab") as stream:
+            stream.write(b"mutated")
+        return result
+
+    monkeypatch.setattr(generator, "_artifact_metadata", mutate_after_metadata)
+
+    with pytest.raises(SystemExit, match="changed during verification"):
+        generator.build_sbom(wheel_path, MANIFEST_PATH)
