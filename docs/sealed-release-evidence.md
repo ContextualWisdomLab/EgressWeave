@@ -176,7 +176,10 @@ or repository-write credentials.
 ## Threat model and failure behavior
 
 The verifier addresses accidental or hostile evidence substitution between a
-credential-free build and a credentialed attestation boundary. It rejects:
+credential-free build and a credentialed attestation boundary. The final verification pass narrows but cannot eliminate races on mutable local storage.
+It is defense in depth around a sealed evidence boundary, not a replacement for
+immutable storage, a kernel-enforced snapshot, or an independently supplied
+container digest. It rejects:
 
 - missing, malformed, mixed, stale, or caller-mismatched repository/source
   identity;
@@ -239,6 +242,8 @@ https://doi.org/10.17487/RFC8259
 
 CWE Content Team. (2025). *CWE-59: Improper link resolution before file access
 ('link following').* MITRE. https://cwe.mitre.org/data/definitions/59.html
+
+CWE Content Team. (2026). *CWE-367: Time-of-check time-of-use (TOCTOU) race condition.* MITRE. https://cwe.mitre.org/data/definitions/367.html
 
 Davis, K. R., Peabody, B., & Leach, P. J. (2024). *Universally unique
 identifiers (UUIDs)* (RFC 9562). Internet Engineering Task Force.
