@@ -429,6 +429,8 @@ jobs:
 
       - name: Recheck the independently verified immutable patch
         if: steps.gate.outputs.verify == 'true'
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
         run: |
           set -euo pipefail
           sealed_dir="/opt/egressweave-reverify"
@@ -439,8 +441,9 @@ jobs:
             exit 1
           fi
           base_sha="$(cat "$sealed_dir/base-sha")"
-          if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::The sealed base SHA is missing or malformed."
+          if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]] || \
+             [ "$base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The sealed base SHA does not match the exact handoff base."
             exit 1
           fi
 
