@@ -114,11 +114,23 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
     )
 
     assert all(fragment not in workflow for fragment in forbidden_fragments)
+    assert ": write" not in workflow
+    assert "Require the exact handoff base before applying the patch" in workflow
+    assert 'handoff_base_sha="$(cat "$handoff_base_sha_file")"' in workflow
+    assert '[ "$current_sha" != "$EXPECTED_BASE_SHA" ] ||' in workflow
+    assert '[ "$handoff_base_sha" != "$EXPECTED_BASE_SHA" ]; then' in workflow
+    assert "The patch handoff base does not match the exact checkout" in workflow
+    assert 'result_base_sha="$(jq -r ".base_sha" "$result_file")"' in workflow
+    assert '[ "$result_base_sha" != "$EXPECTED_BASE_SHA" ]; then' in workflow
     assert "Upload the independently verified handoff" in workflow
+    assert 'if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]; then' in workflow
     assert "hourly-verified-product-change-${{ github.run_id }}" in workflow
     assert "/opt/egressweave-reverify/egressweave.patch" in workflow
     assert "/opt/egressweave-reverify/base-sha" in workflow
     assert "/opt/egressweave-reverify/patch-sha256" in workflow
+    handoff = workflow.split("Upload the independently verified handoff", 1)[1]
+    assert "if-no-files-found: error" in handoff
+    assert "retention-days: 3" in handoff
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
