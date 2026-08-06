@@ -46,6 +46,7 @@ CHECKSUM_LINE_PATTERN = re.compile(
     r"^(?P<digest>[0-9a-f]{64})  (?P<filename>[A-Za-z0-9][A-Za-z0-9._+-]*)$"
 )
 MAX_CHECKSUM_BYTES = 65_536
+MAX_EVIDENCE_MANIFEST_BYTES = 65_536
 MAX_SOURCE_IDENTITY_BYTES = 4_096
 MAX_SBOM_BYTES = 8 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
@@ -665,6 +666,45 @@ def write_evidence_manifest(
         raise SystemExit("evidence manifest output cannot be created safely") from error
 
 
+def _require_post_publication_state(
+    evidence_dir: Path,
+    output_path: Path,
+    *,
+    repository: str,
+    source_sha: str,
+    expected_payload: bytes,
+) -> None:
+    """Reverify sealed input and emitted bytes after manifest publication."""
+    try:
+        observed_manifest = build_evidence_manifest(
+            evidence_dir,
+            repository=repository,
+            source_sha=source_sha,
+        )
+        observed_payload = _encode_evidence_manifest(observed_manifest)
+    except SystemExit:
+        raise SystemExit(
+            "release evidence changed after manifest publication"
+        ) from None
+    if observed_payload != expected_payload:
+        raise SystemExit("release evidence changed after manifest publication")
+
+    try:
+        _require_output_outside_verified_set(output_path, evidence_dir)
+        published_payload = _read_bounded_file(
+            output_path,
+            maximum_bytes=MAX_EVIDENCE_MANIFEST_BYTES,
+            label="evidence manifest output",
+        )
+        _require_output_outside_verified_set(output_path, evidence_dir)
+    except SystemExit:
+        raise SystemExit(
+            "evidence manifest output changed after publication"
+        ) from None
+    if published_payload != expected_payload:
+        raise SystemExit("evidence manifest output changed after publication")
+
+
 def main() -> int:
     """Verify sealed evidence and write one deterministic credential handoff manifest."""
     arguments = _parse_arguments()
@@ -680,10 +720,18 @@ def main() -> int:
         repository=arguments.repository,
         source_sha=arguments.source_sha,
     )
+    expected_payload = _encode_evidence_manifest(manifest)
     write_evidence_manifest(
         manifest,
         output_path,
         forbidden_root=resolved_evidence_dir,
+    )
+    _require_post_publication_state(
+        evidence_dir,
+        output_path,
+        repository=arguments.repository,
+        source_sha=arguments.source_sha,
+        expected_payload=expected_payload,
     )
     print(f"verified sealed release evidence: {output_path}")
     return 0
