@@ -121,6 +121,18 @@ def _select_distributions(evidence_root: Path) -> tuple[Path, Path]:
     return wheels[0], sdists[0]
 
 
+def _require_distribution_preflight(path: Path, *, label: str) -> None:
+    """Reject an unsafe or oversized distribution before any archive parser runs."""
+    try:
+        path_state = path.lstat()
+    except OSError as error:
+        raise SystemExit(f"{label} is unreadable or unsafe") from error
+    if not stat.S_ISREG(path_state.st_mode):
+        raise SystemExit(f"{label} is unreadable or unsafe")
+    if path_state.st_size > MAX_DISTRIBUTION_BYTES:
+        raise SystemExit(f"{label} exceeds the safety bound")
+
+
 def _load_attestable_generator() -> ModuleType:
     """Load the repository-only deterministic generator without importing archives."""
     specification = importlib.util.spec_from_file_location(
@@ -274,6 +286,14 @@ def prepare_release_evidence(
         label="hash-locked runtime requirements",
     )
     wheel_path, sdist_path = _select_distributions(evidence_root)
+    _require_distribution_preflight(
+        wheel_path,
+        label=f"release distribution {wheel_path.name}",
+    )
+    _require_distribution_preflight(
+        sdist_path,
+        label=f"release distribution {sdist_path.name}",
+    )
 
     generator = _load_attestable_generator()
     wheel_sbom = _strict_pretty_json_bytes(
