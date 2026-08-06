@@ -20,19 +20,31 @@ No SLSA Build level is claimed merely because an SBOM or attestation exists.
 file as untrusted input and never imports EgressWeave. It must:
 
 1. accept only a wheel or gzip source distribution;
-2. reject unsafe or duplicate paths, links, devices, excessive member counts,
+2. inspect the direct release-artifact path with `lstat()`, require a regular
+   file, and enforce a 256 MiB compressed-byte ceiling before any ZIP or gzip/tar
+   parser, metadata reader, or artifact-hash operation;
+3. reject unsafe or duplicate paths, links, devices, excessive member counts,
    ambiguous metadata, oversized metadata, and malformed archives;
-3. check the declared wheel metadata size before decompression;
-4. read exactly one wheel `METADATA` or root source `PKG-INFO` member;
-5. verify package identity, license expression, and complete direct runtime
+4. check the declared wheel metadata size before decompression;
+5. read exactly one wheel `METADATA` or root source `PKG-INFO` member;
+6. verify package identity, license expression, and complete direct runtime
    requirement declarations against the reviewed manifest;
-6. verify every dependency version, SHA-256, and environment marker against the
+7. verify every dependency version, SHA-256, and environment marker against the
    executable hash-locked subset in `requirements-ci.txt`, while rejecting
    dependency extras that could activate packages outside the reviewed graph;
-7. validate identities, SPDX license identifiers, purls, graph references,
+8. validate identities, SPDX license identifiers, purls, graph references,
    relationships, reachability, and acyclicity;
-8. compute the artifact SHA-256 without trusting its filename; and
-9. emit sorted UTF-8 CycloneDX 1.7 JSON without timestamps or random identifiers.
+9. compute the artifact SHA-256 without trusting its filename; and
+10. emit sorted UTF-8 CycloneDX 1.7 JSON without timestamps or random identifiers.
+
+The direct generator normalizes missing, uninspectable, symbolic-link, directory,
+device, FIFO, socket, and other non-regular artifact inputs to
+`release artifact is missing or unsafe`. Inputs above the compressed-byte ceiling
+fail with `release artifact exceeds the compressed-byte safety bound`. These
+checks happen before parser execution. Accepted-size archives remain subject to
+all member-count, path, link/device, metadata-size, decompression, identity,
+dependency, and digest controls; the compressed-input check does not replace
+those independent defenses.
 
 The root component uses a digest-derived `bom-ref`, preventing different
 artifacts from sharing evidence identity. The dependency graph is the union
@@ -118,12 +130,19 @@ model-modified source under a write credential.
 These controls address omitted inventory, evidence bound to the wrong artifact,
 filename substitution, manifest-versus-lock drift, undeclared dependency extras,
 mutable dependency resolution, nondeterministic evidence, unsafe archives,
-metadata decompression, stale or wrong-workflow attestations, and publication
-before exact verification.
+compressed-input resource exhaustion, metadata decompression, stale or
+wrong-workflow attestations, and publication before exact verification.
 
-They do not detect every compromised upstream source, malicious but correctly
-hashed package, license obligation, build-host compromise, or undisclosed
-vulnerability. Those risks require provenance, reproducible builds,
+The direct `lstat()` preflight is a finite-input guard, not an immutable-file
+claim. A hostile local writer with permission to replace or mutate the archive
+after preflight remains a residual mutable-storage risk. Run evidence generation
+from an isolated, read-only exact-artifact directory, and rely on the later
+sealed-evidence descriptor, digest, and post-publication checks before any
+credential-bearing use. No provenance or SLSA claim follows from this preflight.
+
+These controls do not detect every compromised upstream source, malicious but
+correctly hashed package, license obligation, build-host compromise, or
+undisclosed vulnerability. Those risks require provenance, reproducible builds,
 vulnerability management, legal review, and hardened runners.
 
 On any generator, digest, semantic, manifest, lock, or attestation failure,
@@ -149,6 +168,13 @@ https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attesta
 
 GitHub. (2026). *actions/attest* [Computer software]. GitHub.
 https://github.com/actions/attest
+
+MITRE. (2026). *CWE-400: Uncontrolled resource consumption.* Common Weakness
+Enumeration. https://cwe.mitre.org/data/definitions/400.html
+
+Python Software Foundation. (n.d.). *zipfile—Work with ZIP archives:
+Decompression pitfalls.* Python 3 documentation. Retrieved August 6, 2026, from
+https://docs.python.org/3/library/zipfile.html#decompression-pitfalls
 
 Python Packaging Authority. (n.d.). *Core metadata specifications.* Python
 Packaging User Guide. Retrieved August 5, 2026, from
