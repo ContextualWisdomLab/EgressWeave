@@ -72,6 +72,31 @@ class _TimeoutIgnoringBackend:
             raise
 
 
+class _FailThenIgnoreTimeoutBackend:
+    """Fail one candidate verbosely, then keep later candidates pending."""
+
+    def __init__(self) -> None:
+        self.started_hosts: list[str] = []
+        self.cancelled_hosts: list[str] = []
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        self.started_hosts.append(host)
+        if len(self.started_hosts) == 1:
+            raise OSError(f"sensitive child failure for {host}")
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled_hosts.append(host)
+            raise
+
+
 def _backend_with_three_addresses() -> _PinnedEgressNetworkBackend:
     policy = EgressPolicy.from_hosts("api.example.com")
     return _PinnedEgressNetworkBackend(
@@ -141,3 +166,28 @@ async def test_connection_race_enforces_its_global_deadline(monkeypatch) -> None
     assert str(error.value) == "egress URL is not allowed"
     assert ignoring_backend.started_hosts
     assert ignoring_backend.cancelled_hosts == ignoring_backend.started_hosts
+
+
+@pytest.mark.asyncio
+async def test_deadline_exhaustion_does_not_leak_an_earlier_child_error(
+    monkeypatch,
+) -> None:
+    """Require deadline exhaustion to preserve the generic policy error boundary."""
+    monkeypatch.setattr(
+        transport_module,
+        "_CONNECTION_ATTEMPT_DELAY_SECONDS",
+        0.01,
+    )
+    backend = _backend_with_three_addresses()
+    mixed_backend = _FailThenIgnoreTimeoutBackend()
+    backend._backend = mixed_backend
+
+    with pytest.raises(OSError) as error:
+        await asyncio.wait_for(
+            backend.connect_tcp("api.example.com", 443, timeout=0.04),
+            timeout=0.2,
+        )
+
+    assert str(error.value) == "egress URL is not allowed"
+    assert len(mixed_backend.started_hosts) >= 2
+    assert mixed_backend.cancelled_hosts == mixed_backend.started_hosts[1:]
