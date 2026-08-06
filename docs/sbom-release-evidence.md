@@ -21,28 +21,33 @@ file as untrusted input and never imports EgressWeave. It must:
 
 1. accept only a wheel or gzip source distribution;
 2. inspect the direct release-artifact path with `lstat()`, require a regular
-   file, and enforce a 256 MiB compressed-byte ceiling before any ZIP or gzip/tar
-   parser, metadata reader, or artifact-hash operation;
-3. reject unsafe or duplicate paths, links, devices, excessive member counts,
+   file, enforce a 256 MiB compressed-byte ceiling, open it without following a
+   final symbolic link where the platform supports that flag, and require the
+   opened descriptor to retain the accepted device and inode before any parser;
+3. parse and hash only that bound descriptor, bracket metadata parsing with
+   finite SHA-256 reads, and fail if the archive bytes change during verification;
+4. reject unsafe or duplicate paths, links, devices, excessive member counts,
    ambiguous metadata, oversized metadata, and malformed archives;
-4. check the declared wheel metadata size before decompression;
-5. read exactly one wheel `METADATA` or root source `PKG-INFO` member;
-6. verify package identity, license expression, and complete direct runtime
+5. check the declared wheel metadata size before decompression;
+6. read exactly one wheel `METADATA` or root source `PKG-INFO` member;
+7. verify package identity, license expression, and complete direct runtime
    requirement declarations against the reviewed manifest;
-7. verify every dependency version, SHA-256, and environment marker against the
+8. verify every dependency version, SHA-256, and environment marker against the
    executable hash-locked subset in `requirements-ci.txt`, while rejecting
    dependency extras that could activate packages outside the reviewed graph;
-8. validate identities, SPDX license identifiers, purls, graph references,
+9. validate identities, SPDX license identifiers, purls, graph references,
    relationships, reachability, and acyclicity;
-9. compute the artifact SHA-256 without trusting its filename; and
-10. emit sorted UTF-8 CycloneDX 1.7 JSON without timestamps or random identifiers.
+10. compute the artifact SHA-256 without trusting its filename; and
+11. emit sorted UTF-8 CycloneDX 1.7 JSON without timestamps or random identifiers.
 
 The direct generator normalizes missing, uninspectable, symbolic-link, directory,
-device, FIFO, socket, and other non-regular artifact inputs to
+device, FIFO, socket, replaced, and other non-regular artifact inputs to
 `release artifact is missing or unsafe`. Inputs above the compressed-byte ceiling
-fail with `release artifact exceeds the compressed-byte safety bound`. These
-checks happen before parser execution. Accepted-size archives remain subject to
-all member-count, path, link/device, metadata-size, decompression, identity,
+fail with `release artifact exceeds the compressed-byte safety bound`; bytes that
+change across the descriptor-bound metadata pass fail with
+`release artifact changed during verification`. These checks happen before or
+around parser execution. Accepted-size archives remain subject to all
+member-count, path, link/device, metadata-size, decompression, identity,
 dependency, and digest controls; the compressed-input check does not replace
 those independent defenses.
 
@@ -128,17 +133,20 @@ model-modified source under a write credential.
 ## Threats, failure, and recovery
 
 These controls address omitted inventory, evidence bound to the wrong artifact,
-filename substitution, manifest-versus-lock drift, undeclared dependency extras,
-mutable dependency resolution, nondeterministic evidence, unsafe archives,
-compressed-input resource exhaustion, metadata decompression, stale or
-wrong-workflow attestations, and publication before exact verification.
+filename substitution, path replacement between inspection and parsing,
+manifest-versus-lock drift, undeclared dependency extras, mutable dependency
+resolution, nondeterministic evidence, unsafe archives, compressed-input resource
+exhaustion, metadata decompression, stale or wrong-workflow attestations, and
+publication before exact verification.
 
-The direct `lstat()` preflight is a finite-input guard, not an immutable-file
-claim. A hostile local writer with permission to replace or mutate the archive
-after preflight remains a residual mutable-storage risk. Run evidence generation
-from an isolated, read-only exact-artifact directory, and rely on the later
-sealed-evidence descriptor, digest, and post-publication checks before any
-credential-bearing use. No provenance or SLSA claim follows from this preflight.
+Descriptor identity and digest bracketing close ordinary pathname-replacement and
+in-place mutation races during parsing. They do not convert a writable build host
+into an immutable-storage system: a privileged writer able to alter and restore
+the same inode entirely between verification observations remains a residual
+mutable-storage risk. Run evidence generation from an isolated, read-only
+exact-artifact directory, and rely on the later sealed-evidence descriptor,
+digest, and post-publication checks before any credential-bearing use. No
+provenance or SLSA claim follows from these direct-generator controls.
 
 These controls do not detect every compromised upstream source, malicious but
 correctly hashed package, license obligation, build-host compromise, or
