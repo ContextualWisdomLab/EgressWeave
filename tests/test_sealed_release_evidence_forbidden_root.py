@@ -88,6 +88,24 @@ def test_public_writer_accepts_real_forbidden_root_outside_output(
     assert observed_roots == [forbidden_root.resolve()] * 3
 
 
+def test_public_writer_accepts_real_parent_traversal_without_symlinks(
+    tmp_path: Path,
+) -> None:
+    """Permit lexical parent traversal when every named component is a real path."""
+    forbidden_root = tmp_path / "real-evidence"
+    child = forbidden_root / "child"
+    child.mkdir(parents=True)
+    output_path = tmp_path / "manifest-parent" / "manifest.json"
+
+    release_evidence.write_evidence_manifest(
+        MANIFEST,
+        output_path,
+        forbidden_root=child / "..",
+    )
+
+    assert json.loads(output_path.read_text(encoding="utf-8")) == MANIFEST
+
+
 def test_public_writer_rejects_missing_forbidden_root_before_parent_creation(
     tmp_path: Path,
 ) -> None:
