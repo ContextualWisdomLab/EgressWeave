@@ -155,6 +155,16 @@ Manifest format version 2 records:
 - canonical artifact filename, kind, SHA-256, paired SBOM filename, SBOM
   SHA-256, and recomputed serial number for each distribution.
 
+After the owner-only descriptor closes, the CLI does not report success yet. It
+rebuilds the complete handoff semantics from a second independent bounded pass
+over the canonical evidence root, compares the strict deterministic bytes with
+the pre-publication snapshot, rereads the closed output through the same
+descriptor/path and size boundary, and rechecks that its parent remains outside
+the verified set. Added, removed, replaced, or semantically changed evidence and
+a missing, replaced, redirected, or oversized output therefore fail closed after
+publication and before the success message. The failed output is never a trusted
+handoff and must be discarded.
+
 A later credentialed job must consume only a sealed copy of the already verified
 payloads and the independently digest-bound manifest. It must recheck repository,
 source commit, source-identity digest, checksum digest, payload cardinality, and
@@ -173,7 +183,10 @@ credential-free build and a credentialed attestation boundary. It rejects:
 - an evidence root reached through a symlinked final or ancestor path component;
 - symlinked payloads, nested paths, non-files, and extra files;
 - path-to-descriptor identity changes and mutation of any accepted evidence file
-  before manifest issuance;
+  before or immediately after manifest issuance;
+- semantic drift on the independent post-publication evidence pass and a closed
+  manifest that disappears, is replaced, grows beyond its bound, or no longer
+  matches the exact pre-publication bytes;
 - an alternate valid SBOM or source identity exposed only during semantic parsing
   while different bytes remain named by the accepted checksum digest;
 - pre-existing, symlinked, replaced, non-private, or non-strict handoff-manifest
