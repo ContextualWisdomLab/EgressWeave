@@ -17,6 +17,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   root-artifact bindings; applies finite evidence-size limits; and emits a
   deterministic repository-and-source-bound manifest for a credential-separated
   organization attestation workflow.
+- Add a deterministic, content-bound RFC 4122 UUID version 5 `serialNumber`
+  adapter for CycloneDX 1.7 release evidence, satisfying the reviewed
+  `actions/attest` CycloneDX parser without timestamps, random identifiers, or
+  branch-local changes to credential-bearing release workflows.
 - Add deterministic CycloneDX 1.7 SBOM generation that binds each canonical
   wheel and source distribution to its exact SHA-256 and a reviewed, hash-pinned
   runtime dependency graph. Protected attestation integration remains separate
@@ -56,11 +60,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
-- Bind the release-evidence directory to its canonical absolute real path and
-  reject any symbolic link in the final or ancestor path components. All payload
-  verification and manifest-output exclusion now use that same resolved root, so
-  retargeting a caller-supplied ancestor link cannot switch the verified directory
-  or place a handoff manifest inside the set that was actually accepted.
 - Recheck the manifest output parent against the verified evidence directory
   immediately before exclusive creation, after descriptor binding, and after
   durable synchronization. Redirecting a previously safe parent through a
@@ -81,6 +80,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stale-output overwrite, Python-only JSON coercion, disappearing paths, or
   mutation of any accepted evidence file now fail before trusted manifest
   issuance.
+- Serialize attestable CycloneDX evidence from one detached exact-document
+  snapshot immediately before output. The writer revalidates the content-bound
+  serial on that snapshot, while mutation-induced encoding failures fail closed
+  before file creation so validated identity cannot diverge from emitted bytes.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
