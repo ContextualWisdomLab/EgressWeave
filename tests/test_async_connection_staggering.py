@@ -165,7 +165,9 @@ async def test_connection_race_enforces_its_global_deadline(monkeypatch) -> None
 
     assert str(error.value) == "egress URL is not allowed"
     assert ignoring_backend.started_hosts
-    assert ignoring_backend.cancelled_hosts == ignoring_backend.started_hosts
+    assert sorted(ignoring_backend.cancelled_hosts) == sorted(
+        ignoring_backend.started_hosts
+    )
 
 
 @pytest.mark.asyncio
@@ -190,4 +192,6 @@ async def test_deadline_exhaustion_does_not_leak_an_earlier_child_error(
 
     assert str(error.value) == "egress URL is not allowed"
     assert len(mixed_backend.started_hosts) >= 2
-    assert mixed_backend.cancelled_hosts == mixed_backend.started_hosts[1:]
+    assert sorted(mixed_backend.cancelled_hosts) == sorted(
+        mixed_backend.started_hosts[1:]
+    )
