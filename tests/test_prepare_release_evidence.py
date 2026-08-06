@@ -151,6 +151,31 @@ def test_prepare_release_evidence_rejects_unexpected_input_before_writing(
     assert not handoff_path.exists()
 
 
+def test_prepare_release_evidence_rejects_oversized_archive_before_generator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject compressed input bytes before loading any archive parser."""
+    preparer = _load_preparer()
+    evidence_dir = tmp_path / "evidence"
+    wheel_path, _ = _write_distributions(evidence_dir)
+    wheel_path.write_bytes(b"")
+    with wheel_path.open("r+b") as stream:
+        stream.truncate(preparer.MAX_DISTRIBUTION_BYTES + 1)
+    handoff_path = tmp_path / "handoff.json"
+
+    def fail_if_loaded():
+        raise AssertionError("the generator ran before the distribution size preflight")
+
+    monkeypatch.setattr(preparer, "_load_attestable_generator", fail_if_loaded)
+
+    with pytest.raises(SystemExit, match="release distribution .* exceeds the safety bound"):
+        _prepare(preparer, evidence_dir, handoff_path)
+
+    assert {path.name for path in evidence_dir.iterdir()} == {WHEEL_NAME, SDIST_NAME}
+    assert not handoff_path.exists()
+
+
 def test_prepare_release_evidence_rejects_symlinked_distribution_before_writing(
     tmp_path: Path,
 ) -> None:
