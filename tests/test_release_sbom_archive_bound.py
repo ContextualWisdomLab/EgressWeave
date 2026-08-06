@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import tarfile
 import zipfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -31,6 +33,24 @@ def _write_sparse_oversized_file(path: Path) -> None:
     """Create one cheap sparse fixture just above the accepted compressed bound."""
     with path.open("wb") as stream:
         stream.truncate(EXPECTED_MAX_ARTIFACT_BYTES + 1)
+
+
+def _write_minimal_archive(path: Path) -> None:
+    """Write one parseable wheel or source archive for live-growth regressions."""
+    metadata = (
+        "Metadata-Version: 2.4\n"
+        "Name: egressweave\n"
+        "Version: 0.3.0\n"
+        "License-Expression: Apache-2.0\n\n"
+    ).encode()
+    if path.name.endswith(".whl"):
+        with zipfile.ZipFile(path, mode="w") as archive:
+            archive.writestr("egressweave-0.3.0.dist-info/METADATA", metadata)
+        return
+    with tarfile.open(path, mode="w:gz") as archive:
+        member = tarfile.TarInfo("egressweave-0.3.0/PKG-INFO")
+        member.size = len(metadata)
+        archive.addfile(member, io.BytesIO(metadata))
 
 
 def test_generator_uses_the_reviewed_compressed_archive_limit() -> None:
@@ -98,6 +118,41 @@ def test_symlinked_archive_fails_before_parser(
 
     with pytest.raises(SystemExit, match="missing or unsafe"):
         generator.build_sbom(alias, MANIFEST_PATH)
+
+
+def test_cli_rejects_symlinked_archive_before_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the CLI from resolving away the caller-supplied final symlink."""
+    generator = _load_generator()
+    target = tmp_path / "target.whl"
+    _write_minimal_archive(target)
+    alias = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    try:
+        alias.symlink_to(target)
+    except OSError:
+        pytest.skip("symbolic links are unavailable on this platform")
+
+    monkeypatch.setattr(
+        generator,
+        "_parse_arguments",
+        lambda: SimpleNamespace(
+            artifact=alias,
+            manifest=MANIFEST_PATH,
+            lock=tmp_path / "runtime.lock",
+            output=tmp_path / "sbom.json",
+        ),
+    )
+    monkeypatch.setattr(generator, "validate_runtime_lock", lambda *args: None)
+
+    def unexpected_parser(*args, **kwargs):
+        pytest.fail("CLI resolved an unsafe archive link before validation")
+
+    monkeypatch.setattr(generator.zipfile, "ZipFile", unexpected_parser)
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        generator.main()
 
 
 def test_archive_lstat_failure_is_normalized_before_parser(
@@ -168,6 +223,39 @@ def test_path_replacement_after_lstat_fails_before_parser(
 
     with pytest.raises(SystemExit, match="missing or unsafe"):
         generator.build_sbom(wheel_path, MANIFEST_PATH)
+
+
+@pytest.mark.parametrize(
+    "artifact_name",
+    ("egressweave-0.3.0-py3-none-any.whl", "egressweave-0.3.0.tar.gz"),
+)
+def test_archive_growth_after_initial_hash_is_bounded_inside_parser(
+    artifact_name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a live archive that grows past the ceiling before parser reads."""
+    generator = _load_generator()
+    artifact_path = tmp_path / artifact_name
+    _write_minimal_archive(artifact_path)
+    original_hash = generator._sha256_file
+    hash_calls = 0
+
+    def grow_after_initial_hash(stream):
+        nonlocal hash_calls
+        digest = original_hash(stream)
+        hash_calls += 1
+        if hash_calls == 1:
+            with artifact_path.open("r+b") as mutable_artifact:
+                mutable_artifact.truncate(EXPECTED_MAX_ARTIFACT_BYTES + 1)
+        return digest
+
+    monkeypatch.setattr(generator, "_sha256_file", grow_after_initial_hash)
+
+    with pytest.raises(SystemExit, match="compressed-byte safety bound"):
+        generator.build_sbom(artifact_path, MANIFEST_PATH)
+
+    assert hash_calls == 1
 
 
 def test_archive_mutation_during_metadata_parse_fails_closed(
