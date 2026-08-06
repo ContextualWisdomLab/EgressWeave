@@ -339,3 +339,102 @@ def test_growth_after_parser_seek_fails_before_the_next_read(tmp_path: Path) -> 
             mutable_artifact.truncate(EXPECTED_MAX_ARTIFACT_BYTES + 1)
         with pytest.raises(SystemExit, match="compressed-byte safety bound"):
             reader.read(1)
+
+
+def test_parser_read_rejects_out_of_range_position_before_underlying_read(
+    tmp_path: Path,
+) -> None:
+    """Refuse an impossible live offset before it can turn read(-1) unbounded."""
+    generator = _load_generator()
+    artifact_path = tmp_path / "artifact.whl"
+    artifact_path.write_bytes(b"abcdef")
+
+    with artifact_path.open("rb") as artifact_stream:
+
+        class OutOfRangeStream:
+            """Expose a valid descriptor but an impossible parser position."""
+
+            def fileno(self) -> int:
+                return artifact_stream.fileno()
+
+            def tell(self) -> int:
+                return EXPECTED_MAX_ARTIFACT_BYTES + 1
+
+            def read(self, size: int = -1) -> bytes:
+                pytest.fail(f"underlying read received unsafe size {size}")
+
+        reader = generator._LiveBoundedArtifactReader(OutOfRangeStream())
+        with pytest.raises(SystemExit, match="missing or unsafe"):
+            reader.read()
+
+
+def test_parser_seek_rejects_negative_result(tmp_path: Path) -> None:
+    """Reject a negative parser position even when a hostile stream returns it."""
+    generator = _load_generator()
+    artifact_path = tmp_path / "artifact.whl"
+    artifact_path.write_bytes(b"abcdef")
+
+    with artifact_path.open("rb") as artifact_stream:
+
+        class NegativeSeekStream:
+            """Return a negative seek position without raising an OS error."""
+
+            def fileno(self) -> int:
+                return artifact_stream.fileno()
+
+            def tell(self) -> int:
+                return artifact_stream.tell()
+
+            def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+                return -1
+
+        reader = generator._LiveBoundedArtifactReader(NegativeSeekStream())
+        with pytest.raises(SystemExit, match="missing or unsafe"):
+            reader.seek(0)
+
+
+@pytest.mark.parametrize("operation", ("fileno", "tell", "read", "seek"))
+def test_parser_descriptor_failures_use_one_stable_error(
+    operation: str,
+    tmp_path: Path,
+) -> None:
+    """Keep parser-visible descriptor failures behind the public safe boundary."""
+    generator = _load_generator()
+    artifact_path = tmp_path / "artifact.whl"
+    artifact_path.write_bytes(b"abcdef")
+
+    with artifact_path.open("rb") as artifact_stream:
+
+        class FailingStream:
+            """Fail one selected descriptor operation with sensitive detail."""
+
+            def fileno(self) -> int:
+                if operation == "fileno":
+                    raise OSError("sensitive descriptor detail")
+                return artifact_stream.fileno()
+
+            def tell(self) -> int:
+                if operation == "tell":
+                    raise OSError("sensitive descriptor detail")
+                return artifact_stream.tell()
+
+            def read(self, size: int = -1) -> bytes:
+                if operation == "read":
+                    raise OSError("sensitive descriptor detail")
+                return artifact_stream.read(size)
+
+            def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+                if operation == "seek":
+                    raise OSError("sensitive descriptor detail")
+                return artifact_stream.seek(offset, whence)
+
+        reader = generator._LiveBoundedArtifactReader(FailingStream())
+        with pytest.raises(SystemExit, match="release artifact is missing or unsafe"):
+            if operation == "fileno":
+                reader.fileno()
+            elif operation == "tell":
+                reader.tell()
+            elif operation == "read":
+                reader.read(1)
+            else:
+                reader.seek(0)
