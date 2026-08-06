@@ -84,7 +84,7 @@ def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
 
 
 def test_open_pull_request_gates_count_every_paginated_page() -> None:
-    """Refuse autonomous publication when an open PR exists beyond page one."""
+    """Refuse development or reverification for an open PR beyond page one."""
     workflow = " ".join(
         _read(PRODUCT_WORKFLOW_PATH).replace("\\\n", "").split()
     )
@@ -93,8 +93,32 @@ def test_open_pull_request_gates_count_every_paginated_page() -> None:
         "--paginate --slurp --jq 'map(length) | add // 0'"
     )
 
-    assert workflow.count(complete_query) == 3
+    assert workflow.count(complete_query) == 2
     assert "--jq 'length'" not in workflow
+
+
+def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
+    """End the scheduler at a digest-bound credential-free patch handoff."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    forbidden_fragments = (
+        "\n  publish:",
+        "id-token: write",
+        "PR_REVIEW_MERGE_TOKEN",
+        "OPENCODE_APPROVE_TOKEN",
+        "exchange_github_app_token",
+        "git remote set-url",
+        "git push ",
+        "gh pr create",
+        "gh pr merge",
+        "contents: write",
+    )
+
+    assert all(fragment not in workflow for fragment in forbidden_fragments)
+    assert "Upload the independently verified handoff" in workflow
+    assert "hourly-verified-product-change-${{ github.run_id }}" in workflow
+    assert "/opt/egressweave-reverify/egressweave.patch" in workflow
+    assert "/opt/egressweave-reverify/base-sha" in workflow
+    assert "/opt/egressweave-reverify/patch-sha256" in workflow
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
@@ -118,6 +142,15 @@ def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() ->
     assert NVIDIA_MODEL in documentation
     assert OPENCODE_LINUX_X64_SHA256 in documentation
     assert "OpenAI Codex Action" not in documentation
+
+
+def test_operator_documentation_forbids_repository_local_patch_publication() -> None:
+    """Document that verified patches require an external promotion boundary."""
+    documentation = " ".join(_read(MAINTENANCE_DOCUMENTATION_PATH).split())
+
+    assert "does not create a branch, pull request, or auto-merge request" in documentation
+    assert "external credential-separated promotion mechanism" in documentation
+    assert "reconstruct and verify the exact tree" in documentation
 
 
 def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
