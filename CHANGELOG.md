@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add a shipped, credential-free sealed release-evidence verifier that accepts
+  only the exact wheel, source distribution, paired CycloneDX 1.7 SBOMs, and
+  canonical `SHA256SUMS`; independently recomputes content-bound UUIDv5 and
+  root-artifact bindings; applies finite evidence-size limits; and emits a
+  deterministic repository-and-source-bound manifest for a credential-separated
+  organization attestation workflow.
 - Add a deterministic, content-bound RFC 4122 UUID version 5 `serialNumber`
   adapter for CycloneDX 1.7 release evidence, satisfying the reviewed
   `actions/attest` CycloneDX parser without timestamps, random identifiers, or
@@ -50,6 +56,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Bind each selected release-evidence payload to an opened regular-file
+  descriptor and its current path identity, bracket parsed checksum and SBOM
+  bytes with bounded digests, retain the accepted `SHA256SUMS` snapshot through
+  final verification, and rehash every distribution and SBOM after semantic
+  checks. The handoff manifest is detached as strict JSON before filesystem
+  access, created owner-only through an exclusive non-clobbering descriptor,
+  durably synchronized, and path-bound again after writing. Symlink substitution,
+  stale-output overwrite, Python-only JSON coercion, disappearing paths, or
+  mutation of any accepted evidence file now fail before trusted manifest
+  issuance.
 - Serialize attestable CycloneDX evidence from one detached exact-document
   snapshot immediately before output. The writer revalidates the content-bound
   serial on that snapshot, while mutation-induced encoding failures fail closed
