@@ -409,7 +409,8 @@ async def test_async_backend_covers_expired_budget_before_wait(monkeypatch) -> N
         lambda: _FakeClock(0.0, 0.0, 0.0, 0.0, 1.0, 1.0),
     )
 
-    assert await backend.connect_tcp("api.example.com", 443, timeout=0.0) is stream
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
+        await backend.connect_tcp("api.example.com", 443, timeout=0.0)
 
 
 async def test_async_backend_raises_last_error_after_deadline(monkeypatch) -> None:
