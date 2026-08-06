@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import stat
 import tarfile
@@ -18,7 +19,7 @@ from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 
 from packaging.markers import InvalidMarker, Marker
 from packaging.requirements import InvalidRequirement, Requirement
@@ -51,16 +52,38 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _preflight_release_artifact(path: Path) -> None:
-    """Reject an unsafe or oversized release archive before parser execution."""
+def _open_release_artifact(path: Path) -> BinaryIO:
+    """Open one preflighted regular archive and bind it to the accepted identity."""
     try:
-        metadata = path.lstat()
+        path_metadata = path.lstat()
     except OSError as error:
         raise SystemExit("release artifact is missing or unsafe") from error
-    if not stat.S_ISREG(metadata.st_mode):
+    if not stat.S_ISREG(path_metadata.st_mode):
         raise SystemExit("release artifact is missing or unsafe")
-    if metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+    if path_metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
         raise SystemExit("release artifact exceeds the compressed-byte safety bound")
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise SystemExit("release artifact is missing or unsafe") from error
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened_metadata.st_mode)
+            or opened_metadata.st_dev != path_metadata.st_dev
+            or opened_metadata.st_ino != path_metadata.st_ino
+        ):
+            raise SystemExit("release artifact is missing or unsafe")
+        if opened_metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _name(value: str) -> str:
@@ -115,10 +138,11 @@ def _parse_metadata(payload: bytes, source: str) -> Message:
     return BytesParser(policy=default).parsebytes(payload)
 
 
-def _wheel_metadata(path: Path) -> Message:
-    """Read the sole bounded wheel METADATA member."""
+def _wheel_metadata(stream: BinaryIO) -> Message:
+    """Read the sole bounded wheel METADATA member from the bound archive."""
+    stream.seek(0)
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(stream) as archive:
             members = archive.infolist()
             _check_archive_names([item.filename for item in members], "wheel")
             selected = [
@@ -133,10 +157,11 @@ def _wheel_metadata(path: Path) -> Message:
         raise SystemExit("release wheel is not a valid ZIP archive") from error
 
 
-def _sdist_metadata(path: Path) -> Message:
-    """Read the sole bounded root PKG-INFO member."""
+def _sdist_metadata(stream: BinaryIO) -> Message:
+    """Read the sole bounded root PKG-INFO member from the bound archive."""
+    stream.seek(0)
     try:
-        with tarfile.open(path, mode="r:gz") as archive:
+        with tarfile.open(fileobj=stream, mode="r:gz") as archive:
             members = archive.getmembers()
             _check_archive_names([item.name for item in members], "source distribution")
             if any(item.issym() or item.islnk() or item.isdev() for item in members):
@@ -152,20 +177,20 @@ def _sdist_metadata(path: Path) -> Message:
                 raise SystemExit("source distribution must contain one root PKG-INFO")
             if selected[0].size > MAX_METADATA_BYTES:
                 raise SystemExit("source distribution metadata exceeds the safety bound")
-            stream = archive.extractfile(selected[0])
-            if stream is None:
+            extracted = archive.extractfile(selected[0])
+            if extracted is None:
                 raise SystemExit("source distribution metadata could not be read")
-            return _parse_metadata(stream.read(), "source distribution")
+            return _parse_metadata(extracted.read(), "source distribution")
     except tarfile.TarError as error:
         raise SystemExit("release source distribution is not a valid gzip tar") from error
 
 
-def _artifact_metadata(path: Path) -> Message:
-    """Read metadata from a wheel or gzip source distribution."""
-    if path.name.endswith(".whl"):
-        return _wheel_metadata(path)
-    if path.name.endswith(".tar.gz"):
-        return _sdist_metadata(path)
+def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:
+    """Read metadata from a bound wheel or gzip source distribution."""
+    if filename.endswith(".whl"):
+        return _wheel_metadata(stream)
+    if filename.endswith(".tar.gz"):
+        return _sdist_metadata(stream)
     raise SystemExit("release artifact must be a .whl or .tar.gz distribution")
 
 
@@ -392,12 +417,19 @@ def _identity(metadata: Message) -> tuple[str, str, str, list[str]]:
     return _name(name), version, license_id, requirements
 
 
-def _sha256_file(path: Path) -> str:
-    """Return an artifact SHA-256 without loading it into memory."""
+def _sha256_stream(stream: BinaryIO) -> str:
+    """Hash the bound artifact while enforcing its live finite byte ceiling."""
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1_048_576), b""):
-            digest.update(block)
+    stream.seek(0)
+    consumed = 0
+    while block := stream.read(1_048_576):
+        consumed += len(block)
+        if consumed > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        digest.update(block)
+    stream.seek(0)
     return digest.hexdigest()
 
 
@@ -427,10 +459,15 @@ def _component_json(item: dict[str, Any]) -> dict[str, Any]:
 
 def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Build deterministic CycloneDX evidence for one exact distribution."""
-    _preflight_release_artifact(artifact_path)
-    package, version, license_id, requirements = _identity(
-        _artifact_metadata(artifact_path)
-    )
+    with _open_release_artifact(artifact_path) as artifact_stream:
+        digest_before = _sha256_stream(artifact_stream)
+        package, version, license_id, requirements = _identity(
+            _artifact_metadata(artifact_stream, artifact_path.name)
+        )
+        digest = _sha256_stream(artifact_stream)
+    if digest != digest_before:
+        raise SystemExit("release artifact changed during verification")
+
     root, components = _load_manifest(manifest_path)
     if package != root["name"] or license_id != root["license"]:
         raise SystemExit("artifact identity or license does not match the manifest")
@@ -439,7 +476,6 @@ def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
         raise SystemExit("artifact direct runtime dependencies do not match the manifest")
     if requirements != root["requires_dist"]:
         raise SystemExit("artifact runtime requirement declarations do not match the manifest")
-    digest = _sha256_file(artifact_path)
     root_ref = f"urn:egressweave:artifact:sha256:{digest}"
     ordered = sorted(components.values(), key=lambda item: item["purl"])
     dependencies = [
