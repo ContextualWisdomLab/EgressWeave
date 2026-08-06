@@ -202,7 +202,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
                 try:
                     self._stream.close()
                 finally:
-                    raise
+                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
                 try:
@@ -236,7 +236,7 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
                 try:
                     await self._stream.aclose()
                 finally:
-                    raise
+                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
                 try:
