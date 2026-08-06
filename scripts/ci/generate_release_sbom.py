@@ -417,7 +417,7 @@ def _identity(metadata: Message) -> tuple[str, str, str, list[str]]:
     return _name(name), version, license_id, requirements
 
 
-def _sha256_stream(stream: BinaryIO) -> str:
+def _sha256_file(stream: BinaryIO) -> str:
     """Hash the bound artifact while enforcing its live finite byte ceiling."""
     digest = hashlib.sha256()
     stream.seek(0)
@@ -460,11 +460,11 @@ def _component_json(item: dict[str, Any]) -> dict[str, Any]:
 def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Build deterministic CycloneDX evidence for one exact distribution."""
     with _open_release_artifact(artifact_path) as artifact_stream:
-        digest_before = _sha256_stream(artifact_stream)
+        digest_before = _sha256_file(artifact_stream)
         package, version, license_id, requirements = _identity(
             _artifact_metadata(artifact_stream, artifact_path.name)
         )
-        digest = _sha256_stream(artifact_stream)
+        digest = _sha256_file(artifact_stream)
     if digest != digest_before:
         raise SystemExit("release artifact changed during verification")
 
