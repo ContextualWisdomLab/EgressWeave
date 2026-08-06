@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -50,6 +51,76 @@ def _parse_arguments() -> argparse.Namespace:
     for flag in ("artifact", "manifest", "lock", "output"):
         parser.add_argument(f"--{flag}", type=Path, required=True)
     return parser.parse_args()
+
+
+def _require_live_artifact_descriptor(stream: BinaryIO) -> int:
+    """Return the live regular-file size or fail through a stable public error."""
+    try:
+        metadata = os.fstat(stream.fileno())
+    except OSError as error:
+        raise SystemExit("release artifact is missing or unsafe") from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit("release artifact is missing or unsafe")
+    if metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+        raise SystemExit("release artifact exceeds the compressed-byte safety bound")
+    return metadata.st_size
+
+
+class _LiveBoundedArtifactReader(io.BufferedIOBase):
+    """Expose parser reads and seeks while rechecking one finite live descriptor."""
+
+    def __init__(self, stream: BinaryIO) -> None:
+        super().__init__()
+        self._stream = stream
+
+    def readable(self) -> bool:
+        """Report that the accepted artifact descriptor supports reads."""
+        return True
+
+    def seekable(self) -> bool:
+        """Report that archive parsers may seek within the accepted descriptor."""
+        return True
+
+    def fileno(self) -> int:
+        """Return the underlying descriptor for live regular-file validation."""
+        return self._stream.fileno()
+
+    def tell(self) -> int:
+        """Return the current parser position within the accepted descriptor."""
+        return self._stream.tell()
+
+    def read(self, size: int = -1) -> bytes:
+        """Read no more than the finite ceiling and reject concurrent growth."""
+        _require_live_artifact_descriptor(self._stream)
+        bounded_size = (
+            MAX_RELEASE_ARTIFACT_BYTES + 1
+            if size < 0 or size > MAX_RELEASE_ARTIFACT_BYTES + 1
+            else size
+        )
+        payload = self._stream.read(bounded_size)
+        _require_live_artifact_descriptor(self._stream)
+        if len(payload) > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        return payload
+
+    def readinto(self, buffer: bytearray | memoryview) -> int:
+        """Fill a parser buffer through the same bounded read contract."""
+        payload = self.read(len(buffer))
+        buffer[: len(payload)] = payload
+        return len(payload)
+
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        """Seek only while the descriptor remains regular and within the ceiling."""
+        _require_live_artifact_descriptor(self._stream)
+        position = self._stream.seek(offset, whence)
+        _require_live_artifact_descriptor(self._stream)
+        if position > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        return position
 
 
 def _open_release_artifact(path: Path) -> BinaryIO:
@@ -186,11 +257,12 @@ def _sdist_metadata(stream: BinaryIO) -> Message:
 
 
 def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:
-    """Read metadata from a bound wheel or gzip source distribution."""
+    """Read metadata through a live-bounded wheel or source-archive descriptor."""
+    bounded_stream = _LiveBoundedArtifactReader(stream)
     if filename.endswith(".whl"):
-        return _wheel_metadata(stream)
+        return _wheel_metadata(bounded_stream)
     if filename.endswith(".tar.gz"):
-        return _sdist_metadata(stream)
+        return _sdist_metadata(bounded_stream)
     raise SystemExit("release artifact must be a .whl or .tar.gz distribution")
 
 
@@ -542,7 +614,7 @@ def main() -> int:
     arguments = _parse_arguments()
     validate_runtime_lock(arguments.manifest.resolve(), arguments.lock.resolve())
     write_sbom(
-        build_sbom(arguments.artifact.resolve(), arguments.manifest.resolve()),
+        build_sbom(arguments.artifact, arguments.manifest.resolve()),
         arguments.output.resolve(),
     )
     print(f"wrote CycloneDX {CYCLONEDX_SPEC_VERSION} SBOM: {arguments.output}")
