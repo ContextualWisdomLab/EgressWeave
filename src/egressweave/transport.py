@@ -136,7 +136,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
-        """Race pinned addresses gradually within one connection-timeout budget."""
+        """Race pinned addresses gradually within one hard connection deadline."""
         self._verify_host_port(host, port)
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
@@ -173,16 +173,23 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         start_next_attempt()
         try:
             while tasks:
-                wait_timeout = None
+                remaining_budget = (
+                    None
+                    if deadline is None
+                    else max(0.0, deadline - loop.time())
+                )
+                if remaining_budget == 0.0:
+                    break
+
+                wait_timeout = remaining_budget
                 if more_addresses:
-                    wait_timeout = max(0.0, next_attempt_at - loop.time())
-                    if deadline is not None:
-                        remaining_budget = max(0.0, deadline - loop.time())
-                        if remaining_budget <= 0:
-                            more_addresses = False
-                            wait_timeout = None
-                        else:
-                            wait_timeout = min(wait_timeout, remaining_budget)
+                    next_attempt_delay = max(0.0, next_attempt_at - loop.time())
+                    wait_timeout = (
+                        next_attempt_delay
+                        if wait_timeout is None
+                        else min(next_attempt_delay, wait_timeout)
+                    )
+
                 done, pending = await asyncio.wait(
                     tasks,
                     timeout=wait_timeout,
