@@ -110,7 +110,9 @@ def test_sync_request_stream_preserves_exact_bytes_accounting() -> None:
     source = _MalformedSyncRequestStream(b"abcd")
     stream = _BoundedSyncRequestStream(source, max_request_bytes=4)
 
-    assert next(iter(stream)) == b"abcd"
+    assert list(stream) == [b"abcd"]
+    stream.close()
+    assert source.closed is True
 
 
 @pytest.mark.parametrize(
@@ -150,4 +152,6 @@ async def test_async_request_stream_preserves_exact_bytes_accounting() -> None:
     source = _MalformedAsyncRequestStream(b"abcd")
     stream = _BoundedAsyncRequestStream(source, max_request_bytes=4)
 
-    assert await anext(stream.__aiter__()) == b"abcd"
+    assert [chunk async for chunk in stream] == [b"abcd"]
+    await stream.aclose()
+    assert source.closed is True
