@@ -99,10 +99,10 @@ jobs:
           set -euo pipefail
           baseline="${RUNNER_TEMP}/hourly-pristine"
           git clone --quiet --local --no-hardlinks . "$baseline"
-          git -C "$baseline" rev-parse HEAD >"${RUNNER_TEMP}/hourly-development-base-sha"
-          sudo chown -R root:root "$baseline" "${RUNNER_TEMP}/hourly-development-base-sha"
+          git -C "$baseline" rev-parse HEAD >"${RUNNER_TEMP}/base-sha"
+          sudo chown -R root:root "$baseline" "${RUNNER_TEMP}/base-sha"
           sudo chmod -R a-w "$baseline"
-          sudo chmod 0444 "${RUNNER_TEMP}/hourly-development-base-sha"
+          sudo chmod 0444 "${RUNNER_TEMP}/base-sha"
 
       - name: Install the pinned OpenCode CLI
         if: steps.queue.outputs.develop == 'true'
@@ -243,7 +243,7 @@ jobs:
           python "${RUNNER_TEMP}/hourly-pristine/scripts/ci/hourly_product_guard.py" capture \
             --workspace "$GITHUB_WORKSPACE" \
             --baseline "${RUNNER_TEMP}/hourly-pristine" \
-            --base-sha-file "${RUNNER_TEMP}/hourly-development-base-sha" \
+            --base-sha-file "${RUNNER_TEMP}/base-sha" \
             --patch-file "${RUNNER_TEMP}/egressweave.patch" \
             --stat-file "${RUNNER_TEMP}/egressweave.stat"
 
@@ -256,6 +256,7 @@ jobs:
             ${{ runner.temp }}/egressweave.patch
             ${{ runner.temp }}/egressweave.stat
             ${{ runner.temp }}/opencode-result.ndjson
+            ${{ runner.temp }}/base-sha
           if-no-files-found: error
           retention-days: 3
 
@@ -309,6 +310,23 @@ jobs:
           fi
           echo "verify=true" >>"$GITHUB_OUTPUT"
 
+      - name: Require the exact handoff base before applying the patch
+        if: steps.gate.outputs.verify == 'true'
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          handoff_base_sha_file="${RUNNER_TEMP}/hourly-product-change/base-sha"
+          current_sha="$(git rev-parse HEAD)"
+          handoff_base_sha="$(cat "$handoff_base_sha_file")"
+          if [[ ! "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+             [[ ! "$handoff_base_sha" =~ ^[0-9a-f]{40}$ ]] || \
+             [ "$current_sha" != "$EXPECTED_BASE_SHA" ] || \
+             [ "$handoff_base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The patch handoff base does not match the exact checkout."
+            exit 1
+          fi
+
       - name: Build a trusted verifier image before applying the patch
         if: steps.gate.outputs.verify == 'true'
         id: verifier_image
@@ -345,6 +363,8 @@ jobs:
 
       - name: Validate, apply, and seal the untrusted patch
         if: steps.gate.outputs.verify == 'true'
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
         run: |
           set -euo pipefail
           patch_file="${RUNNER_TEMP}/hourly-product-change/egressweave.patch"
@@ -353,11 +373,16 @@ jobs:
             --workspace "$GITHUB_WORKSPACE" \
             --patch-file "$patch_file" \
             --result-file "$result_file"
+          result_base_sha="$(jq -r ".base_sha" "$result_file")"
+          if [ "$result_base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The verified result base SHA does not match the exact handoff base."
+            exit 1
+          fi
 
           sealed_dir="/opt/egressweave-reverify"
           sudo install -d -m 0555 -o root -g root "$sealed_dir"
           sudo install -m 0444 -o root -g root "$patch_file" "$sealed_dir/egressweave.patch"
-          jq -r '.base_sha' "$result_file" | sudo tee "$sealed_dir/base-sha" >/dev/null
+          printf '%s\n' "$EXPECTED_BASE_SHA" | sudo tee "$sealed_dir/base-sha" >/dev/null
           jq -r '.patch_sha256' "$result_file" | sudo tee "$sealed_dir/patch-sha256" >/dev/null
           sudo chown root:root "$sealed_dir/base-sha" "$sealed_dir/patch-sha256"
           sudo chmod 0444 "$sealed_dir/base-sha" "$sealed_dir/patch-sha256"
