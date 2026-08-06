@@ -7,16 +7,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
-  and 40-character protected-main source commit inside the checksummed release
-  set. Handoff manifests now use format version 2 and include both source-identity
-  and checksum-file digests for independent credential-bound revalidation.
 - Add a shipped, credential-free sealed release-evidence verifier that accepts
   only the exact wheel, source distribution, paired CycloneDX 1.7 SBOMs, and
   canonical `SHA256SUMS`; independently recomputes content-bound UUIDv5 and
   root-artifact bindings; applies finite evidence-size limits; and emits a
   deterministic repository-and-source-bound manifest for a credential-separated
   organization attestation workflow.
+- Add a deterministic, content-bound RFC 4122 UUID version 5 `serialNumber`
+  adapter for CycloneDX 1.7 release evidence, satisfying the reviewed
+  `actions/attest` CycloneDX parser without timestamps, random identifiers, or
+  branch-local changes to credential-bearing release workflows.
 - Add deterministic CycloneDX 1.7 SBOM generation that binds each canonical
   wheel and source distribution to its exact SHA-256 and a reviewed, hash-pinned
   runtime dependency graph. Protected attestation integration remains separate
@@ -56,16 +56,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
-- Recheck the manifest output parent against the verified evidence directory
-  immediately before exclusive creation, after descriptor binding, and after
-  durable synchronization. Redirecting a previously safe parent through a
-  directory symlink during evidence verification now fails closed before a
-  trusted handoff can be issued inside the sealed set.
-- Reject legacy five-file release evidence whose repository and source commit
-  exist only as caller assertions. The canonical source-identity payload is
-  strict, bounded, descriptor-bound, checksum-covered, and rehashed through final
-  manifest issuance; malformed, noncanonical, stale, mixed, or relabeled source
-  identity now fails closed without claiming build provenance.
 - Bind each selected release-evidence payload to an opened regular-file
   descriptor and its current path identity, bracket parsed checksum and SBOM
   bytes with bounded digests, retain the accepted `SHA256SUMS` snapshot through
@@ -76,6 +66,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stale-output overwrite, Python-only JSON coercion, disappearing paths, or
   mutation of any accepted evidence file now fail before trusted manifest
   issuance.
+- Serialize attestable CycloneDX evidence from one detached exact-document
+  snapshot immediately before output. The writer revalidates the content-bound
+  serial on that snapshot, while mutation-induced encoding failures fail closed
+  before file creation so validated identity cannot diverge from emitted bytes.
 - Reject PEP 508 extras in hash-locked runtime entries used for SBOM parity.
   Extras can activate transitive packages outside the reviewed dependency graph,
   so evidence generation now fails closed instead of understating executable
