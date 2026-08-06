@@ -194,3 +194,13 @@ def test_buyer_readme_forbids_repository_local_patch_publication() -> None:
     )
     assert "external, independently reviewed, credential-separated promotion" in readme
     assert "reconstruct and verify the exact tree before any repository write" in readme
+
+
+def test_buyer_readme_describes_restricted_model_egress() -> None:
+    """Describe the scheduler network boundary without claiming zero connectivity."""
+    readme = " ".join(_read(README_PATH).split())
+
+    assert "no direct network access" not in readme
+    assert "runner egress is restricted" in readme
+    assert "model web/network tools are denied" in readme
+    assert "NVIDIA NIM endpoint" in readme
