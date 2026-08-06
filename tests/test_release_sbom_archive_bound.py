@@ -38,11 +38,11 @@ def _write_sparse_oversized_file(path: Path) -> None:
 def _write_minimal_archive(path: Path) -> None:
     """Write one parseable wheel or source archive for live-growth regressions."""
     metadata = (
-        "Metadata-Version: 2.4\n"
-        "Name: egressweave\n"
-        "Version: 0.3.0\n"
-        "License-Expression: Apache-2.0\n\n"
-    ).encode()
+        b"Metadata-Version: 2.4\n"
+        b"Name: egressweave\n"
+        b"Version: 0.3.0\n"
+        b"License-Expression: Apache-2.0\n\n"
+    )
     if path.name.endswith(".whl"):
         with zipfile.ZipFile(path, mode="w") as archive:
             archive.writestr("egressweave-0.3.0.dist-info/METADATA", metadata)
