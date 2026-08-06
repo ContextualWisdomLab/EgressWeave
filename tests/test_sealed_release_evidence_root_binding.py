@@ -83,14 +83,16 @@ def test_public_verifier_normalizes_root_resolution_failure(
         _build(evidence_dir)
 
 
-def test_operator_references_preserve_primary_source_metadata() -> None:
-    """Keep the cited modification year and joint POSIX authors exact."""
+def test_operator_references_and_toctou_limit_are_explicit() -> None:
+    """Keep primary metadata and the residual mutable-storage risk explicit."""
     repository_root = Path(__file__).resolve().parents[1]
     operator_guide = (repository_root / "docs/sealed-release-evidence.md").read_text(
         encoding="utf-8"
     )
 
-    assert "CWE Content Team. (2025)." in operator_guide
-    assert "CWE Content Team. (2026)." not in operator_guide
+    assert "CWE Content Team. (2025). *CWE-59:" in operator_guide
+    assert "CWE Content Team. (2026). *CWE-367:" in operator_guide
+    assert "https://cwe.mitre.org/data/definitions/367.html" in operator_guide
+    assert "narrows but cannot eliminate races on mutable local storage" in operator_guide
     assert "IEEE Computer Society, & The Open Group. (2018)." in operator_guide
     assert "IEEE Computer Society. (2018)." not in operator_guide
