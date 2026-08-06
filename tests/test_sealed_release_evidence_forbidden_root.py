@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,62 @@ def test_public_writer_rejects_symlinked_forbidden_root(tmp_path: Path) -> None:
         )
 
     assert not output_path.exists()
+
+
+def test_public_writer_rejects_intermediate_symlink_erased_by_parent_traversal(
+    tmp_path: Path,
+) -> None:
+    """Reject a lexical symlink component even when a later ``..`` hides it."""
+    real_evidence_root = tmp_path / "real-evidence"
+    child = real_evidence_root / "child"
+    child.mkdir(parents=True)
+    alias = real_evidence_root / "alias"
+    try:
+        alias.symlink_to(child, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symbolic links are unavailable on this platform")
+    forbidden_root = alias / ".."
+    output_path = tmp_path / "new-parent" / "manifest.json"
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        release_evidence.write_evidence_manifest(
+            MANIFEST,
+            output_path,
+            forbidden_root=forbidden_root,
+        )
+
+    assert not output_path.parent.exists()
+
+
+def test_public_writer_accepts_real_forbidden_root_outside_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the documented safe-root success path and all three checks working."""
+    forbidden_root = tmp_path / "real-evidence"
+    forbidden_root.mkdir()
+    output_path = tmp_path / "manifest-parent" / "manifest.json"
+    original_check = release_evidence._require_output_outside_verified_set
+    observed_roots: list[Path] = []
+
+    def record_containment_check(path: Path, verified_root: Path) -> None:
+        observed_roots.append(verified_root)
+        original_check(path, verified_root)
+
+    monkeypatch.setattr(
+        release_evidence,
+        "_require_output_outside_verified_set",
+        record_containment_check,
+    )
+
+    release_evidence.write_evidence_manifest(
+        MANIFEST,
+        output_path,
+        forbidden_root=forbidden_root,
+    )
+
+    assert json.loads(output_path.read_text(encoding="utf-8")) == MANIFEST
+    assert observed_roots == [forbidden_root.resolve()] * 3
 
 
 def test_public_writer_rejects_missing_forbidden_root_before_parent_creation(
