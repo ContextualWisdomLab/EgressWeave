@@ -67,6 +67,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Preflight every direct release-SBOM wheel or source archive as one regular
+  file with a finite 256 MiB compressed-byte ceiling before ZIP or gzip/tar
+  parsing, metadata reads, or artifact hashing. Symlinks, directories, devices,
+  missing paths, and inspection failures now fail through stable non-leaking
+  errors while existing archive-member and decompression defenses remain intact.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
