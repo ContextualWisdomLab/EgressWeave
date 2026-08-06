@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import os
 import tarfile
 import zipfile
 from pathlib import Path
@@ -289,3 +290,52 @@ def test_archive_mutation_during_metadata_parse_fails_closed(
 
     with pytest.raises(SystemExit, match="changed during verification"):
         generator.build_sbom(wheel_path, MANIFEST_PATH)
+
+
+def test_parser_read_all_is_capped_to_remaining_bytes_plus_tripwire(
+    tmp_path: Path,
+) -> None:
+    """Never pass an unbounded parser read through to the artifact descriptor."""
+    generator = _load_generator()
+    artifact_path = tmp_path / "artifact.whl"
+    artifact_path.write_bytes(b"abcdef")
+    requested_sizes: list[int] = []
+
+    with artifact_path.open("rb") as artifact_stream:
+        artifact_stream.seek(2)
+
+        class RecordingStream:
+            """Record descriptor read sizes while delegating file operations."""
+
+            def fileno(self) -> int:
+                return artifact_stream.fileno()
+
+            def tell(self) -> int:
+                return artifact_stream.tell()
+
+            def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+                return artifact_stream.seek(offset, whence)
+
+            def read(self, size: int = -1) -> bytes:
+                requested_sizes.append(size)
+                return artifact_stream.read(size)
+
+        reader = generator._LiveBoundedArtifactReader(RecordingStream())
+        assert reader.read() == b"cdef"
+
+    assert requested_sizes == [EXPECTED_MAX_ARTIFACT_BYTES - 2 + 1]
+
+
+def test_growth_after_parser_seek_fails_before_the_next_read(tmp_path: Path) -> None:
+    """Recheck the live descriptor after a parser seek and before later reads."""
+    generator = _load_generator()
+    artifact_path = tmp_path / "artifact.whl"
+    artifact_path.write_bytes(b"abcdef")
+
+    with artifact_path.open("rb") as artifact_stream:
+        reader = generator._LiveBoundedArtifactReader(artifact_stream)
+        assert reader.seek(1) == 1
+        with artifact_path.open("r+b") as mutable_artifact:
+            mutable_artifact.truncate(EXPECTED_MAX_ARTIFACT_BYTES + 1)
+        with pytest.raises(SystemExit, match="compressed-byte safety bound"):
+            reader.read(1)
