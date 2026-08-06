@@ -81,3 +81,16 @@ def test_public_verifier_normalizes_root_resolution_failure(
 
     with pytest.raises(SystemExit, match="missing or unsafe"):
         _build(evidence_dir)
+
+
+def test_operator_references_preserve_primary_source_metadata() -> None:
+    """Keep the cited modification year and joint POSIX authors exact."""
+    repository_root = Path(__file__).resolve().parents[1]
+    operator_guide = (repository_root / "docs/sealed-release-evidence.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "CWE Content Team. (2025)." in operator_guide
+    assert "CWE Content Team. (2026)." not in operator_guide
+    assert "IEEE Computer Society, & The Open Group. (2018)." in operator_guide
+    assert "IEEE Computer Society. (2018)." not in operator_guide
