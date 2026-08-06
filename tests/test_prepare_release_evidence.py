@@ -76,12 +76,10 @@ def test_prepare_release_evidence_emits_one_verified_six_file_set(
     }
     assert {path.name for path in evidence_dir.iterdir()} == expected_names
     checksum_lines = (evidence_dir / "SHA256SUMS").read_text(encoding="ascii").splitlines()
-    assert checksum_lines == sorted(checksum_lines)
+    checksum_names = [line.split("  ", 1)[1] for line in checksum_lines]
+    assert checksum_names == sorted(checksum_names)
     assert len(checksum_lines) == 5
-    assert {
-        line.split("  ", 1)[1]
-        for line in checksum_lines
-    } == expected_names - {"SHA256SUMS"}
+    assert set(checksum_names) == expected_names - {"SHA256SUMS"}
     assert (evidence_dir / "SOURCE_IDENTITY.json").read_bytes() == (
         b'{"format":"egressweave.release-source-identity","formatVersion":1,'
         b'"repository":"ContextualWisdomLab/EgressWeave",'
