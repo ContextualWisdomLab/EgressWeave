@@ -37,9 +37,10 @@ class _ExplodingLength:
 class _MalformedSyncStream(httpx.SyncByteStream):
     """Yield one deliberately malformed sync chunk and record closure."""
 
-    def __init__(self, chunk: object) -> None:
-        """Store the malformed chunk for deterministic offline delivery."""
+    def __init__(self, chunk: object, *, close_fails: bool = False) -> None:
+        """Store the malformed chunk and optional hostile cleanup behavior."""
         self._chunk = chunk
+        self._close_fails = close_fails
         self.closed = False
 
     def __iter__(self):
@@ -47,16 +48,19 @@ class _MalformedSyncStream(httpx.SyncByteStream):
         yield self._chunk
 
     def close(self) -> None:
-        """Record that the security wrapper released the source."""
+        """Record cleanup and optionally model a hostile backend close failure."""
         self.closed = True
+        if self._close_fails:
+            raise RuntimeError("private backend close failure")
 
 
 class _MalformedAsyncStream(httpx.AsyncByteStream):
     """Yield one deliberately malformed async chunk and record closure."""
 
-    def __init__(self, chunk: object) -> None:
-        """Store the malformed chunk for deterministic offline delivery."""
+    def __init__(self, chunk: object, *, close_fails: bool = False) -> None:
+        """Store the malformed chunk and optional hostile cleanup behavior."""
         self._chunk = chunk
+        self._close_fails = close_fails
         self.closed = False
 
     async def __aiter__(self):
@@ -64,8 +68,10 @@ class _MalformedAsyncStream(httpx.AsyncByteStream):
         yield self._chunk
 
     async def aclose(self) -> None:
-        """Record that the security wrapper released the source."""
+        """Record cleanup and optionally model a hostile backend close failure."""
         self.closed = True
+        if self._close_fails:
+            raise RuntimeError("private backend close failure")
 
 
 @pytest.mark.parametrize(
@@ -87,6 +93,17 @@ def test_sync_response_stream_rejects_non_exact_bytes_and_closes(chunk: object) 
     assert source.closed is True
 
 
+def test_sync_malformed_chunk_masks_cleanup_failure() -> None:
+    """Keep hostile sync cleanup details behind the stable policy boundary."""
+    source = _MalformedSyncStream(bytearray(b"abc"), close_fails=True)
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        next(iter(stream))
+
+    assert source.closed is True
+
+
 @pytest.mark.parametrize(
     "chunk",
     [
@@ -100,6 +117,17 @@ async def test_async_response_stream_rejects_non_exact_bytes_and_closes(
 ) -> None:
     """Reject malformed async chunks before length accounting or caller delivery."""
     source = _MalformedAsyncStream(chunk)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        await anext(stream.__aiter__())
+
+    assert source.closed is True
+
+
+async def test_async_malformed_chunk_masks_cleanup_failure() -> None:
+    """Keep hostile async cleanup details behind the stable policy boundary."""
+    source = _MalformedAsyncStream(bytearray(b"abc"), close_fails=True)
     stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
