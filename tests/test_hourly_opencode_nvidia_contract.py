@@ -15,6 +15,7 @@ MAINTENANCE_DOCUMENTATION_PATH = (
     REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
 )
 README_PATH = REPOSITORY_ROOT / "README.md"
+ARCHITECTURE_PATH = REPOSITORY_ROOT / "ARCHITECTURE.md"
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
@@ -204,3 +205,20 @@ def test_buyer_readme_describes_restricted_model_egress() -> None:
     assert "runner egress is restricted" in readme
     assert "model web/network tools are denied" in readme
     assert "NVIDIA NIM endpoint" in readme
+
+
+def test_architecture_forbids_repository_local_product_publication() -> None:
+    """Keep architecture claims aligned with the read-only product handoff."""
+    architecture = " ".join(_read(ARCHITECTURE_PATH).split())
+
+    assert (
+        "Model execution, credential-free reverification, and publication use separate runners"
+        not in architecture
+    )
+    assert "product development ends at the independently reverified credential-free patch handoff" in architecture
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in architecture
+    )
+    assert "external, independently reviewed, credential-separated promotion" in architecture
+    assert "reconstruct and verify the exact tree before any repository write" in architecture
