@@ -92,9 +92,12 @@ class _LiveBoundedArtifactReader(io.BufferedIOBase):
     def read(self, size: int = -1) -> bytes:
         """Read no more than the finite ceiling and reject concurrent growth."""
         _require_live_artifact_descriptor(self._stream)
+        remaining_with_tripwire = (
+            MAX_RELEASE_ARTIFACT_BYTES - self._stream.tell() + 1
+        )
         bounded_size = (
-            MAX_RELEASE_ARTIFACT_BYTES + 1
-            if size < 0 or size > MAX_RELEASE_ARTIFACT_BYTES + 1
+            remaining_with_tripwire
+            if size < 0 or size > remaining_with_tripwire
             else size
         )
         payload = self._stream.read(bounded_size)
