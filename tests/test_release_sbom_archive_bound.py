@@ -74,6 +74,7 @@ def test_symlinked_archive_fails_before_parser(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Reject a direct archive symlink instead of following it into a parser."""
+    generator = _load_generator()
     target = tmp_path / "target.whl"
     with zipfile.ZipFile(target, mode="w") as archive:
         archive.writestr("egressweave-0.3.0.dist-info/METADATA", b"invalid")
