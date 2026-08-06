@@ -182,3 +182,70 @@ def test_cli_refuses_final_path_symlink_before_resolving_it(
 
     assert output.is_symlink()
     assert not target.exists()
+
+
+def test_cli_refuses_output_parent_redirected_into_verified_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Reject an output parent redirected into the evidence set during verification."""
+    evidence_dir = tmp_path / "evidence"
+    evidence_dir.mkdir()
+    output_parent = tmp_path / "handoff"
+    output = output_parent / "manifest.json"
+
+    def redirect_parent(*args, **kwargs):
+        try:
+            output_parent.symlink_to(evidence_dir, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symbolic links are unavailable on this platform")
+        return MANIFEST
+
+    monkeypatch.setattr(
+        release_evidence,
+        "build_evidence_manifest",
+        redirect_parent,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "release_evidence",
+            "--evidence-dir",
+            str(evidence_dir),
+            "--repository",
+            "ContextualWisdomLab/EgressWeave",
+            "--source-sha",
+            "0123456789abcdef0123456789abcdef01234567",
+            "--output",
+            str(output),
+        ],
+    )
+
+    with pytest.raises(SystemExit, match="outside the verified set"):
+        release_evidence.main()
+
+    assert not (evidence_dir / "manifest.json").exists()
+
+
+def test_output_boundary_normalizes_parent_resolution_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Return one stable error when the current output parent cannot resolve."""
+    output = tmp_path / "handoff" / "manifest.json"
+    output.parent.mkdir()
+    original_resolve = Path.resolve
+
+    def fail_output_parent(path: Path, *args, **kwargs):
+        if path == output.parent:
+            raise OSError("blocked")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", fail_output_parent)
+
+    with pytest.raises(SystemExit, match="parent directory"):
+        release_evidence._require_output_outside_verified_set(
+            output,
+            tmp_path / "evidence",
+        )

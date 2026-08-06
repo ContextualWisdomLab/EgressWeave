@@ -1,10 +1,11 @@
 """Verify and summarize a credential-free sealed EgressWeave release evidence set.
 
-The verifier treats distributions and CycloneDX documents as inert bytes. It
-accepts only the exact canonical wheel, source distribution, one SBOM for each
-artifact, and a sorted ``SHA256SUMS`` file. It then emits a deterministic manifest
-that a separately reviewed credentialed workflow can bind to repository and
-source identity without rebuilding or executing caller-controlled code.
+The verifier treats distributions, CycloneDX documents, and source identity as
+inert bytes. It accepts only the exact canonical wheel, source distribution, one
+SBOM for each artifact, one canonical source-identity document, and a sorted
+``SHA256SUMS`` file. It then emits a deterministic manifest for a separately
+reviewed credentialed workflow without rebuilding or executing caller-controlled
+code.
 """
 
 from __future__ import annotations
@@ -27,7 +28,10 @@ CYCLONEDX_SPEC_VERSION = "1.7"
 CYCLONEDX_DOCUMENT_VERSION = 1
 ATTESTATION_PREDICATE_TYPE = "https://cyclonedx.org/bom"
 EVIDENCE_MANIFEST_FORMAT = "egressweave.release-evidence"
-EVIDENCE_MANIFEST_VERSION = 1
+EVIDENCE_MANIFEST_VERSION = 2
+SOURCE_IDENTITY_FILENAME = "SOURCE_IDENTITY.json"
+SOURCE_IDENTITY_FORMAT = "egressweave.release-source-identity"
+SOURCE_IDENTITY_VERSION = 1
 DOCUMENT_IDENTITY_URL_PREFIX = (
     "https://github.com/ContextualWisdomLab/EgressWeave/sbom/sha256/"
 )
@@ -42,6 +46,8 @@ CHECKSUM_LINE_PATTERN = re.compile(
     r"^(?P<digest>[0-9a-f]{64})  (?P<filename>[A-Za-z0-9][A-Za-z0-9._+-]*)$"
 )
 MAX_CHECKSUM_BYTES = 65_536
+MAX_EVIDENCE_MANIFEST_BYTES = 65_536
+MAX_SOURCE_IDENTITY_BYTES = 4_096
 MAX_SBOM_BYTES = 8 * 1024 * 1024
 MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
 
@@ -134,10 +140,30 @@ def _require_stable_read(
         raise SystemExit(f"{label} changed during verification")
 
 
-def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, Path]:
-    """Return the exact wheel, sdist, SBOMs, and checksum file or fail closed."""
+def _require_canonical_evidence_root(evidence_dir: Path) -> Path:
+    """Return one real evidence directory without symlinked path components.
+
+    The lexical absolute path must equal the strictly resolved path. Once this
+    check succeeds, callers use the returned real path so later retargeting of a
+    previously supplied ancestor symlink cannot change the verified directory.
+    """
     if not evidence_dir.is_dir() or evidence_dir.is_symlink():
         raise SystemExit("release evidence directory is missing or unsafe")
+    try:
+        lexical_root = Path(os.path.abspath(evidence_dir))
+        resolved_root = evidence_dir.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit("release evidence directory is missing or unsafe") from error
+    if lexical_root != resolved_root:
+        raise SystemExit("release evidence directory path must not traverse symlinks")
+    return resolved_root
+
+
+def _select_evidence_paths(
+    evidence_dir: Path,
+) -> tuple[Path, Path, Path, Path, Path, Path]:
+    """Return the exact artifacts, SBOMs, source identity, and checksum file."""
+    evidence_dir = _require_canonical_evidence_root(evidence_dir)
     try:
         entries = sorted(evidence_dir.iterdir(), key=lambda path: path.name)
     except OSError as error:
@@ -158,15 +184,32 @@ def _select_evidence_paths(evidence_dir: Path) -> tuple[Path, Path, Path, Path, 
 
     wheel_sbom = evidence_dir / f"{wheel_path.name}.cdx.json"
     sdist_sbom = evidence_dir / f"{sdist_path.name}.cdx.json"
+    source_identity_path = evidence_dir / SOURCE_IDENTITY_FILENAME
     checksum_path = evidence_dir / "SHA256SUMS"
-    expected = {wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path}
+    legacy_expected = {
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        checksum_path,
+    }
+    if set(entries) == legacy_expected:
+        raise SystemExit("release evidence lacks sealed source identity")
+    expected = legacy_expected | {source_identity_path}
     if set(entries) != expected:
         observed = [path.name for path in entries]
         required = sorted(path.name for path in expected)
         raise SystemExit(
             f"release evidence cardinality mismatch; expected {required}, observed {observed}"
         )
-    return wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path
+    return (
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        source_identity_path,
+        checksum_path,
+    )
 
 
 def _load_checksums(
@@ -233,8 +276,79 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON number {value}")
 
 
-def _load_strict_json(path: Path) -> dict[str, Any]:
-    """Load one stable bounded RFC 8259 object without duplicate names."""
+def _load_source_identity(
+    path: Path,
+    *,
+    expected_digest: str,
+) -> tuple[str, str]:
+    """Return exact repository and source values from one sealed identity file."""
+    label = "sealed source identity"
+    digest_before = _sha256_file(
+        path,
+        maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+        label=label,
+    )
+    try:
+        raw_content = _read_bounded_file(
+            path,
+            maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+            label=label,
+        )
+        document = json.loads(
+            raw_content.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_json_constant,
+        )
+    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
+        raise SystemExit("sealed source identity is not strict JSON") from error
+    digest_after = _sha256_file(
+        path,
+        maximum_bytes=MAX_SOURCE_IDENTITY_BYTES,
+        label=label,
+    )
+    _require_stable_read(
+        raw_content,
+        digest_before=digest_before,
+        digest_after=digest_after,
+        label=label,
+    )
+    if digest_after != expected_digest:
+        raise SystemExit("sealed source identity changed during verification")
+    if type(document) is not dict:
+        raise SystemExit("sealed source identity must be a JSON object")
+    required_names = {"format", "formatVersion", "repository", "sourceSha"}
+    if (
+        set(document) != required_names
+        or document.get("format") != SOURCE_IDENTITY_FORMAT
+        or type(document.get("formatVersion")) is not int
+        or document.get("formatVersion") != SOURCE_IDENTITY_VERSION
+        or type(document.get("repository")) is not str
+        or document.get("repository") != EXPECTED_REPOSITORY
+        or type(document.get("sourceSha")) is not str
+        or SOURCE_SHA_PATTERN.fullmatch(document.get("sourceSha")) is None
+    ):
+        raise SystemExit("sealed source identity has an invalid exact profile")
+    canonical = (
+        json.dumps(
+            document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+    if raw_content != canonical:
+        raise SystemExit("sealed source identity is not canonical JSON")
+    return document["repository"], document["sourceSha"]
+
+
+def _load_strict_json(
+    path: Path,
+    *,
+    expected_digest: str | None = None,
+) -> dict[str, Any]:
+    """Load strict bounded JSON and optionally bind it to a sealed digest."""
     label = f"SBOM {path.name}"
     digest_before = _sha256_file(path, maximum_bytes=MAX_SBOM_BYTES, label=label)
     try:
@@ -258,6 +372,8 @@ def _load_strict_json(path: Path) -> dict[str, Any]:
         digest_after=digest_after,
         label=label,
     )
+    if expected_digest is not None and digest_after != expected_digest:
+        raise SystemExit(f"{label} does not match the sealed digest")
     if type(document) is not dict:
         raise SystemExit(f"{label} must be a JSON object")
     return document
@@ -300,9 +416,10 @@ def _verify_sbom(
     artifact_name: str,
     artifact_digest: str,
     version: str,
+    expected_digest: str,
 ) -> str:
     """Verify exact CycloneDX identity and root-artifact binding for one SBOM."""
-    document = _load_strict_json(sbom_path)
+    document = _load_strict_json(sbom_path, expected_digest=expected_digest)
     required_envelope = {
         "$schema": CYCLONEDX_SCHEMA,
         "bomFormat": CYCLONEDX_FORMAT,
@@ -380,14 +497,24 @@ def build_evidence_manifest(
     if SOURCE_SHA_PATTERN.fullmatch(source_sha) is None:
         raise SystemExit("source SHA must be exactly 40 lowercase hexadecimal characters")
 
-    wheel_path, sdist_path, wheel_sbom, sdist_sbom, checksum_path = (
-        _select_evidence_paths(evidence_dir)
-    )
+    (
+        wheel_path,
+        sdist_path,
+        wheel_sbom,
+        sdist_sbom,
+        source_identity_path,
+        checksum_path,
+    ) = _select_evidence_paths(evidence_dir)
     payload_specs = (
         (wheel_path, MAX_ARTIFACT_BYTES, "wheel"),
         (sdist_path, MAX_ARTIFACT_BYTES, "source distribution"),
         (wheel_sbom, MAX_SBOM_BYTES, "wheel SBOM"),
         (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
+        (
+            source_identity_path,
+            MAX_SOURCE_IDENTITY_BYTES,
+            "sealed source identity",
+        ),
     )
     payload_paths = tuple(path for path, _, _ in payload_specs)
     checksums, checksum_digest = _load_checksums(
@@ -397,6 +524,13 @@ def build_evidence_manifest(
     observed_digests = _payload_digests(payload_specs)
     if checksums != observed_digests:
         raise SystemExit("release evidence digest mismatch")
+
+    sealed_repository, sealed_source_sha = _load_source_identity(
+        source_identity_path,
+        expected_digest=observed_digests[source_identity_path.name],
+    )
+    if sealed_repository != repository or sealed_source_sha != source_sha:
+        raise SystemExit("sealed source identity does not match caller expectations")
 
     version = WHEEL_PATTERN.fullmatch(wheel_path.name).group("version")
     artifacts: list[dict[str, str]] = []
@@ -410,6 +544,7 @@ def build_evidence_manifest(
             artifact_name=artifact_path.name,
             artifact_digest=artifact_digest,
             version=version,
+            expected_digest=observed_digests[sbom_path.name],
         )
         artifacts.append(
             {
@@ -435,12 +570,16 @@ def build_evidence_manifest(
     artifacts.sort(key=lambda item: item["artifactFilename"])
     return {
         "artifacts": artifacts,
+        "checksumFilename": checksum_path.name,
+        "checksumSha256": checksum_digest,
         "format": EVIDENCE_MANIFEST_FORMAT,
         "formatVersion": EVIDENCE_MANIFEST_VERSION,
         "cycloneDxSpecVersion": CYCLONEDX_SPEC_VERSION,
         "predicateType": ATTESTATION_PREDICATE_TYPE,
-        "repository": repository,
-        "sourceSha": source_sha,
+        "repository": sealed_repository,
+        "sourceIdentityFilename": source_identity_path.name,
+        "sourceIdentitySha256": observed_digests[source_identity_path.name],
+        "sourceSha": sealed_source_sha,
     }
 
 
@@ -473,13 +612,34 @@ def _open_exclusive_manifest(path: str, flags: int) -> int:
     return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
 
 
-def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None:
-    """Create one private descriptor-bound manifest without replacing a path."""
+def _require_output_outside_verified_set(
+    output_path: Path,
+    verified_root: Path,
+) -> None:
+    """Require the current output location to remain outside verified evidence."""
+    try:
+        resolved_parent = output_path.parent.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit("evidence manifest parent directory is unavailable") from error
+    resolved_output = resolved_parent / output_path.name
+    if resolved_output == verified_root or resolved_output.is_relative_to(verified_root):
+        raise SystemExit("evidence manifest output must remain outside the verified set")
+
+
+def write_evidence_manifest(
+    manifest: dict[str, Any],
+    output_path: Path,
+    *,
+    forbidden_root: Path | None = None,
+) -> None:
+    """Create one private manifest and optionally exclude one verified directory."""
     payload = _encode_evidence_manifest(manifest)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         raise SystemExit("evidence manifest parent directory is unavailable") from error
+    if forbidden_root is not None:
+        _require_output_outside_verified_set(output_path, forbidden_root)
 
     try:
         with open(output_path, "xb", opener=_open_exclusive_manifest) as stream:
@@ -488,6 +648,8 @@ def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None
                 stream,
                 label="evidence manifest output",
             )
+            if forbidden_root is not None:
+                _require_output_outside_verified_set(output_path, forbidden_root)
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
@@ -496,17 +658,58 @@ def write_evidence_manifest(manifest: dict[str, Any], output_path: Path) -> None
                 stream,
                 label="evidence manifest output",
             )
+            if forbidden_root is not None:
+                _require_output_outside_verified_set(output_path, forbidden_root)
     except FileExistsError:
         raise SystemExit("evidence manifest output already exists") from None
     except OSError as error:
         raise SystemExit("evidence manifest output cannot be created safely") from error
 
 
+def _require_post_publication_state(
+    evidence_dir: Path,
+    output_path: Path,
+    *,
+    repository: str,
+    source_sha: str,
+    expected_payload: bytes,
+) -> None:
+    """Reverify sealed input and emitted bytes after manifest publication."""
+    try:
+        observed_manifest = build_evidence_manifest(
+            evidence_dir,
+            repository=repository,
+            source_sha=source_sha,
+        )
+        observed_payload = _encode_evidence_manifest(observed_manifest)
+    except SystemExit:
+        raise SystemExit(
+            "release evidence changed after manifest publication"
+        ) from None
+    if observed_payload != expected_payload:
+        raise SystemExit("release evidence changed after manifest publication")
+
+    try:
+        _require_output_outside_verified_set(output_path, evidence_dir)
+        published_payload = _read_bounded_file(
+            output_path,
+            maximum_bytes=MAX_EVIDENCE_MANIFEST_BYTES,
+            label="evidence manifest output",
+        )
+        _require_output_outside_verified_set(output_path, evidence_dir)
+    except SystemExit:
+        raise SystemExit(
+            "evidence manifest output changed after publication"
+        ) from None
+    if published_payload != expected_payload:
+        raise SystemExit("evidence manifest output changed after publication")
+
+
 def main() -> int:
     """Verify sealed evidence and write one deterministic credential handoff manifest."""
     arguments = _parse_arguments()
-    evidence_dir = arguments.evidence_dir
-    resolved_evidence_dir = evidence_dir.resolve()
+    evidence_dir = _require_canonical_evidence_root(arguments.evidence_dir)
+    resolved_evidence_dir = evidence_dir
     output_path = arguments.output.parent.resolve() / arguments.output.name
     if output_path == resolved_evidence_dir or output_path.is_relative_to(
         resolved_evidence_dir
@@ -517,7 +720,19 @@ def main() -> int:
         repository=arguments.repository,
         source_sha=arguments.source_sha,
     )
-    write_evidence_manifest(manifest, output_path)
+    expected_payload = _encode_evidence_manifest(manifest)
+    write_evidence_manifest(
+        manifest,
+        output_path,
+        forbidden_root=resolved_evidence_dir,
+    )
+    _require_post_publication_state(
+        evidence_dir,
+        output_path,
+        repository=arguments.repository,
+        source_sha=arguments.source_sha,
+        expected_payload=expected_payload,
+    )
     print(f"verified sealed release evidence: {output_path}")
     return 0
 
