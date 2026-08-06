@@ -18,6 +18,7 @@ import stat
 import struct
 import tarfile
 import zipfile
+import zlib
 from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
@@ -433,7 +434,7 @@ def _preflight_sdist_members(stream: BinaryIO) -> None:
                 consumed += len(trailing)
     except SystemExit:
         raise
-    except (OSError, EOFError) as error:
+    except (OSError, EOFError, zlib.error) as error:
         raise SystemExit(invalid) from error
     finally:
         stream.seek(0)
