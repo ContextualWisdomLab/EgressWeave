@@ -33,6 +33,13 @@ duplicate distribution kind, or wheel/source version mismatch fails before an
 evidence output is created. The reviewed dependency manifest and hash-locked
 runtime requirements must also be existing canonical regular files.
 
+Each selected wheel and source distribution is preflighted as a current regular
+file with a finite compressed-byte bound before the deterministic generator is
+loaded or any ZIP or tar archive parser runs. This preflight limits early parser
+CPU and memory exposure; archive-member cardinality, path, metadata, and semantic
+validation remain separate controls, and later descriptor-bound hashing and final
+verification reapply the byte and identity checks as defense in depth.
+
 The handoff-manifest parent must already exist as a real canonical directory. The
 handoff path must remain outside the evidence directory. The preparer never
 creates convenience directory aliases and never follows an output-path symbolic
