@@ -224,7 +224,7 @@ Bray, T. (2017). *The JavaScript Object Notation (JSON) data interchange format*
 (RFC 8259). Internet Engineering Task Force.
 https://doi.org/10.17487/RFC8259
 
-CWE Content Team. (2026). *CWE-59: Improper link resolution before file access
+CWE Content Team. (2025). *CWE-59: Improper link resolution before file access
 ('link following').* MITRE. https://cwe.mitre.org/data/definitions/59.html
 
 Davis, K. R., Peabody, B., & Leach, P. J. (2024). *Universally unique
@@ -242,9 +242,9 @@ GitHub. (n.d.). *Using artifact attestations and reusable workflows to achieve
 SLSA v1 Build Level 3.* GitHub Docs. Retrieved August 6, 2026, from
 https://docs.github.com/en/actions/how-to/secure-your-work/use-artifact-attestations/increase-security-rating
 
-IEEE Computer Society. (2018). *IEEE standard for information technology—Portable
-operating system interface (POSIX®) base specifications, Issue 7* (IEEE Std
-1003.1-2017). The Open Group.
+IEEE Computer Society, & The Open Group. (2018). *IEEE standard for information
+technology—Portable operating system interface (POSIX®) base specifications,
+Issue 7* (IEEE Std 1003.1-2017). The Open Group.
 https://pubs.opengroup.org/onlinepubs/9699919799/
 
 The in-toto Project. (n.d.). *Attestation framework specification.* GitHub.
