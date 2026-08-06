@@ -67,6 +67,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Bound archive-member enumeration before ZIP object-table allocation and stream
+  gzip/tar physical headers before semantic parsing, enforcing 10,000 members,
+  512 MiB expanded tar, and 1 MiB extension-header limits while rejecting
+  unnecessary ZIP64, multi-disk, sparse, link, device, FIFO, and special forms.
 - Preflight every direct release-SBOM wheel or source archive as one regular
   file with a finite 256 MiB compressed-byte ceiling before ZIP or gzip/tar
   parsing, metadata reads, or artifact hashing. Symlinks, directories, devices,
