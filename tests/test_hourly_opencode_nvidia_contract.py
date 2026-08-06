@@ -123,7 +123,14 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
     assert 'result_base_sha="$(jq -r ".base_sha" "$result_file")"' in workflow
     assert '[ "$result_base_sha" != "$EXPECTED_BASE_SHA" ]; then' in workflow
     assert "Upload the independently verified handoff" in workflow
-    assert 'if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]; then' in workflow
+    recheck = workflow.split(
+        "Recheck the independently verified immutable patch",
+        1,
+    )[1].split("Upload the independently verified handoff", 1)[0]
+    assert "EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}" in recheck
+    assert '[[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]' in recheck
+    assert '[ "$base_sha" != "$EXPECTED_BASE_SHA" ]' in recheck
+    assert "does not match the exact handoff base" in recheck
     assert "hourly-verified-product-change-${{ github.run_id }}" in workflow
     assert "/opt/egressweave-reverify/egressweave.patch" in workflow
     assert "/opt/egressweave-reverify/base-sha" in workflow
