@@ -10,8 +10,8 @@ and package URLs (purls).
 
 This is a read-only evidence foundation. It does not authorize a pull-request
 branch to execute release logic with write credentials. The only permitted
-future integration source is a protected-main or organization-level reusable
-workflow whose source is immutable before receiving OIDC or attestation
+future integration source is a protected-main or organization-level reusable workflow
+whose source is immutable before receiving OIDC or attestation
 permissions. No provenance, signing, publication, attestation, or SLSA Build
 level follows merely from direct SBOM generation.
 
