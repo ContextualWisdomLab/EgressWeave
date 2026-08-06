@@ -33,6 +33,13 @@ def _write_sparse_oversized_file(path: Path) -> None:
         stream.truncate(EXPECTED_MAX_ARTIFACT_BYTES + 1)
 
 
+def test_generator_uses_the_reviewed_compressed_archive_limit() -> None:
+    """Keep the standalone parser preflight aligned with release verification."""
+    generator = _load_generator()
+
+    assert generator.MAX_RELEASE_ARTIFACT_BYTES == EXPECTED_MAX_ARTIFACT_BYTES
+
+
 def test_oversized_wheel_fails_before_zip_parser(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
