@@ -176,6 +176,59 @@ def test_prepare_release_evidence_rejects_oversized_archive_before_generator(
     assert not handoff_path.exists()
 
 
+def test_archive_replacement_after_preflight_never_reaches_parser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bind parser input to the exact regular archive accepted by preflight."""
+    preparer = _load_preparer()
+    evidence_dir = tmp_path / "evidence"
+    wheel_path, _ = _write_distributions(evidence_dir)
+    replacement = tmp_path / "replacement.whl"
+    replacement.write_bytes(b"")
+    with replacement.open("r+b") as stream:
+        stream.truncate(preparer.MAX_DISTRIBUTION_BYTES + 1)
+    handoff_path = tmp_path / "handoff.json"
+    original_preflight = preparer._require_distribution_preflight
+    replaced = False
+    parser_inputs: list[Path] = []
+
+    def replace_after_preflight(path: Path, *, label: str):
+        nonlocal replaced
+        accepted_identity = original_preflight(path, label=label)
+        if path == wheel_path and not replaced:
+            wheel_path.unlink()
+            replacement.replace(wheel_path)
+            replaced = True
+        return accepted_identity
+
+    class RecordingGenerator:
+        """Fail if a pathname replacement is ever delegated to an archive parser."""
+
+        def build_attestable_sbom(self, artifact_path: Path, *args):
+            parser_inputs.append(artifact_path)
+            raise AssertionError("the parser received a post-preflight replacement")
+
+    monkeypatch.setattr(
+        preparer,
+        "_require_distribution_preflight",
+        replace_after_preflight,
+    )
+    monkeypatch.setattr(
+        preparer,
+        "_load_attestable_generator",
+        lambda: RecordingGenerator(),
+    )
+
+    with pytest.raises(SystemExit, match="release distribution .* unreadable or unsafe"):
+        _prepare(preparer, evidence_dir, handoff_path)
+
+    assert replaced
+    assert parser_inputs == []
+    assert {path.name for path in evidence_dir.iterdir()} == {WHEEL_NAME, SDIST_NAME}
+    assert not handoff_path.exists()
+
+
 def test_prepare_release_evidence_rejects_symlinked_distribution_before_writing(
     tmp_path: Path,
 ) -> None:
