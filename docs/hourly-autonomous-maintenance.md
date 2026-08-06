@@ -1,16 +1,17 @@
 # Hourly autonomous maintenance
 
 EgressWeave uses two deliberately separate hourly workflows. Pull-request
-governance stays independent from product-development model execution, and
-untrusted model-controlled source never shares a job with repository write
-credentials.
+governance stays independent from product-development model execution. The
+product scheduler can produce and independently verify a bounded patch, but it
+has no repository-write, ref, release, package, attestation, or publication
+identity.
 
 ## Cadence
 
 | Minute | Workflow | Responsibility |
 |---:|---|---|
 | `07` | `Hourly PR Maintenance` | Inspect every open pull request, dispatch bounded review-feedback repairs, re-read live reviews and checks, update eligible branches, and merge only when the central policy permits it. |
-| `37` | `Hourly Autonomous Product Development` | Run only when the repository has zero open pull requests, produce one bounded buyer-visible improvement, independently reverify it, and publish it as a normal pull request. |
+| `37` | `Hourly Autonomous Product Development` | Run only when the repository has zero open pull requests, produce one bounded buyer-visible improvement, independently reverify it, and retain a short-lived digest-bound patch handoff for external review. |
 
 GitHub may delay scheduled runs while hosted-runner capacity is constrained.
 Workflow concurrency prevents overlapping hourly runs, while repository CI
@@ -28,22 +29,28 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    updates, queues, or merges anything.
 
 The central workflow resolves its co-located scheduler implementation from the
-called workflow's own immutable repository and SHA. The EgressWeave workflow
-does not duplicate governance logic or execute scheduler code from a mutable
-branch.
+called workflow's own immutable repository and SHA. The EgressWeave product
+scheduler does not repurpose or alter that inherited review-agent credential
+contract.
 
 ## Zero-PR product-development loop
 
-`.github/workflows/hourly-product-development.yml` uses three fresh Ubuntu 24.04
+`.github/workflows/hourly-product-development.yml` uses two fresh Ubuntu 24.04
 runners. The model job can only emit a bounded patch and does not execute
-model-modified repository code; the reverifier can execute that patch only
-inside an offline least-privilege container; and the publisher can write to
-GitHub but never executes modified package code.
+model-modified repository code. The reverifier executes that patch only inside
+an offline least-privilege container and emits a short-lived handoff containing
+the exact protected-main base SHA, patch SHA-256, and patch bytes.
 
-Every zero-open-PR decision—the initial development gate, the independent
-reverification gate, and the publication gate—uses GitHub CLI pagination and
-sums every REST response page. A pull request beyond the first 100 results
-therefore still blocks development, reverification, and publication.
+The scheduler does not create a branch, pull request, or auto-merge request. It
+does not obtain a repository-write token, exchange OIDC for a GitHub App token,
+move a ref, reapply a patch under a write identity, publish a package, or create
+a release.
+
+Both zero-open-PR decisions—the initial development gate and the independent
+reverification gate—use GitHub CLI pagination and sum every REST response page.
+A pull request beyond the first 100 results therefore still blocks model
+execution and reverification. The second gate also requires the protected-main
+head to equal the exact base SHA captured before model execution.
 
 ### 1. Read-only development and patch capture
 
@@ -59,10 +66,10 @@ model is `nvidia/nemotron-3-super-120b-a12b`.
 
 The model execution boundary provides:
 
-- block-mode runner egress restricted to the reviewed package sources, GitHub,
-  and `integrate.api.nvidia.com:443`;
-- deny-by-default OpenCode permissions, with edits limited to the normal bounded
-  source, test, documentation, README, and CHANGELOG paths;
+- block-mode runner egress restricted to reviewed package sources, GitHub, and
+  `integrate.api.nvidia.com:443`;
+- deny-by-default OpenCode permissions, with edits limited to the bounded source,
+  test, documentation, README, and CHANGELOG paths;
 - an isolated empty `HOME` and XDG configuration/data/cache roots, plus
   `OPENCODE_DISABLE_PROJECT_CONFIG=true`, so repository or runner OpenCode
   configuration, auto-discovered agents, commands, and plugins cannot augment
@@ -72,7 +79,7 @@ The model execution boundary provides:
   workflow edits;
 - no Ruff, pytest, compileall, Python-module, code-generation, or other
   model-modified repository execution while the model credential is present;
-  only exact read-only Git diff/status shell commands are permitted;
+  only exact read-only Git diff and status commands are permitted;
 - disabled OpenCode auto-update, remote model-list refresh, default plugins, and
   LSP downloads;
 - an exact credential-disclosure scan that reports only affected paths and never
@@ -89,14 +96,15 @@ After model execution, only the protected baseline copy of
 `scripts/ci/hourly_product_guard.py` runs on the host. It uses an alternate Git
 index and NUL-safe path handling to reject deletions, renames, mode changes,
 executables, links, binaries, unsafe paths, oversized files, and oversized
-diffs. The job uploads only the resulting patch, diff stat, and a short-lived
-model summary. The patch is authoritative; generated prose is never injected
-into the pull-request review context.
+diffs. The job uploads the resulting patch, diff stat, and model result only for
+the next credential-free job. That first artifact is untrusted until independent
+reverification succeeds.
 
 ### 2. Credential-free isolated reverification
 
 A fresh runner has no secrets, no OIDC permission, and no repository-write
-permission. Before applying the patch, it builds a verifier image from the
+permission. Before applying the patch, it rechecks all open pull-request pages
+and the exact protected-main base SHA. It then builds a verifier image from the
 protected branch and installs the trusted dependency and test toolchain. The
 Python base image is resolved to an immutable repository digest, and the built
 verifier is addressed by its immutable image ID.
@@ -112,21 +120,34 @@ Modified source and tests then execute only in a container configured with:
 - a read-only source mount and no Docker socket, secrets, or host write mount.
 
 Inside that boundary, Ruff, pytest, and compileall run against the patched
-source. A successful job emits only the protected base SHA and SHA-256 digest
-of the independently verified patch.
+source. The job rehashes the sealed patch and validates the 40-character base
+SHA before uploading exactly three owner-readable files:
 
-### 3. Credential-isolated publication
+```text
+egressweave.patch
+base-sha
+patch-sha256
+```
 
-A third fresh runner checks the zero-PR condition, protected-branch SHA, patch
-SHA-256, and guard result again. It applies the patch for publication but does
-not install or execute the modified package or tests. Only after those checks
-does it obtain a write identity, preferring an organization maintenance secret
-and otherwise using the centrally operated OpenCode GitHub App OIDC exchange.
+The artifact name includes the workflow run and attempt, and retention is three
+days. Successful reverification proves only that this exact patch passed the
+configured checks against this exact base in the isolated job. It is not a pull
+request, approval, merge authorization, provenance statement, or release.
 
-The publisher creates an `agent/hourly-product-gap-*` branch and pull request
-and requests squash auto-merge. It never writes directly to `main`. Normal CI,
-security scans, independent review, unresolved-thread checks, branch
-protection, and the hourly PR loop remain authoritative.
+### 3. External promotion boundary
+
+No repository-local product-development job promotes the verified handoff. A
+future external credential-separated promotion mechanism may consume it only
+after independent review of that mechanism and its immutable source. Before any
+repository write, that mechanism must independently acquire the exact artifact,
+verify the base SHA and patch SHA-256, reconstruct and verify the exact tree,
+recheck the live protected-main head and complete pull-request state, and obtain
+all required independent approvals and security gates.
+
+No such promotion mechanism is claimed by this repository. When it is absent,
+the verified artifact expires without publication. Operators must not manually
+reinterpret a successful reverification job as permission to push, open a pull
+request, enable auto-merge, or bypass branch protection.
 
 ## Model change boundary
 
@@ -151,22 +172,20 @@ The scheduled product-development workflow requires:
 
 - `NVIDIA_NIM_API_KEY`, mapped only to OpenCode's `NVIDIA_API_KEY`
   environment variable for the NVIDIA NIM endpoint;
-- either `PR_REVIEW_MERGE_TOKEN`, `OPENCODE_APPROVE_TOKEN`, or a working
-  organization OpenCode App OIDC exchange for a write identity that triggers
-  downstream pull-request events;
 - the standard Docker installation available on GitHub-hosted Ubuntu runners.
 
-The workflow fails closed when the model credential, immutable verifier image,
-container isolation, or external write identity is unavailable. It never falls
-back to a repository `GITHUB_TOKEN`-authored pull request or a direct `main`
-write.
+The workflow fails closed when the model credential, protected base identity,
+immutable verifier image, container isolation, or patch identity is unavailable.
+It has no fallback repository-write identity and does not reuse review-agent,
+release, package, attestation, or ref credentials.
 
 ## Manual operation
 
-Both workflows support `workflow_dispatch`. Manual runs use the same checks,
-concurrency, permissions, patch boundary, container isolation, full REST
-pagination, and publication gates as scheduled runs. A manual run cannot bypass
-the zero-open-PR condition or any repository policy.
+Both workflows support `workflow_dispatch`. Manual product-development runs use
+the same read-only permissions, exact-base checks, patch boundary, container
+isolation, full REST pagination, and non-publication boundary as scheduled runs.
+A manual run cannot bypass the zero-open-PR condition or turn the verified
+handoff into a repository write.
 
 ## Agent implementation references
 
