@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require every transfer-decoded response stream chunk to be an exact built-in
+  `bytes` value before byte-budget accounting or caller-visible delivery.
+  Malformed dependency-injected chunks, including `bytes` subclasses with custom
+  length behavior, now fail closed, release the source stream, and keep hostile
+  cleanup failures behind the stable generic policy boundary.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
