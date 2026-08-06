@@ -44,16 +44,17 @@ keep delivering or producing bytes until process memory, disk-backed buffering,
 connection capacity, or worker time is exhausted. This is an availability
 failure in the CWE-400 uncontrolled-resource-consumption family.
 
-The HTTPX integration contract describes response streaming as byte iteration,
-but EgressWeave also supports provider-neutral, dependency-injected transport
-components. Runtime objects at that boundary are therefore validated rather than
-trusted solely because the Python interface is typed. In Python, a `bytes`
-subclass can supply custom special methods such as `__len__`; counting such an
-object before validating its exact runtime type could make an attacker-controlled
-length disagree with the byte buffer later exposed to a caller. EgressWeave
-accepts only exact built-in `bytes` chunks and never calls conversion or length
-protocols on a malformed chunk. The rule is an EgressWeave integration hardening
-contract, not a claim that HTTPX ordinarily emits malformed stream chunks.
+The HTTPX Developer Interface exposes raw response streaming through byte
+iterators such as `Response.iter_raw()` and `Response.aiter_raw()`. EgressWeave
+also supports provider-neutral, dependency-injected transport components, so
+runtime objects at that boundary are validated rather than trusted solely because
+the Python interface is typed. In Python, a `bytes` subclass can supply custom
+special methods such as `__len__`; counting such an object before validating its
+exact runtime type could make an attacker-controlled length disagree with the
+byte buffer later exposed to a caller. EgressWeave accepts only exact built-in
+`bytes` chunks and never calls conversion or length protocols on a malformed
+chunk. The rule is an EgressWeave integration hardening contract, not a claim
+that HTTPX ordinarily emits malformed stream chunks.
 
 A header-only length check is insufficient because HTTP permits responses whose
 body length is determined by transfer coding or connection closure, and a
