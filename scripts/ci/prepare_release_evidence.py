@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import stat
+import tempfile
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -25,6 +26,8 @@ ATTESTABLE_GENERATOR_PATH = Path(__file__).with_name(
     "generate_attestable_release_sbom.py"
 )
 MAX_DISTRIBUTION_BYTES = release_evidence.MAX_ARTIFACT_BYTES
+COPY_BLOCK_BYTES = 1_048_576
+DistributionIdentity = tuple[int, int, int]
 
 __all__ = ["main", "prepare_release_evidence"]
 
@@ -121,16 +124,113 @@ def _select_distributions(evidence_root: Path) -> tuple[Path, Path]:
     return wheels[0], sdists[0]
 
 
-def _require_distribution_preflight(path: Path, *, label: str) -> None:
-    """Reject an unsafe or oversized distribution before any archive parser runs."""
+def _distribution_identity(metadata: os.stat_result) -> DistributionIdentity:
+    """Return the device, inode, and finite byte size that identify one archive."""
+    return metadata.st_dev, metadata.st_ino, metadata.st_size
+
+
+def _require_distribution_metadata(
+    metadata: os.stat_result,
+    *,
+    label: str,
+) -> DistributionIdentity:
+    """Return one regular finite distribution identity or fail through stable errors."""
+    if not stat.S_ISREG(metadata.st_mode):
+        raise SystemExit(f"{label} is unreadable or unsafe")
+    if metadata.st_size > MAX_DISTRIBUTION_BYTES:
+        raise SystemExit(f"{label} exceeds the safety bound")
+    return _distribution_identity(metadata)
+
+
+def _require_distribution_preflight(
+    path: Path,
+    *,
+    label: str,
+) -> DistributionIdentity:
+    """Bind current regular-file identity before loading any archive parser."""
     try:
         path_state = path.lstat()
     except OSError as error:
         raise SystemExit(f"{label} is unreadable or unsafe") from error
-    if not stat.S_ISREG(path_state.st_mode):
-        raise SystemExit(f"{label} is unreadable or unsafe")
-    if path_state.st_size > MAX_DISTRIBUTION_BYTES:
-        raise SystemExit(f"{label} exceeds the safety bound")
+    return _require_distribution_metadata(path_state, label=label)
+
+
+def _snapshot_distribution(
+    path: Path,
+    snapshot_root: Path,
+    accepted_identity: DistributionIdentity,
+    *,
+    label: str,
+) -> Path:
+    """Copy one accepted descriptor into a private parser-only immutable snapshot.
+
+    The accepted path identity is checked against both the no-follow descriptor
+    and the current pathname before and after the bounded copy. Archive parsers
+    receive only the private snapshot, never the mutable caller-controlled path.
+    """
+    read_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    write_flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_EXCL
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    source_descriptor: int | None = None
+    snapshot_descriptor: int | None = None
+    snapshot_path = snapshot_root / path.name
+    try:
+        source_descriptor = os.open(path, read_flags)
+        opened_identity = _require_distribution_metadata(
+            os.fstat(source_descriptor),
+            label=label,
+        )
+        current_identity = _require_distribution_metadata(path.lstat(), label=label)
+        if opened_identity != accepted_identity or current_identity != accepted_identity:
+            raise SystemExit(f"{label} is unreadable or unsafe")
+
+        snapshot_descriptor = os.open(snapshot_path, write_flags, 0o600)
+        os.fchmod(snapshot_descriptor, 0o600)
+        copied_bytes = 0
+        while True:
+            block = os.read(source_descriptor, COPY_BLOCK_BYTES)
+            if not block:
+                break
+            copied_bytes += len(block)
+            if copied_bytes > MAX_DISTRIBUTION_BYTES:
+                raise SystemExit(f"{label} exceeds the safety bound")
+            remaining = memoryview(block)
+            while remaining:
+                written = os.write(snapshot_descriptor, remaining)
+                if written <= 0:
+                    raise OSError("short snapshot write")
+                remaining = remaining[written:]
+        os.fsync(snapshot_descriptor)
+
+        final_opened_identity = _require_distribution_metadata(
+            os.fstat(source_descriptor),
+            label=label,
+        )
+        final_path_identity = _require_distribution_metadata(path.lstat(), label=label)
+        snapshot_state = os.fstat(snapshot_descriptor)
+        if (
+            final_opened_identity != accepted_identity
+            or final_path_identity != accepted_identity
+            or not stat.S_ISREG(snapshot_state.st_mode)
+            or stat.S_IMODE(snapshot_state.st_mode) != 0o600
+            or snapshot_state.st_size != copied_bytes
+        ):
+            raise SystemExit(f"{label} is unreadable or unsafe")
+        return snapshot_path
+    except FileExistsError:
+        raise SystemExit(f"{label} parser snapshot already exists") from None
+    except OSError as error:
+        raise SystemExit(f"{label} is unreadable or unsafe") from error
+    finally:
+        if snapshot_descriptor is not None:
+            os.close(snapshot_descriptor)
+        if source_descriptor is not None:
+            os.close(source_descriptor)
 
 
 def _load_attestable_generator() -> ModuleType:
@@ -267,7 +367,9 @@ def prepare_release_evidence(
     """Create and independently verify one credential-free release handoff.
 
     The input directory must initially contain only one canonical wheel and one
-    matching source distribution. Every generated file is new, owner-only, and
+    matching source distribution. Each accepted archive is copied from its
+    no-follow identity-bound descriptor into a private parser-only snapshot
+    before the generator loads. Every generated file is new, owner-only, and
     deterministic. The returned mapping is rebuilt from the sealed six-file set
     after the separately stored handoff has been durably published.
     """
@@ -286,30 +388,41 @@ def prepare_release_evidence(
         label="hash-locked runtime requirements",
     )
     wheel_path, sdist_path = _select_distributions(evidence_root)
-    _require_distribution_preflight(
-        wheel_path,
-        label=f"release distribution {wheel_path.name}",
-    )
-    _require_distribution_preflight(
-        sdist_path,
-        label=f"release distribution {sdist_path.name}",
-    )
+    wheel_label = f"release distribution {wheel_path.name}"
+    sdist_label = f"release distribution {sdist_path.name}"
+    wheel_identity = _require_distribution_preflight(wheel_path, label=wheel_label)
+    sdist_identity = _require_distribution_preflight(sdist_path, label=sdist_label)
 
-    generator = _load_attestable_generator()
-    wheel_sbom = _strict_pretty_json_bytes(
-        generator.build_attestable_sbom(
+    with tempfile.TemporaryDirectory(prefix="egressweave-release-evidence-") as temporary:
+        snapshot_root = Path(temporary)
+        wheel_snapshot = _snapshot_distribution(
             wheel_path,
-            dependency_manifest,
-            runtime_lock,
+            snapshot_root,
+            wheel_identity,
+            label=wheel_label,
         )
-    )
-    sdist_sbom = _strict_pretty_json_bytes(
-        generator.build_attestable_sbom(
+        sdist_snapshot = _snapshot_distribution(
             sdist_path,
-            dependency_manifest,
-            runtime_lock,
+            snapshot_root,
+            sdist_identity,
+            label=sdist_label,
         )
-    )
+        generator = _load_attestable_generator()
+        wheel_sbom = _strict_pretty_json_bytes(
+            generator.build_attestable_sbom(
+                wheel_snapshot,
+                dependency_manifest,
+                runtime_lock,
+            )
+        )
+        sdist_sbom = _strict_pretty_json_bytes(
+            generator.build_attestable_sbom(
+                sdist_snapshot,
+                dependency_manifest,
+                runtime_lock,
+            )
+        )
+
     source_identity = _source_identity_bytes(repository, source_sha)
     generated_payloads = {
         f"{wheel_path.name}.cdx.json": wheel_sbom,
