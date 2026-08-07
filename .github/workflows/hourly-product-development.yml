@@ -419,9 +419,12 @@ jobs:
             sh -euc '
               mkdir -p "$HOME"
               cp -R --no-preserve=ownership,mode,timestamps \
-                /source/src /source/tests /source/docs \
-                /source/README.md /source/CHANGELOG.md /source/pyproject.toml \
+                /source/src /source/tests /source/docs /source/.github /source/scripts \
                 /work/
+              for root_file in /source/* /source/.[!.]* /source/..?*; do
+                [ -f "$root_file" ] && [ ! -L "$root_file" ] || continue
+                cp --no-preserve=ownership,mode,timestamps "$root_file" /work/
+              done
               ruff check .
               pytest -q
               python -m compileall -q src tests
