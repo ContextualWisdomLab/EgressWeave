@@ -54,7 +54,6 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
     assert properties["authority"] == {"type": "string", "minLength": 1}
     assert properties["allowed_methods"] == {
         "type": "array",
-        "minItems": 1,
         "uniqueItems": True,
         "items": {"type": "string", "minLength": 1},
     }
@@ -69,6 +68,30 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
             "type": "string",
             "pattern": "^[0-9a-f]{64}$",
         }
+
+
+def test_schema_accepts_runtime_deny_all_method_policy_shape() -> None:
+    """Allow the empty method list emitted by a valid deny-all method policy."""
+    validated = _make_validated_egress_url(
+        "https://api.example.com/v1/models",
+        "api.example.com",
+        443,
+        ("93.184.216.34",),
+    )
+    evidence = egressweave.build_egress_decision_evidence(
+        validated,
+        policy=egressweave.EgressPolicy.from_hosts(
+            "api.example.com",
+            allowed_methods=set(),
+        ),
+    ).as_dict()
+
+    assert evidence["allowed_methods"] == []
+    properties = _load_schema()["properties"]
+    assert isinstance(properties, dict)
+    allowed_methods = properties["allowed_methods"]
+    assert isinstance(allowed_methods, dict)
+    assert "minItems" not in allowed_methods
 
 
 def test_schema_loader_returns_detached_data_on_every_call() -> None:
