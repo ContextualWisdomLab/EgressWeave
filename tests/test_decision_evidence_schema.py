@@ -5,20 +5,18 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-import egressweave
-
 from egressweave import (
     DECISION_EVIDENCE_SCHEMA_VERSION,
     EgressPolicy,
     build_egress_decision_evidence,
+    get_decision_evidence_json_schema,
 )
 from egressweave.validation import _make_validated_egress_url
 
 
 def _load_schema() -> dict[str, object]:
     """Load the public schema through the API that this slice introduces."""
-    loader = getattr(egressweave, "get_decision_evidence_json_schema")
-    schema = loader()
+    schema = get_decision_evidence_json_schema()
     assert isinstance(schema, dict)
     return schema
 
