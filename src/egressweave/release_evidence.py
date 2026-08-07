@@ -629,11 +629,19 @@ def _require_output_outside_verified_set(
 def _require_canonical_forbidden_root(forbidden_root: Path) -> Path:
     """Return one canonical excluded directory or raise one stable public error.
 
-    Public callers receive a dedicated non-leaking failure while this helper
-    reuses the verifier's stricter existing-directory and no-symlink contract.
-    The returned path is the only authority used by the writer afterward.
+    Every named lexical component is inspected before any ``..`` normalization,
+    so a symbolic link cannot be hidden by later parent traversal. Public callers
+    receive one dedicated non-leaking failure, then the existing canonical-root
+    contract supplies the single authority reused by the writer afterward.
     """
     try:
+        current = Path(forbidden_root.anchor)
+        for component in forbidden_root.parts[len(current.parts) :]:
+            current /= component
+            if component != ".." and current.is_symlink():
+                raise SystemExit(
+                    "release evidence directory path must not traverse symlinks"
+                )
         return _require_canonical_evidence_root(forbidden_root)
     except SystemExit:
         raise SystemExit(
