@@ -35,12 +35,15 @@ synchronous transport remains sequential.
 When the coordinator's deadline is exhausted, it cancels and awaits every
 pending attempt, consumes completed task outcomes without exposing their private
 errors, closes completed successful streams best-effort, and returns the existing
-generic `egress URL is not allowed` failure. A more specific error produced by an
-earlier child is not surfaced after the coordinator has observed exhaustion of
-the shared deadline. Exact hostname and port binding, pinned-address
-revalidation, TLS identity, proxy isolation, address ordering, first-success
-semantics before the deadline, and the injectable network-backend boundary
-remain unchanged.
+generic `egress URL is not allowed` failure. Deadline cleanup treats the
+injected stream as untrusted: a stream whose `aclose()` raises either before it
+can return an awaitable or while that awaitable is executing cannot replace the
+stable policy denial or survive as its exception provenance. A more specific
+error produced by an earlier child is likewise not surfaced after the
+coordinator has observed exhaustion of the shared deadline. Exact hostname and
+port binding, pinned-address revalidation, TLS identity, proxy isolation,
+address ordering, first-success semantics before the deadline, and the
+injectable network-backend boundary remain unchanged.
 
 Python task cancellation is cooperative. The coordinator deliberately awaits
 cancelled connection tasks instead of detaching live network work, so the finite
@@ -113,7 +116,9 @@ or expose target-specific child error text after timeout. Without the later
 pre-scheduling checks, time spent after either an empty wait or a completed
 failure could let the budget expire before another candidate is launched while
 still creating out-of-budget work or preserving a stale child-specific failure as
-the final result.
+the final result. Without a best-effort cleanup boundary, a dependency-injected
+stream could also throw synchronously from `aclose()` and replace the generic
+deadline denial with backend-private text.
 
 The combined controls preserve these invariants:
 
@@ -130,9 +135,9 @@ The combined controls preserve these invariants:
 9. the coordinator rechecks that deadline immediately after every wait, before
    scheduling a later candidate after an empty wait, and before scheduling a
    later candidate after completed failures; and
-10. deadline exhaustion closes completed successful streams and uses the generic
-    egress failure even if a completed child produced more detailed connection
-    text.
+10. deadline exhaustion closes completed successful streams best-effort and uses
+    the generic egress failure even if a child result or its cleanup produces
+    more detailed dependency-specific text.
 
 ## References
 
