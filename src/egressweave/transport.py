@@ -208,8 +208,14 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     for result in completed_results:
                         if isinstance(result, BaseException):
                             continue
+                        try:
+                            close_awaitable = result.aclose()
+                        except (Exception, asyncio.CancelledError):
+                            continue
                         with contextlib.suppress(Exception):
-                            await result.aclose()
+                            await asyncio.gather(
+                                close_awaitable, return_exceptions=True
+                            )
                     break
                 if not done:
                     if more_addresses:
