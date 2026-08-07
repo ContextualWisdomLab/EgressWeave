@@ -38,21 +38,31 @@ errors, closes completed successful streams best-effort, and returns the existin
 generic `egress URL is not allowed` failure. Deadline cleanup treats the
 injected stream as untrusted: a stream whose `aclose()` raises either before it
 can return an awaitable or while that awaitable is executing cannot replace the
-stable policy denial or survive as its exception provenance. A more specific
-error produced by an earlier child is likewise not surfaced after the
-coordinator has observed exhaustion of the shared deadline. Exact hostname and
-port binding, pinned-address revalidation, TLS identity, proxy isolation,
-address ordering, first-success semantics before the deadline, and the
-injectable network-backend boundary remain unchanged.
+stable policy denial or survive as its exception provenance. A cleanup
+coroutine that self-cancels with `asyncio.CancelledError` is likewise treated as
+a child cleanup outcome rather than as authority to replace the deadline denial.
+The implementation obtains the child cleanup awaitable and observes it through
+`asyncio.gather(..., return_exceptions=True)`, while cancellation directed at
+the coordinator itself still propagates normally. A more specific error
+produced by an earlier child is likewise not surfaced after the coordinator has
+observed exhaustion of the shared deadline. Exact hostname and port binding,
+pinned-address revalidation, TLS identity, proxy isolation, address ordering,
+first-success semantics before the deadline, and the injectable network-backend
+boundary remain unchanged.
 
 Python task cancellation is cooperative. The coordinator deliberately awaits
 cancelled connection tasks instead of detaching live network work, so the finite
 race deadline assumes an injected async network backend follows normal
-cancellation semantics. A malicious or broken backend that catches and
-suppresses `CancelledError` indefinitely can delay cleanup. EgressWeave does not
-claim that Python can safely force-kill cancellation-hostile coroutine code, and
-it does not trade this residual dependency boundary for orphaned connection
-tasks.
+cancellation semantics. Python 3.13 documents `asyncio.CancelledError` as a
+direct `BaseException` subclass and generally requires cancellation of the
+current task to propagate after cleanup. EgressWeave therefore distinguishes
+external coordinator cancellation from cancellation produced by the untrusted
+child cleanup operation: the former propagates, while the latter is consumed as
+best-effort cleanup evidence. A malicious or broken connection backend that
+catches and suppresses `CancelledError` indefinitely can still delay cleanup.
+EgressWeave does not claim that Python can safely force-kill
+cancellation-hostile coroutine code, and it does not trade this residual
+dependency boundary for orphaned connection tasks.
 
 The cardinality policy is re-applied whenever a signed validation result enters
 a pinned transport or audit-evidence builder. A result created under a wider
@@ -78,10 +88,14 @@ consumption of completed tasks, and delayed scheduling after an empty wait are
 distinct events, EgressWeave rechecks its own monotonic deadline immediately
 after `asyncio.wait(...)`, before scheduling a later candidate from an empty
 wait, and before scheduling a later candidate after completed failures. Python
-also documents task cancellation as cooperative. On deadline exhaustion
-EgressWeave therefore cancels and awaits pending tasks explicitly, closes already
-completed successful streams, and does not treat a boundary-time completion or
-empty wait as permission to exceed the caller's finite budget.
+also documents task cancellation as cooperative and states that
+`asyncio.CancelledError` directly subclasses `BaseException`, so ordinary
+`except Exception` cleanup does not intercept it. On deadline exhaustion
+EgressWeave therefore cancels and awaits pending connection tasks explicitly,
+observes dependency-injected cleanup cancellation separately from cancellation
+of the coordinator itself, closes already completed successful streams, and
+does not treat a boundary-time completion or empty wait as permission to exceed
+the caller's finite budget.
 
 CWE-400 identifies failure to constrain resource allocation as uncontrolled
 resource consumption and recommends limiting resources according to expected
@@ -117,8 +131,9 @@ pre-scheduling checks, time spent after either an empty wait or a completed
 failure could let the budget expire before another candidate is launched while
 still creating out-of-budget work or preserving a stale child-specific failure as
 the final result. Without a best-effort cleanup boundary, a dependency-injected
-stream could also throw synchronously from `aclose()` and replace the generic
-deadline denial with backend-private text.
+stream could throw synchronously from `aclose()`, raise while its cleanup
+awaitable executes, or self-cancel with `asyncio.CancelledError` and replace the
+generic deadline denial with dependency-specific control flow or private text.
 
 The combined controls preserve these invariants:
 
@@ -137,7 +152,8 @@ The combined controls preserve these invariants:
    later candidate after completed failures; and
 10. deadline exhaustion closes completed successful streams best-effort and uses
     the generic egress failure even if a child result or its cleanup produces
-    more detailed dependency-specific text.
+    dependency-specific text, exceptions, or child self-cancellation, while
+    cancellation of the coordinator itself remains observable to its caller.
 
 ## References
 
