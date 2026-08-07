@@ -210,7 +210,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                             continue
                         try:
                             close_awaitable = result.aclose()
-                        except (Exception, asyncio.CancelledError):
+                        except (Exception, asyncio.CancelledError):  # noqa: BLE001, S112
                             continue
                         with contextlib.suppress(Exception):
                             await asyncio.gather(
