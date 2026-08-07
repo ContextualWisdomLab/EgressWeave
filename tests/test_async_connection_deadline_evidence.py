@@ -35,6 +35,20 @@ class _TrackingAwaitedCloseFailureStream:
         raise RuntimeError("sensitive awaited close failure")
 
 
+class _BlockingCloseStream:
+    """Block inside ``aclose`` so coordinator cancellation can be observed."""
+
+    def __init__(self, close_started: asyncio.Event) -> None:
+        self.close_started = close_started
+        self.close_called = False
+
+    async def aclose(self) -> None:
+        """Record cleanup and wait until the parent coordinator is cancelled."""
+        self.close_called = True
+        self.close_started.set()
+        await asyncio.Event().wait()
+
+
 class _TrackingSuccessBackend:
     """Return one configured stream and record candidate starts."""
 
@@ -73,6 +87,29 @@ class _TrackingMultipleSuccessBackend:
         """Create and return a distinct successful stream for this candidate."""
         self.started_hosts.append(host)
         stream = _TrackingAwaitedCloseFailureStream()
+        self.streams.append(stream)
+        return stream
+
+
+class _TrackingBlockingSuccessBackend:
+    """Return blocking-close streams so parent cancellation remains observable."""
+
+    def __init__(self, close_started: asyncio.Event) -> None:
+        self.close_started = close_started
+        self.started_hosts: list[str] = []
+        self.streams: list[_BlockingCloseStream] = []
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        """Create a distinct successful stream whose cleanup blocks."""
+        self.started_hosts.append(host)
+        stream = _BlockingCloseStream(self.close_started)
         self.streams.append(stream)
         return stream
 
@@ -203,6 +240,30 @@ async def test_predeadline_losing_stream_cleanup_cannot_replace_selected_stream(
     assert tracking_backend.started_hosts == ["93.184.216.34", "1.1.1.1"]
     assert sum(stream.close_called for stream in tracking_backend.streams) == 1
     assert selected_stream.close_called is False
+
+
+@pytest.mark.asyncio
+async def test_predeadline_loser_cleanup_preserves_coordinator_cancellation(
+    monkeypatch,
+) -> None:
+    """Propagate cancellation directed at the coordinator during loser cleanup."""
+    _install_two_successes_before_deadline(monkeypatch)
+    close_started = asyncio.Event()
+    backend = _backend_with_three_addresses()
+    tracking_backend = _TrackingBlockingSuccessBackend(close_started)
+    backend._backend = tracking_backend
+    connection_task = asyncio.create_task(
+        backend.connect_tcp("api.example.com", 443, timeout=1.0)
+    )
+
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    connection_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await connection_task
+
+    assert tracking_backend.started_hosts == ["93.184.216.34", "1.1.1.1"]
+    assert sum(stream.close_called for stream in tracking_backend.streams) == 1
 
 
 @pytest.mark.asyncio
