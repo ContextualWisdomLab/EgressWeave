@@ -5,18 +5,13 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-from egressweave import (
-    DECISION_EVIDENCE_SCHEMA_VERSION,
-    EgressPolicy,
-    build_egress_decision_evidence,
-    get_decision_evidence_json_schema,
-)
+import egressweave
 from egressweave.validation import _make_validated_egress_url
 
 
 def _load_schema() -> dict[str, object]:
     """Load the public schema through the API that this slice introduces."""
-    schema = get_decision_evidence_json_schema()
+    schema = egressweave.get_decision_evidence_json_schema()
     assert isinstance(schema, dict)
     return schema
 
@@ -29,9 +24,9 @@ def _example_evidence() -> dict[str, object]:
         443,
         ("93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"),
     )
-    return build_egress_decision_evidence(
+    return egressweave.build_egress_decision_evidence(
         validated,
-        policy=EgressPolicy.from_hosts(
+        policy=egressweave.EgressPolicy.from_hosts(
             "api.example.com",
             allowed_methods={"GET", "POST"},
         ),
@@ -50,7 +45,9 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
 
     properties = schema["properties"]
     assert isinstance(properties, dict)
-    assert properties["schema_version"] == {"const": DECISION_EVIDENCE_SCHEMA_VERSION}
+    assert properties["schema_version"] == {
+        "const": egressweave.DECISION_EVIDENCE_SCHEMA_VERSION
+    }
     assert properties["authority"] == {"type": "string", "minLength": 1}
     assert properties["allowed_methods"] == {
         "type": "array",
