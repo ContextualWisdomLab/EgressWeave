@@ -63,11 +63,8 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
         "uniqueItems": True,
         "items": _METHOD_ITEM_SCHEMA,
     }
-    for count_field in (
-        "address_count",
-        "ipv4_address_count",
-        "ipv6_address_count",
-    ):
+    assert properties["address_count"] == {"type": "integer", "minimum": 1}
+    for count_field in ("ipv4_address_count", "ipv6_address_count"):
         assert properties[count_field] == {"type": "integer", "minimum": 0}
     for fingerprint_field in ("policy_fingerprint", "decision_fingerprint"):
         assert properties[fingerprint_field] == {
