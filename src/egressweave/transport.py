@@ -234,6 +234,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     if deadline is None or loop.time() < deadline:
                         start_next_attempt()
                     else:
+                        deadline_exhausted = True
                         more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
