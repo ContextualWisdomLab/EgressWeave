@@ -150,6 +150,20 @@ class _FakeLoopClock:
         return self.now
 
 
+class _SequenceLoopClock:
+    """Return deterministic timestamps and then hold the final timestamp."""
+
+    def __init__(self, *timestamps: float) -> None:
+        self._timestamps = list(timestamps)
+        self._last = timestamps[-1]
+
+    def time(self) -> float:
+        """Return the next configured monotonic timestamp."""
+        if self._timestamps:
+            self._last = self._timestamps.pop(0)
+        return self._last
+
+
 def _install_deadline_boundary_wait(monkeypatch) -> None:
     """Make the first completed task become visible exactly at the deadline."""
     clock = _FakeLoopClock()
@@ -243,6 +257,30 @@ async def test_deadline_boundary_masks_completed_child_error(monkeypatch) -> Non
         await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
     assert str(error.value) == "egress URL is not allowed"
+
+
+@pytest.mark.asyncio
+async def test_predeadline_failure_does_not_start_candidate_after_deadline(
+    monkeypatch,
+) -> None:
+    """Stop scheduling when time expires after observing a predeadline failure."""
+    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+
+    async def wait_for_failure(tasks, *, timeout, return_when):
+        assert timeout == pytest.approx(0.25)
+        assert return_when is asyncio.FIRST_COMPLETED
+        await asyncio.sleep(0)
+        done = {task for task in tasks if task.done()}
+        assert len(done) == 1
+        return done, set(tasks) - done
+
+    monkeypatch.setattr(transport_module.asyncio, "get_running_loop", lambda: clock)
+    monkeypatch.setattr(transport_module.asyncio, "wait", wait_for_failure)
+    backend = _backend_with_three_addresses()
+    backend._backend = _DeadlineBoundaryFailureBackend()
+
+    with pytest.raises(OSError, match="sensitive child failure for 93.184.216.34"):
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
 
 @pytest.mark.asyncio
