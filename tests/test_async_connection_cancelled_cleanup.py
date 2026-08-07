@@ -14,8 +14,12 @@ from egressweave.transport import _PinnedEgressNetworkBackend
 class _CancelledCleanupStream:
     """Raise ``CancelledError`` while deadline cleanup awaits stream closure."""
 
+    def __init__(self) -> None:
+        self.close_called = False
+
     async def aclose(self) -> None:
         """Model a dependency-injected stream that self-cancels during cleanup."""
+        self.close_called = True
         raise asyncio.CancelledError("sensitive injected cleanup cancellation")
 
 
@@ -76,7 +80,8 @@ async def test_deadline_cleanup_masks_child_cancelled_error(monkeypatch) -> None
     monkeypatch.setattr(transport_module.asyncio, "get_running_loop", lambda: clock)
     monkeypatch.setattr(transport_module.asyncio, "wait", wait_at_deadline)
     backend = _backend_with_three_addresses()
-    backend._backend = _DeadlineBoundaryCancelledCleanupBackend()
+    boundary_backend = _DeadlineBoundaryCancelledCleanupBackend()
+    backend._backend = boundary_backend
 
     with pytest.raises(OSError) as error:
         await backend.connect_tcp("api.example.com", 443, timeout=1.0)
@@ -84,3 +89,4 @@ async def test_deadline_cleanup_masks_child_cancelled_error(monkeypatch) -> None
     assert str(error.value) == "egress URL is not allowed"
     assert error.value.__context__ is None
     assert error.value.__cause__ is None
+    assert boundary_backend.stream.close_called is True
