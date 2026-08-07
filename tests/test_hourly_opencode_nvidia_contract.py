@@ -225,11 +225,11 @@ def test_offline_verifier_materializes_the_complete_repository_contract() -> Non
     root_copy = (
         'cp --no-preserve=ownership,mode,timestamps "$root_file" /work/'
     )
+    compileall = "python -m compileall -q src tests scripts"
     assert root_loop in verifier
     assert regular_file_guard in verifier
     assert root_copy in verifier
+    assert compileall in verifier
     assert verifier.index(root_loop) < verifier.index("ruff check .")
     assert verifier.index(root_copy) < verifier.index("pytest -q")
-    assert verifier.index(root_copy) < verifier.index(
-        "python -m compileall -q src tests"
-    )
+    assert verifier.index(root_copy) < verifier.index(compileall)
