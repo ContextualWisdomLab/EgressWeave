@@ -182,6 +182,22 @@ def _require_exact_response_chunk(chunk: object) -> bytes:
     return chunk
 
 
+def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
+    """Best-effort close a denied sync stream without retaining backend errors."""
+    try:
+        stream.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> None:
+    """Best-effort close a denied async stream without retaining backend errors."""
+    try:
+        await stream.aclose()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
     """Count identity-coded sync response bytes and close on first unsafe chunk."""
 
@@ -196,19 +212,19 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
         """Yield exact byte chunks until the next complete chunk is unsafe."""
         consumed_bytes = 0
         for chunk in self._stream:
+            denied = False
             try:
                 exact_chunk = _require_exact_response_chunk(chunk)
             except EgressNotAllowedError:
-                try:
-                    self._stream.close()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+                denied = True
+            if denied:
+                _close_sync_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
             consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
-                try:
-                    self._stream.close()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+                _close_sync_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield exact_chunk
 
     def close(self) -> None:
@@ -230,19 +246,19 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
         """Yield exact byte chunks until the next complete chunk is unsafe."""
         consumed_bytes = 0
         async for chunk in self._stream:
+            denied = False
             try:
                 exact_chunk = _require_exact_response_chunk(chunk)
             except EgressNotAllowedError:
-                try:
-                    await self._stream.aclose()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+                denied = True
+            if denied:
+                await _close_async_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
             consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
-                try:
-                    await self._stream.aclose()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+                await _close_async_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield exact_chunk
 
     async def aclose(self) -> None:
