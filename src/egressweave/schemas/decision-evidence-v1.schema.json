@@ -27,7 +27,10 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "minLength": 1
+        "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
+        "not": {
+          "const": "CONNECT"
+        }
       }
     },
     "address_count": {
