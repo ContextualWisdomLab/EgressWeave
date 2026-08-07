@@ -22,7 +22,6 @@ upgrade that moves them is caught before release.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from urllib.parse import urlsplit
 
 import httpcore
@@ -60,6 +59,23 @@ from egressweave.validation import (
 )
 
 _CONNECTION_ATTEMPT_DELAY_SECONDS = 0.25
+
+
+async def _close_connection_stream_best_effort(stream) -> None:
+    """Close one rejected child stream without masking coordinator cancellation.
+
+    Dependency-injected stream cleanup may fail before returning an awaitable,
+    while it is awaited, or by self-cancelling. Those child outcomes cannot
+    replace an already-selected connection result or an already-decided deadline
+    denial. Cancellation directed at the coordinator while it awaits the cleanup
+    still propagates because the outer ``await`` remains unguarded.
+    """
+    try:
+        close_awaitable = stream.aclose()
+        cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+        return
+    await cleanup
 
 
 class _DenyAllAsyncTransport(httpx.AsyncBaseTransport):
@@ -208,14 +224,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     for result in completed_results:
                         if isinstance(result, BaseException):
                             continue
-                        try:
-                            close_awaitable = result.aclose()
-                        except (Exception, asyncio.CancelledError):  # noqa: BLE001, S112
-                            continue
-                        with contextlib.suppress(Exception):
-                            await asyncio.gather(
-                                close_awaitable, return_exceptions=True
-                            )
+                        await _close_connection_stream_best_effort(result)
                     break
                 if not done:
                     if more_addresses:
@@ -235,7 +244,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     if successful_stream is None:
                         successful_stream = stream
                     else:
-                        await stream.aclose()
+                        await _close_connection_stream_best_effort(stream)
                 if successful_stream is not None:
                     return successful_stream
                 if more_addresses and (not tasks or loop.time() >= next_attempt_at):
