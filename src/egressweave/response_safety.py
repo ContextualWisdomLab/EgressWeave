@@ -187,7 +187,7 @@ def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
     try:
         stream.close()
     except Exception:  # noqa: BLE001
-        pass
+        return
 
 
 async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> None:
@@ -195,7 +195,7 @@ async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> Non
     try:
         await stream.aclose()
     except Exception:  # noqa: BLE001
-        pass
+        return
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
