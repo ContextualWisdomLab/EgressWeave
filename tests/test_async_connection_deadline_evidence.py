@@ -281,7 +281,7 @@ async def test_predeadline_loser_cleanup_preserves_coordinator_cancellation(
     connection_task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await connection_task
+        _ = await connection_task
 
     assert tracking_backend.started_hosts == ["93.184.216.34", "1.1.1.1"]
     assert sum(stream.close_called for stream in tracking_backend.streams) == 1
