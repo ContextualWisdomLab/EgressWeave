@@ -70,7 +70,7 @@ def test_pyproject_enforces_complete_statement_and_branch_coverage() -> None:
 
     assert coverage["run"] == {
         "branch": True,
-        "source_dirs": ["src/egressweave", "scripts/ci"],
+        "source": ["egressweave"],
     }
     assert coverage["report"] == {
         "fail_under": 100,
