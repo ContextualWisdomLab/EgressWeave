@@ -29,8 +29,13 @@ The schema's `schema_version` `const` is required to equal
 `egressweave.decision-evidence.v1`. It requires exactly the runtime evidence
 fields and sets `additionalProperties` to `false`, so unexpected fields do not
 silently become part of the v1 interchange contract. Fingerprints retain their
-lowercase 64-hex SHA-256 shape, counts are non-negative integers, and method
-entries are unique non-empty strings.
+lowercase 64-hex SHA-256 shape and counts are non-negative integers. The
+`allowed_methods` array may be empty because `EgressPolicy` supports an
+intentional deny-all method set; every method entry that is present remains a
+unique non-empty normalized string. The schema therefore omits `minItems` for
+that array. JSON Schema Draft 2020-12 defines an omitted `minItems` as equivalent
+to zero, matching the public runtime record rather than rejecting a valid
+`EgressDecisionEvidence.as_dict()` result.
 
 A consumer remains responsible for selecting and operating a conforming Draft
 2020-12 validator. The schema describes structure and interchange validity; it
