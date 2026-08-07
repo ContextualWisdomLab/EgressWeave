@@ -16,6 +16,9 @@ MAINTENANCE_DOCUMENTATION_PATH = (
 )
 README_PATH = REPOSITORY_ROOT / "README.md"
 ARCHITECTURE_PATH = REPOSITORY_ROOT / "ARCHITECTURE.md"
+MODULAR_INTEGRATION_ADR_PATH = (
+    REPOSITORY_ROOT / "docs" / "adr" / "0001-security-boundaries-and-modular-integration.md"
+)
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
@@ -222,3 +225,17 @@ def test_architecture_forbids_repository_local_product_publication() -> None:
     )
     assert "external, independently reviewed, credential-separated promotion" in architecture
     assert "reconstruct and verify the exact tree before any repository write" in architecture
+
+
+def test_modular_integration_adr_forbids_repository_local_product_publication() -> None:
+    """Keep the accepted ADR aligned with the credential-free product handoff."""
+    decision = " ".join(_read(MODULAR_INTEGRATION_ADR_PATH).split())
+
+    assert "before a publishing identity creates a normal pull request" not in decision
+    assert "ends at the independently reverified credential-free patch handoff" in decision
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in decision
+    )
+    assert "external, independently reviewed, credential-separated promotion" in decision
+    assert "reconstruct and verify the exact tree before any repository write" in decision
