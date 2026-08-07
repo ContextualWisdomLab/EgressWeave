@@ -196,15 +196,17 @@ async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> Non
 
     Policy denial is already decided before this helper runs. A dependency-injected
     implementation may violate the static async-stream contract by raising while
-    ``aclose`` is called, or may fail or self-cancel after returning its awaitable.
-    Those child outcomes are discarded. Cancellation directed at the coordinator
-    while it awaits the gather still propagates to its caller.
+    ``aclose`` is called, returning a non-awaitable value, or failing or
+    self-cancelling after returning its awaitable. Those child outcomes are
+    discarded. Cancellation directed at the coordinator while it awaits the
+    gather still propagates to its caller.
     """
     try:
         close_awaitable = stream.aclose()
+        cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
     except (Exception, asyncio.CancelledError):  # noqa: BLE001
         return
-    await asyncio.gather(close_awaitable, return_exceptions=True)
+    _ = await cleanup
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
