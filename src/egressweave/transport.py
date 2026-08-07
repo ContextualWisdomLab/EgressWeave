@@ -199,6 +199,20 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 )
                 tasks.clear()
                 tasks.update(pending)
+                if deadline is not None and loop.time() >= deadline:
+                    deadline_exhausted = True
+                    completed_results = await asyncio.gather(
+                        *done, return_exceptions=True
+                    )
+                    await asyncio.gather(
+                        *(
+                            result.aclose()
+                            for result in completed_results
+                            if not isinstance(result, BaseException)
+                        ),
+                        return_exceptions=True,
+                    )
+                    break
                 if not done:
                     if more_addresses:
                         start_next_attempt()
