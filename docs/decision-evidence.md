@@ -31,11 +31,22 @@ fields and sets `additionalProperties` to `false`, so unexpected fields do not
 silently become part of the v1 interchange contract. Fingerprints retain their
 lowercase 64-hex SHA-256 shape and counts are non-negative integers. The
 `allowed_methods` array may be empty because `EgressPolicy` supports an
-intentional deny-all method set; every method entry that is present remains a
-unique non-empty normalized string. The schema therefore omits `minItems` for
-that array. JSON Schema Draft 2020-12 defines an omitted `minItems` as equivalent
-to zero, matching the public runtime record rather than rejecting a valid
-`EgressDecisionEvidence.as_dict()` result.
+intentional deny-all method set. When entries are present, the v1 evidence
+contract accepts only the uppercase RFC 9110 `token` character subset that
+EgressWeave's policy normalization can emit, requires entries to be unique, and
+rejects `CONNECT`, which EgressWeave never authorizes. The schema therefore
+rejects lowercase, whitespace-bearing, non-ASCII, and `CONNECT` method strings
+that cannot be emitted by the current runtime evidence builder. It omits
+`minItems` because JSON Schema Draft 2020-12 defines an omitted `minItems` as
+equivalent to zero, matching the public runtime record rather than rejecting a
+valid `EgressDecisionEvidence.as_dict()` result.
+
+RFC 9110 defines an HTTP method as a case-sensitive `token` and notes that
+standardized method names are conventionally uppercase. EgressWeave's uppercase
+policy canonicalization is therefore an explicit product contract for this v1
+evidence schema, not a claim that arbitrary extension methods are inherently
+case-insensitive. A future change to method canonicalization would require a
+versioned compatibility decision for this interchange contract.
 
 A consumer remains responsible for selecting and operating a conforming Draft
 2020-12 validator. The schema describes structure and interchange validity; it
@@ -93,6 +104,9 @@ schema = get_decision_evidence_json_schema()
 
 Bray, T. (2017). *The JavaScript Object Notation (JSON) data interchange
 format* (RFC 8259). RFC Editor. https://doi.org/10.17487/RFC8259
+
+Fielding, R., Nottingham, M., & Reschke, J. (2022). *HTTP semantics* (RFC 9110).
+RFC Editor. https://doi.org/10.17487/RFC9110
 
 Wright, A., Andrews, H., Hutton, B., & Dennis, G. (2022). *JSON Schema Draft
 2020-12*. JSON Schema. https://json-schema.org/draft/2020-12
