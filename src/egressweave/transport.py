@@ -215,7 +215,11 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     break
                 if not done:
                     if more_addresses:
-                        start_next_attempt()
+                        if deadline is None or loop.time() < deadline:
+                            start_next_attempt()
+                        else:
+                            deadline_exhausted = True
+                            more_addresses = False
                     continue
                 successful_stream = None
                 for task in done:
