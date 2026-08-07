@@ -17,17 +17,22 @@ and awaited. The connection-race coordinator owns one absolute monotonic
 deadline derived from the caller's finite connection timeout. Each child attempt
 receives only its remaining budget, and the coordinator also applies that same
 remaining budget to every `asyncio.wait(...)`, including after every candidate
-has already been started. Staggered racing therefore does not multiply the
-caller's timeout or delegate the coordinator's deadline solely to child backend
-timeout handling. The synchronous transport remains sequential.
+has already been started. Immediately after each wait returns, the coordinator
+rechecks the monotonic deadline before consuming any completed task result. A
+stream first observed at or after the deadline is closed and rejected, and a
+child error first observed at or after the deadline is discarded behind the
+stable generic policy failure. Staggered racing therefore does not multiply the
+caller's timeout or turn a completion delivered at the timeout boundary into an
+unbudgeted success. The synchronous transport remains sequential.
 
 When the coordinator's deadline is exhausted, it cancels and awaits every
-pending attempt and returns the existing generic `egress URL is not allowed`
-failure. A more specific error produced by an earlier child is not surfaced
-after later attempts consume the shared deadline. Exact hostname and port
-binding, pinned-address revalidation, TLS identity, proxy isolation, address
-ordering, first-success semantics, and the injectable network-backend boundary
-remain unchanged.
+pending attempt, consumes completed task outcomes without exposing their private
+errors, closes completed successful streams best-effort, and returns the existing
+generic `egress URL is not allowed` failure. A more specific error produced by an
+earlier child is not surfaced after later attempts consume the shared deadline.
+Exact hostname and port binding, pinned-address revalidation, TLS identity, proxy
+isolation, address ordering, first-success semantics before the deadline, and the
+injectable network-backend boundary remain unchanged.
 
 Python task cancellation is cooperative. The coordinator deliberately awaits
 cancelled connection tasks instead of detaching live network work, so the finite
@@ -55,11 +60,15 @@ RFC assumes an ordered address list but does not require accepting an unbounded
 list supplied by a resolver, nor does it require an application to delegate its
 own finite connection deadline to child connection implementations.
 
-Python 3.13 documents that `asyncio.wait(..., timeout=...)` returns pending tasks
-without cancelling them. It also documents task cancellation as cooperative.
-EgressWeave therefore keeps its remaining deadline on the coordinator wait and,
-on exhaustion, explicitly cancels and awaits pending tasks rather than treating
-a timeout return as cleanup or allowing an unbounded final wait.
+Python 3.13 documents that `asyncio.wait(..., timeout=...)` returns the `done`
+and `pending` task sets and does not raise `TimeoutError`; unfinished tasks are
+simply returned in the pending set. Because return from the wait and application
+consumption of a completed task are distinct events, EgressWeave rechecks its own
+monotonic deadline immediately after `asyncio.wait(...)` before accepting any
+task result. Python also documents task cancellation as cooperative. On deadline
+exhaustion EgressWeave therefore cancels and awaits pending tasks explicitly,
+closes already completed successful streams, and does not treat a boundary-time
+completion as permission to exceed the caller's finite budget.
 
 CWE-400 identifies failure to constrain resource allocation as uncontrolled
 resource consumption and recommends limiting resources according to expected
@@ -88,7 +97,9 @@ validation work, asynchronous task creation, and sequential or staggered TCP
 attempts. Staggering alone limits concurrency but does not bound total work.
 Without a coordinator-owned deadline, a timeout-ignoring injected backend could
 also keep the final in-flight race alive after no further candidates remained to
-start.
+start. Without a post-wait deadline check, a task that becomes observable exactly
+as the shared budget expires could be accepted despite the caller's finite bound
+or expose target-specific child error text after timeout.
 
 The combined controls preserve these invariants:
 
@@ -98,12 +109,15 @@ The combined controls preserve these invariants:
 4. an over-limit unique set fails closed instead of being partially accepted;
 5. every retained address is revalidated immediately before connect;
 6. the hostname and port must still match the validated authority;
-7. the first successful asynchronous stream is returned and every loser is
-   cancelled and awaited;
+7. the first successful asynchronous stream observed before the shared deadline
+   is returned and every loser is cancelled and awaited;
 8. one absolute monotonic connection deadline is shared across every asynchronous
-   attempt and coordinator wait; and
-9. deadline exhaustion uses the generic egress failure even if an earlier child
-   produced more detailed connection text.
+   attempt and coordinator wait;
+9. the coordinator rechecks that deadline immediately after every wait before
+   consuming completed results; and
+10. deadline exhaustion closes completed successful streams and uses the generic
+    egress failure even if a completed child produced more detailed connection
+    text.
 
 ## References
 
