@@ -29,9 +29,11 @@ The schema's `schema_version` `const` is required to equal
 `egressweave.decision-evidence.v1`. It requires exactly the runtime evidence
 fields and sets `additionalProperties` to `false`, so unexpected fields do not
 silently become part of the v1 interchange contract. Fingerprints retain their
-lowercase 64-hex SHA-256 shape and counts are non-negative integers. The
-`allowed_methods` array may be empty because `EgressPolicy` supports an
-intentional deny-all method set. When entries are present, the v1 evidence
+lowercase 64-hex SHA-256 shape. The total `address_count` is at least one because
+the evidence builder revalidates and rejects an empty pinned-address set; the
+IPv4 and IPv6 family counts remain non-negative because either family may be
+absent. The `allowed_methods` array may be empty because `EgressPolicy` supports
+an intentional deny-all method set. When entries are present, the v1 evidence
 contract accepts only the uppercase RFC 9110 `token` character subset that
 EgressWeave's policy normalization can emit, requires entries to be unique, and
 rejects `CONNECT`, which EgressWeave never authorizes. The schema therefore
