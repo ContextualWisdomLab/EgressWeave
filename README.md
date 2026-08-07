@@ -331,7 +331,7 @@ product roadmap moving without bypassing normal governance:
   implements one test-driven improvement.
 
 The product workflow uses two fresh runners. The model job has read-only GitHub
-permissions and can emit only a guard-checked patch. Model web/network tools are
+permissions and can emit only a guard-checked patch. model web/network tools are
 denied, while runner egress is restricted to reviewed package sources, GitHub,
 and the NVIDIA NIM endpoint. A second credential-free job builds trusted
 dependencies before applying the patch and executes modified source only inside
