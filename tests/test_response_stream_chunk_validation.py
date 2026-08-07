@@ -76,6 +76,24 @@ class _MalformedAsyncStream(httpx.AsyncByteStream):
             raise RuntimeError("private backend close failure")
 
 
+class _SynchronousCleanupFailureAsyncStream(httpx.AsyncByteStream):
+    """Raise before returning an awaitable from injected async cleanup."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one unsafe chunk and record whether cleanup was attempted."""
+        self._chunk = chunk
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured unsafe chunk before policy cleanup runs."""
+        yield self._chunk
+
+    def aclose(self):
+        """Model an injected stream that violates the static awaitable contract."""
+        self.closed = True
+        raise RuntimeError("private synchronous async-cleanup failure")
+
+
 class _SelfCancellingCleanupAsyncStream(httpx.AsyncByteStream):
     """Raise child ``CancelledError`` from policy-denial cleanup."""
 
@@ -222,6 +240,21 @@ async def test_async_malformed_denial_discards_cleanup_exception_provenance() ->
 async def test_async_over_budget_denial_discards_cleanup_exception_provenance() -> None:
     """Discard hostile async cleanup provenance on an over-budget exact chunk."""
     source = _MalformedAsyncStream(b"abcde", close_fails=True)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("chunk", [bytearray(b"abc"), b"abcde"])
+async def test_async_policy_denial_masks_synchronous_cleanup_failure(
+    chunk: object,
+) -> None:
+    """Mask a call-time cleanup error from an injected async stream."""
+    source = _SynchronousCleanupFailureAsyncStream(chunk)
     stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
 
     with pytest.raises(EgressNotAllowedError) as exc_info:
