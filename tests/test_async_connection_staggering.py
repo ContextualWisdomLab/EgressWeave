@@ -284,6 +284,39 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
 
 
 @pytest.mark.asyncio
+async def test_empty_wait_does_not_start_candidate_after_deadline(monkeypatch) -> None:
+    """Do not create a later task if an empty wait reaches the shared deadline."""
+    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+    real_create_task = asyncio.create_task
+    created_task_count = 0
+
+    def tracked_create_task(coro):
+        nonlocal created_task_count
+        created_task_count += 1
+        return real_create_task(coro)
+
+    async def empty_wait(tasks, *, timeout, return_when):
+        assert timeout == pytest.approx(0.25)
+        assert return_when is asyncio.FIRST_COMPLETED
+        await asyncio.sleep(0)
+        return set(), set(tasks)
+
+    monkeypatch.setattr(transport_module.asyncio, "get_running_loop", lambda: clock)
+    monkeypatch.setattr(transport_module.asyncio, "wait", empty_wait)
+    monkeypatch.setattr(transport_module.asyncio, "create_task", tracked_create_task)
+    backend = _backend_with_three_addresses()
+    ignoring_backend = _TimeoutIgnoringBackend()
+    backend._backend = ignoring_backend
+
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
+
+    assert created_task_count == 1
+    assert ignoring_backend.started_hosts == ["93.184.216.34"]
+    assert ignoring_backend.cancelled_hosts == ignoring_backend.started_hosts
+
+
+@pytest.mark.asyncio
 async def test_connection_race_enforces_its_global_deadline(monkeypatch) -> None:
     """Require the coordinator to stop even when child connects ignore timeouts."""
     monkeypatch.setattr(
