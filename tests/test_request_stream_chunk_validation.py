@@ -95,6 +95,24 @@ class _SynchronousCleanupFailureAsyncRequestStream(httpx.AsyncByteStream):
         raise RuntimeError("private synchronous request cleanup failure")
 
 
+class _NonAwaitableCleanupAsyncRequestStream(httpx.AsyncByteStream):
+    """Return a non-awaitable value from dependency-injected async cleanup."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one chunk and record cleanup entry."""
+        self._chunk = chunk
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured chunk before the wrapper applies its boundary."""
+        yield self._chunk
+
+    def aclose(self):
+        """Violate the async cleanup contract with a non-awaitable return value."""
+        self.closed = True
+        return None
+
+
 class _SelfCancellingAsyncRequestStream(httpx.AsyncByteStream):
     """Raise child ``CancelledError`` when an injected source is closed."""
 
@@ -238,6 +256,21 @@ async def test_async_policy_denial_masks_synchronous_cleanup_failure(
 
 
 @pytest.mark.parametrize("chunk", [bytearray(b"abc"), b"abcde"])
+async def test_async_policy_denial_masks_nonawaitable_cleanup(
+    chunk: object,
+) -> None:
+    """Mask a non-awaitable cleanup return from an injected request stream."""
+    source = _NonAwaitableCleanupAsyncRequestStream(chunk)
+    stream = _BoundedAsyncRequestStream(source, max_request_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("chunk", [bytearray(b"abc"), b"abcde"])
 async def test_async_policy_denial_masks_child_cleanup_cancellation(chunk: object) -> None:
     """Keep child self-cancellation behind the generic policy-denial boundary."""
     source = _SelfCancellingAsyncRequestStream(chunk)
@@ -261,7 +294,7 @@ async def test_async_policy_denial_preserves_coordinator_cancellation() -> None:
     consume_task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await consume_task
+        _ = await consume_task
 
     assert source.closed is True
 
