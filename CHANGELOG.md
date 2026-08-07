@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add a credential-free six-file release-evidence preparer that requires exactly
+  one matching wheel and source distribution, enforces compressed-byte bounds
+  before archive parsing, generates paired deterministic CycloneDX 1.7 SBOMs,
+  canonical source identity, and filename-sorted checksums, creates owner-only
+  exclusive outputs and a separately stored handoff, and independently
+  re-verifies the complete set after publication without claiming hosted
+  provenance or a SLSA Build level.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
@@ -60,6 +67,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Bind each preflighted wheel and source distribution to its accepted device,
+  inode, and finite byte size through a no-follow descriptor, then copy only
+  bounded bytes into a fresh owner-only parser snapshot. ZIP and tar parsers
+  never receive the mutable caller-controlled pathname, so post-preflight path
+  replacement fails before parser execution; later artifact hashing and complete
+  evidence-set verification remain defense in depth without claiming immutable
+  local storage, hosted provenance, or a SLSA Build level.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
