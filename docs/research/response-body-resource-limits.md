@@ -26,7 +26,10 @@ The control is enforced at three boundaries:
    authoritative check covers chunked, close-delimited, missing-length, and
    dishonestly under-declared responses. The first valid byte chunk that would
    exceed the policy budget is not exposed; the source stream is closed and the
-   same generic policy error is raised.
+   same generic policy error is raised. Policy-denial cleanup is best effort:
+   exceptions raised by a dependency-injected `close()` or `aclose()` are
+   discarded before the stable denial exception is created, so backend-private
+   cleanup details are not retained as its cause or exception context.
 
 Responses to `HEAD`, informational responses, `204 No Content`, and
 `304 Not Modified` are treated as bodyless. Their `Content-Encoding` and
@@ -53,8 +56,12 @@ special methods such as `__len__`; counting such an object before validating its
 exact runtime type could make an attacker-controlled length disagree with the
 byte buffer later exposed to a caller. EgressWeave accepts only exact built-in
 `bytes` chunks and never calls conversion or length protocols on a malformed
-chunk. The rule is an EgressWeave integration hardening contract, not a claim
-that HTTPX ordinarily emits malformed stream chunks.
+chunk. Cleanup performed because the policy has already denied a stream is also
+an untrusted backend boundary: cleanup is attempted, backend cleanup exceptions
+are consumed internally, and the caller receives a newly created generic policy
+denial with no retained backend cause or exception context. These rules are
+EgressWeave integration-hardening contracts, not claims that HTTPX ordinarily
+emits malformed chunks or hostile cleanup exceptions.
 
 A header-only length check is insufficient because HTTP permits responses whose
 body length is determined by transfer coding or connection closure, and a
@@ -76,7 +83,9 @@ a bounded, integration-specific `max_response_bytes` value. There is no unlimite
 sentinel because a deployment mistake must not silently remove the boundary.
 Custom injected response streams must satisfy the same byte-stream contract as
 HTTPX and yield exact built-in `bytes` chunks; accepting subclass or buffer
-coercion would weaken the resource-accounting trust boundary.
+coercion would weaken the resource-accounting trust boundary. Ordinary
+caller-requested `close()` or `aclose()` behavior remains unchanged; only cleanup
+performed after a policy denial discards backend cleanup exceptions.
 
 ## References
 
