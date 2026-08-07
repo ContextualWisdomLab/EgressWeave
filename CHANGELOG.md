@@ -55,10 +55,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
-- Align the public README with the credential-free product scheduler boundary:
-  remove the stale repository-local third-publisher claim, state that the
-  workflow ends at the independently reverified exact-base/digest-bound handoff,
-  and require any future promotion to remain external, independently reviewed,
+- Align the buyer-facing README, architecture, and accepted modular-integration
+  ADR with the credential-free product scheduler boundary: remove stale
+  repository-local publisher claims, state that product development ends at the
+  independently reverified exact-base/digest-bound handoff, and require any
+  future promotion to remain external, independently reviewed,
   credential-separated, and exact-tree verified before repository write.
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
