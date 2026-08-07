@@ -8,6 +8,8 @@ resource accounting or escape the stable EgressWeave rejection boundary.
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
@@ -72,6 +74,44 @@ class _MalformedAsyncStream(httpx.AsyncByteStream):
         self.closed = True
         if self._close_fails:
             raise RuntimeError("private backend close failure")
+
+
+class _SelfCancellingCleanupAsyncStream(httpx.AsyncByteStream):
+    """Raise child ``CancelledError`` from policy-denial cleanup."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one unsafe chunk and record whether cleanup was attempted."""
+        self._chunk = chunk
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured unsafe chunk before policy cleanup runs."""
+        yield self._chunk
+
+    async def aclose(self) -> None:
+        """Model an injected child stream that self-cancels during cleanup."""
+        self.closed = True
+        raise asyncio.CancelledError("private backend cleanup cancellation")
+
+
+class _BlockingCleanupAsyncStream(httpx.AsyncByteStream):
+    """Block in cleanup so cancellation directed at the caller stays visible."""
+
+    def __init__(self, chunk: object, close_started: asyncio.Event) -> None:
+        """Store one unsafe chunk and a signal for deterministic cancellation."""
+        self._chunk = chunk
+        self._close_started = close_started
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured unsafe chunk before policy cleanup runs."""
+        yield self._chunk
+
+    async def aclose(self) -> None:
+        """Signal cleanup entry and wait until the caller task is cancelled."""
+        self.closed = True
+        self._close_started.set()
+        await asyncio.Event().wait()
 
 
 def _assert_clean_policy_denial(error: EgressNotAllowedError) -> None:
@@ -188,4 +228,33 @@ async def test_async_over_budget_denial_discards_cleanup_exception_provenance() 
         await anext(stream.__aiter__())
 
     _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("chunk", [bytearray(b"abc"), b"abcde"])
+async def test_async_policy_denial_masks_child_cleanup_cancellation(chunk: object) -> None:
+    """Treat child self-cancellation as hostile cleanup, not caller cancellation."""
+    source = _SelfCancellingCleanupAsyncStream(chunk)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+async def test_async_policy_denial_preserves_caller_cancellation() -> None:
+    """Propagate cancellation directed at the caller while cleanup is awaited."""
+    close_started = asyncio.Event()
+    source = _BlockingCleanupAsyncStream(bytearray(b"abc"), close_started)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+    consume_task = asyncio.create_task(anext(stream.__aiter__()))
+
+    await asyncio.wait_for(close_started.wait(), timeout=1.0)
+    consume_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await consume_task
+
     assert source.closed is True
