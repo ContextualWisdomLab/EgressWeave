@@ -110,7 +110,6 @@ class _NonAwaitableCleanupAsyncRequestStream(httpx.AsyncByteStream):
     def aclose(self):
         """Violate the async cleanup contract with a non-awaitable return value."""
         self.closed = True
-        return None
 
 
 class _SelfCancellingAsyncRequestStream(httpx.AsyncByteStream):
