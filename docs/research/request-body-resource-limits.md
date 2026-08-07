@@ -25,6 +25,14 @@ preventing an accidental or adversarial producer from turning an approved
 authority into an unbounded outbound resource sink or a request-framing
 differential.
 
+Policy-denial cleanup is distinct from caller-requested cleanup. Once the policy
+has already denied a stream, an injected async child's cleanup exception or
+self-cancellation is treated as an untrusted child outcome and cannot replace the
+stable generic denial. Cancellation directed at the consuming coordinator while
+it awaits that cleanup still propagates. Explicit caller-requested `aclose()`
+keeps its existing cancellation behavior rather than converting cancellation
+into a policy result.
+
 The byte counter belongs to the bounded wrapper rather than an individual
 iterator. Repeated iteration, partial re-consumption, or transport retry of a
 replayable source therefore shares one cumulative budget instead of granting a
@@ -50,7 +58,11 @@ This rule is provider-neutral. It does not assert that HTTPX or HTTPCore's norma
 producers emit malformed chunks; it protects the dependency-injected runtime
 boundary from a buggy, adversarial, or alternate producer. Synchronous and
 asynchronous paths apply the same check, close the rejected source first, and
-mask hostile cleanup failures behind the stable generic policy error.
+mask hostile cleanup failures behind the stable generic policy error. For async
+policy-denial cleanup, Python 3.13's `asyncio.gather(..., return_exceptions=True)`
+semantics let EgressWeave consume a child task's exception or cancellation while
+still allowing cancellation of the awaiting coordinator to propagate. This is
+used only after policy denial; public cleanup remains caller-controlled.
 
 ## Why declared length is both an early gate and an exact boundary
 
@@ -125,8 +137,12 @@ the same provider-neutral pinned client.
   counter, preventing replayable sources from multiplying the configured limit.
 - **Resource release:** synchronous and asynchronous source streams are closed
   on malformed-chunk denial, declared-length denial, policy overrun, or framing
-  mismatch; cleanup exceptions from caller-controlled streams do not replace the
-  generic denial.
+  mismatch. Dependency-injected cleanup exceptions and child self-cancellation
+  cannot replace the generic denial; cancellation directed at the consuming
+  coordinator still propagates.
+- **Public cleanup compatibility:** explicit caller-requested async cleanup keeps
+  its existing cancellation semantics; the child-outcome masking rule applies
+  only after the policy has independently decided to deny the stream.
 - **Generic failure:** runtime errors do not disclose the configured limit,
   declared size, consumed size, destination, or rejection rule.
 - **Deterministic parity:** synchronous and asynchronous paths implement the same
@@ -153,6 +169,10 @@ from https://www.python-httpx.org/api/
 
 Encode OSS Ltd. (n.d.). *Transports — HTTPX*. Retrieved August 7, 2026, from
 https://www.python-httpx.org/advanced/transports/
+
+Python Software Foundation. (2026). *Coroutines and tasks — Python 3.13.14
+documentation*. Retrieved August 7, 2026, from
+https://docs.python.org/3.13/library/asyncio-task.html
 
 Open Worldwide Application Security Project. (n.d.). *Denial of service cheat
 sheet*. OWASP Cheat Sheet Series.
