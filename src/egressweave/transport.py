@@ -22,6 +22,7 @@ upgrade that moves them is caught before release.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from urllib.parse import urlsplit
 
 import httpcore
@@ -204,14 +205,11 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     completed_results = await asyncio.gather(
                         *done, return_exceptions=True
                     )
-                    await asyncio.gather(
-                        *(
-                            result.aclose()
-                            for result in completed_results
-                            if not isinstance(result, BaseException)
-                        ),
-                        return_exceptions=True,
-                    )
+                    for result in completed_results:
+                        if isinstance(result, BaseException):
+                            continue
+                        with contextlib.suppress(Exception):
+                            await result.aclose()
                     break
                 if not done:
                     if more_addresses:
