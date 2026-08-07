@@ -74,6 +74,13 @@ class _MalformedAsyncStream(httpx.AsyncByteStream):
             raise RuntimeError("private backend close failure")
 
 
+def _assert_clean_policy_denial(error: EgressNotAllowedError) -> None:
+    """Require a generic denial with no retained backend exception provenance."""
+    assert str(error) == "egress URL is not allowed"
+    assert error.__context__ is None
+    assert error.__cause__ is None
+
+
 @pytest.mark.parametrize(
     "chunk",
     [
@@ -101,6 +108,30 @@ def test_sync_malformed_chunk_masks_cleanup_failure() -> None:
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         next(iter(stream))
 
+    assert source.closed is True
+
+
+def test_sync_malformed_denial_discards_cleanup_exception_provenance() -> None:
+    """Discard hostile sync cleanup provenance before creating the denial."""
+    source = _MalformedSyncStream(bytearray(b"abc"), close_fails=True)
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        next(iter(stream))
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+def test_sync_over_budget_denial_discards_cleanup_exception_provenance() -> None:
+    """Discard hostile sync cleanup provenance on an over-budget exact chunk."""
+    source = _MalformedSyncStream(b"abcde", close_fails=True)
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        next(iter(stream))
+
+    _assert_clean_policy_denial(exc_info.value)
     assert source.closed is True
 
 
@@ -133,4 +164,28 @@ async def test_async_malformed_chunk_masks_cleanup_failure() -> None:
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         await anext(stream.__aiter__())
 
+    assert source.closed is True
+
+
+async def test_async_malformed_denial_discards_cleanup_exception_provenance() -> None:
+    """Discard hostile async cleanup provenance before creating the denial."""
+    source = _MalformedAsyncStream(bytearray(b"abc"), close_fails=True)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+async def test_async_over_budget_denial_discards_cleanup_exception_provenance() -> None:
+    """Discard hostile async cleanup provenance on an over-budget exact chunk."""
+    source = _MalformedAsyncStream(b"abcde", close_fails=True)
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
     assert source.closed is True
