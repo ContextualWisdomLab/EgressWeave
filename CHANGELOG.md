@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require synchronous and asynchronous outbound request streams to yield exact
+  built-in `bytes` before length accounting or downstream delivery. Bytes
+  subclasses and other malformed chunks are rejected, their sources are closed,
+  hostile cleanup failures stay behind the generic denial boundary, and valid-byte
+  budgets plus exact `Content-Length` semantics remain unchanged.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a

@@ -7,15 +7,17 @@ module applies a finite byte budget twice: it rejects an oversized declared
 produced by synchronous and asynchronous streams. When a content length is
 present, actual stream consumption must also equal that declaration exactly.
 Each bounded request stream is single-consumption so an exhausted or replayable
-source cannot be retried under stale framing or a reset allowance. Non-byte
-chunks fail before downstream protocol code can serialize or report them. The
-stream that would cross any boundary is closed before the invalid chunk can be
-sent, while callers continue to receive EgressWeave's generic non-leaking denial
-error.
+source cannot be retried under stale framing or a reset allowance. Only exact
+built-in ``bytes`` chunks are accepted before length accounting, preventing a
+subclass or arbitrary object from executing attacker-controlled conversion or
+length behavior at this trust boundary. The stream that would cross any boundary
+is closed before the invalid chunk can be sent, while callers continue to
+receive EgressWeave's generic non-leaking denial error.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterable, Iterator
 from contextlib import suppress
 
@@ -89,14 +91,14 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
         self._iteration_started = False
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield one byte-only request under cumulative and exact bounds."""
+        """Yield exact bytes only after cumulative and framing-limit checks."""
         if self._iteration_started:
             self.close()
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         for chunk in self._stream:
-            if not isinstance(chunk, bytes):
+            if type(chunk) is not bytes:
                 self.close()
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
@@ -125,6 +127,26 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
             self._stream.close()
 
 
+async def _close_async_request_after_policy_denial(
+    stream: httpx.AsyncByteStream,
+) -> None:
+    """Consume child cleanup failures while preserving coordinator cancellation.
+
+    Policy denial has already been decided when this helper runs. A dependency-
+    injected stream may violate the static async contract by raising while
+    ``aclose`` is called, returning a non-awaitable value, or failing or
+    self-cancelling after returning its awaitable. Those child outcomes are
+    discarded. Cancellation directed at the coordinator while it awaits the
+    gather still propagates to its caller.
+    """
+    try:
+        close_awaitable = stream.aclose()
+        cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+        return
+    _ = await cleanup
+
+
 class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
     """Forward one asynchronous request within policy and framing bounds."""
 
@@ -142,15 +164,15 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
         self._iteration_started = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield one byte-only async request under cumulative exact bounds."""
+        """Yield exact async bytes after cumulative and framing-limit checks."""
         if self._iteration_started:
-            await self.aclose()
+            await _close_async_request_after_policy_denial(self._stream)
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         async for chunk in self._stream:
-            if not isinstance(chunk, bytes):
-                await self.aclose()
+            if type(chunk) is not bytes:
+                await _close_async_request_after_policy_denial(self._stream)
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
@@ -161,7 +183,7 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
                 self._consumed_bytes > self._max_request_bytes
                 or exceeds_declared_length
             ):
-                await self.aclose()
+                await _close_async_request_after_policy_denial(self._stream)
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield chunk
 
@@ -169,7 +191,7 @@ class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
             self._declared_request_bytes is not None
             and self._consumed_bytes != self._declared_request_bytes
         ):
-            await self.aclose()
+            await _close_async_request_after_policy_denial(self._stream)
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     async def aclose(self) -> None:
