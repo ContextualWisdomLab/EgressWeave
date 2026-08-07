@@ -288,6 +288,6 @@ async def test_async_policy_denial_preserves_caller_cancellation() -> None:
     consume_task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await consume_task
+        _ = await consume_task
 
     assert source.closed is True
