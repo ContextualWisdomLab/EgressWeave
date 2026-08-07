@@ -263,7 +263,7 @@ async def test_deadline_boundary_masks_completed_child_error(monkeypatch) -> Non
 async def test_predeadline_failure_does_not_start_candidate_after_deadline(
     monkeypatch,
 ) -> None:
-    """Stop scheduling when time expires after observing a predeadline failure."""
+    """Fail generically if the budget expires before the next candidate starts."""
     clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
 
     async def wait_for_failure(tasks, *, timeout, return_when):
@@ -279,7 +279,7 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
     backend = _backend_with_three_addresses()
     backend._backend = _DeadlineBoundaryFailureBackend()
 
-    with pytest.raises(OSError, match="sensitive child failure for 93.184.216.34"):
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
         await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
 
