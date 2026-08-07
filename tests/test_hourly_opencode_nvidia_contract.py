@@ -202,12 +202,14 @@ def test_buyer_readme_forbids_repository_local_patch_publication() -> None:
 
 def test_buyer_readme_describes_restricted_model_egress() -> None:
     """Describe the scheduler network boundary without claiming zero connectivity."""
-    readme = " ".join(_read(README_PATH).split())
+    readme_text = _read(README_PATH)
+    readme = " ".join(readme_text.split())
 
     assert "no direct network access" not in readme
     assert "runner egress is restricted" in readme
-    assert "model web/network tools are denied" in readme
+    assert "Model web/network tools are denied" in readme
     assert "NVIDIA NIM endpoint" in readme
+    assert readme_text.endswith("\n")
 
 
 def test_architecture_forbids_repository_local_product_publication() -> None:
@@ -239,3 +241,20 @@ def test_modular_integration_adr_forbids_repository_local_product_publication() 
     )
     assert "external, independently reviewed, credential-separated promotion" in decision
     assert "reconstruct and verify the exact tree before any repository write" in decision
+
+
+def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
+    """Keep shell format escapes on one YAML line so workflow parsing succeeds."""
+    workflow_lines = _read(PRODUCT_WORKFLOW_PATH).splitlines()
+    checksum_line = (
+        "          printf '%s  %s\\n' "
+        '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
+    )
+    fallback_line = (
+        "            printf '%s\\n' "
+        "'{\"type\":\"error\",\"message\":\"OpenCode produced no final result\"}' "
+        '>"$result_file"'
+    )
+
+    assert checksum_line in workflow_lines
+    assert fallback_line in workflow_lines
