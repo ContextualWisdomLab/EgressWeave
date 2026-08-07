@@ -35,6 +35,18 @@ class _TrackingAwaitedCloseFailureStream:
         raise RuntimeError("sensitive awaited close failure")
 
 
+class _TrackingCancelledCloseFailureStream:
+    """Record cleanup before a dependency-injected child self-cancels."""
+
+    def __init__(self) -> None:
+        self.close_called = False
+
+    async def aclose(self) -> None:
+        """Record invocation and raise child cancellation from cleanup."""
+        self.close_called = True
+        raise asyncio.CancelledError
+
+
 class _BlockingCloseStream:
     """Block inside ``aclose`` so coordinator cancellation can be observed."""
 
@@ -72,9 +84,13 @@ class _TrackingSuccessBackend:
 class _TrackingMultipleSuccessBackend:
     """Return one hostile-close stream per candidate while recording starts."""
 
-    def __init__(self) -> None:
+    def __init__(self, stream_type) -> None:
+        self._stream_type = stream_type
         self.started_hosts: list[str] = []
-        self.streams: list[_TrackingAwaitedCloseFailureStream] = []
+        self.streams: list[
+            _TrackingAwaitedCloseFailureStream
+            | _TrackingCancelledCloseFailureStream
+        ] = []
 
     async def connect_tcp(
         self,
@@ -86,7 +102,7 @@ class _TrackingMultipleSuccessBackend:
     ):
         """Create and return a distinct successful stream for this candidate."""
         self.started_hosts.append(host)
-        stream = _TrackingAwaitedCloseFailureStream()
+        stream = self._stream_type()
         self.streams.append(stream)
         return stream
 
@@ -221,13 +237,18 @@ async def test_deadline_cleanup_invokes_hostile_stream_close(monkeypatch, stream
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stream_type",
+    [_TrackingAwaitedCloseFailureStream, _TrackingCancelledCloseFailureStream],
+)
 async def test_predeadline_losing_stream_cleanup_cannot_replace_selected_stream(
     monkeypatch,
+    stream_type,
 ) -> None:
-    """Return one winner even when simultaneous loser cleanup raises."""
+    """Return one winner even when simultaneous loser cleanup fails."""
     _install_two_successes_before_deadline(monkeypatch)
     backend = _backend_with_three_addresses()
-    tracking_backend = _TrackingMultipleSuccessBackend()
+    tracking_backend = _TrackingMultipleSuccessBackend(stream_type)
     backend._backend = tracking_backend
 
     selected_stream = await backend.connect_tcp(
