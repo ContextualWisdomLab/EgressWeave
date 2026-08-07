@@ -128,6 +128,22 @@ any path whose lexical absolute form differs from its strict filesystem-resolved
 form. This makes the directory authority used for payload verification identical
 to the root excluded from manifest output.
 
+Direct public API callers using
+`write_evidence_manifest(..., forbidden_root=...)` have the same fail-closed
+precondition. The optional root must be one existing real directory reached
+through a lexical path with no symbolic-link component. Each named lexical
+component is inspected before parent traversal is normalized, so an intermediate
+symbolic link cannot be hidden by a later `..`; a `..` segment through only real
+non-symlink components remains valid when the resulting canonical directory
+satisfies the same root contract. Validation finishes before the output parent is
+created or the output path is touched; a missing, non-directory, symlinked,
+unresolvable, or otherwise noncanonical value raises the stable error
+`evidence manifest forbidden root is missing or unsafe`. The writer stores the
+resulting canonical path once and reuses that exact authority for the pre-open,
+descriptor-bound, and post-`fsync` containment checks. The CLI already supplies
+its previously canonicalized evidence root, so this public-API guard does not
+broaden or weaken the command-line contract.
+
 The evidence directory should already be sealed against concurrent writes by the
 build system or artifact service. Descriptor and repeated-digest checks are a
 fail-closed verification boundary, not a substitute for immutable storage or an
