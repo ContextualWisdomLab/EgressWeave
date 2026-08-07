@@ -75,7 +75,7 @@ async def _close_connection_stream_best_effort(stream) -> None:
         cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
     except (Exception, asyncio.CancelledError):  # noqa: BLE001
         return
-    await cleanup
+    _ = await cleanup
 
 
 class _DenyAllAsyncTransport(httpx.AsyncBaseTransport):
