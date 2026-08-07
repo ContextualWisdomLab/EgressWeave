@@ -49,6 +49,48 @@ class _ImmediateSuccessBackend:
         return self.stream
 
 
+class _ClosingStream:
+    """Record whether a completed connection stream was closed."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def aclose(self) -> None:
+        """Record deadline cleanup of a completed connection stream."""
+        self.closed = True
+
+
+class _DeadlineBoundarySuccessBackend:
+    """Return one closeable stream immediately at the coordinator boundary."""
+
+    def __init__(self) -> None:
+        self.stream = _ClosingStream()
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        return self.stream
+
+
+class _DeadlineBoundaryFailureBackend:
+    """Raise a sensitive child error immediately at the coordinator boundary."""
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        raise OSError(f"sensitive child failure for {host}")
+
+
 class _TimeoutIgnoringBackend:
     """Stay pending until cancelled, deliberately ignoring child timeout metadata."""
 
@@ -97,6 +139,34 @@ class _FailThenIgnoreTimeoutBackend:
             raise
 
 
+class _FakeLoopClock:
+    """Provide deterministic monotonic time for deadline-boundary regressions."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def time(self) -> float:
+        """Return the test-controlled monotonic timestamp."""
+        return self.now
+
+
+def _install_deadline_boundary_wait(monkeypatch) -> None:
+    """Make the first completed task become visible exactly at the deadline."""
+    clock = _FakeLoopClock()
+
+    async def wait_at_deadline(tasks, *, timeout, return_when):
+        assert timeout is not None
+        assert return_when is asyncio.FIRST_COMPLETED
+        await asyncio.sleep(0)
+        clock.now = 1.0
+        done = {task for task in tasks if task.done()}
+        assert done
+        return done, set(tasks) - done
+
+    monkeypatch.setattr(transport_module.asyncio, "get_running_loop", lambda: clock)
+    monkeypatch.setattr(transport_module.asyncio, "wait", wait_at_deadline)
+
+
 def _backend_with_three_addresses() -> _PinnedEgressNetworkBackend:
     policy = EgressPolicy.from_hosts("api.example.com")
     return _PinnedEgressNetworkBackend(
@@ -143,6 +213,36 @@ async def test_first_success_prevents_unnecessary_connection_attempts(monkeypatc
 
     assert stream is successful_backend.stream
     assert successful_backend.started_hosts == ["93.184.216.34"]
+
+
+@pytest.mark.asyncio
+async def test_deadline_boundary_rejects_completed_success_and_closes_stream(
+    monkeypatch,
+) -> None:
+    """Reject a completed stream first observed at the shared deadline."""
+    _install_deadline_boundary_wait(monkeypatch)
+    backend = _backend_with_three_addresses()
+    boundary_backend = _DeadlineBoundarySuccessBackend()
+    backend._backend = boundary_backend
+
+    with pytest.raises(OSError) as error:
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
+
+    assert str(error.value) == "egress URL is not allowed"
+    assert boundary_backend.stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_deadline_boundary_masks_completed_child_error(monkeypatch) -> None:
+    """Never expose a child error first observed at the shared deadline."""
+    _install_deadline_boundary_wait(monkeypatch)
+    backend = _backend_with_three_addresses()
+    backend._backend = _DeadlineBoundaryFailureBackend()
+
+    with pytest.raises(OSError) as error:
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
+
+    assert str(error.value) == "egress URL is not allowed"
 
 
 @pytest.mark.asyncio
