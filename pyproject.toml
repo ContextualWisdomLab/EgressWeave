@@ -71,7 +71,7 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 branch = true
-source = ["egressweave"]
+source_dirs = ["src/egressweave", "scripts/ci"]
 
 [tool.coverage.report]
 fail_under = 100
