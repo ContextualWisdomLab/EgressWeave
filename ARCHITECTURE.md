@@ -256,8 +256,13 @@ publication before the GitHub Release is made public.
   inherited secret contract are preserved.
 - At minute `37` each hour, product development runs only when no pull request is
   open. It uses a pinned OpenCode CLI with `NVIDIA_NIM_API_KEY`, not
-  `COPILOT_GITHUB_TOKEN`. Model execution, credential-free reverification, and
-  publication use separate runners and permissions.
+  `COPILOT_GITHUB_TOKEN`; model web/network tools are denied while runner egress
+  is restricted to reviewed package sources, GitHub, and the NVIDIA NIM endpoint.
+  Repository-local product development ends at the independently reverified
+  credential-free patch handoff and does not create branches, pull requests,
+  repository writes, or auto-merge requests. Any future repository promotion is
+  an external, independently reviewed, credential-separated promotion mechanism
+  that must reconstruct and verify the exact tree before any repository write.
 
 Neither automation path may treat queued, pending, cancelled, stale-head, or
 previous-head evidence as success.

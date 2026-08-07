@@ -15,6 +15,10 @@ MAINTENANCE_DOCUMENTATION_PATH = (
     REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
 )
 README_PATH = REPOSITORY_ROOT / "README.md"
+ARCHITECTURE_PATH = REPOSITORY_ROOT / "ARCHITECTURE.md"
+MODULAR_INTEGRATION_ADR_PATH = (
+    REPOSITORY_ROOT / "docs" / "adr" / "0001-security-boundaries-and-modular-integration.md"
+)
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
@@ -180,3 +184,58 @@ def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
     assert "bounded OpenCode maintainer" in readme
     assert "`NVIDIA_NIM_API_KEY`" in readme
     assert "COPILOT_GITHUB_TOKEN" not in readme
+
+
+def test_buyer_readme_forbids_repository_local_patch_publication() -> None:
+    """Keep buyer-facing workflow claims aligned with the read-only handoff."""
+    readme = " ".join(_read(README_PATH).split())
+
+    assert "A third publisher" not in readme
+    assert "ends at the independently reverified credential-free patch handoff" in readme
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in readme
+    )
+    assert "external, independently reviewed, credential-separated promotion" in readme
+    assert "reconstruct and verify the exact tree before any repository write" in readme
+
+
+def test_buyer_readme_describes_restricted_model_egress() -> None:
+    """Describe the scheduler network boundary without claiming zero connectivity."""
+    readme = " ".join(_read(README_PATH).split())
+
+    assert "no direct network access" not in readme
+    assert "runner egress is restricted" in readme
+    assert "model web/network tools are denied" in readme
+    assert "NVIDIA NIM endpoint" in readme
+
+
+def test_architecture_forbids_repository_local_product_publication() -> None:
+    """Keep architecture claims aligned with the read-only product handoff."""
+    architecture = " ".join(_read(ARCHITECTURE_PATH).split())
+
+    assert (
+        "Model execution, credential-free reverification, and publication use separate runners"
+        not in architecture
+    )
+    assert "product development ends at the independently reverified credential-free patch handoff" in architecture
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in architecture
+    )
+    assert "external, independently reviewed, credential-separated promotion" in architecture
+    assert "reconstruct and verify the exact tree before any repository write" in architecture
+
+
+def test_modular_integration_adr_forbids_repository_local_product_publication() -> None:
+    """Keep the accepted ADR aligned with the credential-free product handoff."""
+    decision = " ".join(_read(MODULAR_INTEGRATION_ADR_PATH).split())
+
+    assert "before a publishing identity creates a normal pull request" not in decision
+    assert "ends at the independently reverified credential-free patch handoff" in decision
+    assert (
+        "does not create branches, pull requests, repository writes, or auto-merge requests"
+        in decision
+    )
+    assert "external, independently reviewed, credential-separated promotion" in decision
+    assert "reconstruct and verify the exact tree before any repository write" in decision
