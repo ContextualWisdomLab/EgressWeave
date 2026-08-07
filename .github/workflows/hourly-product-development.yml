@@ -427,7 +427,7 @@ jobs:
               done
               ruff check .
               pytest -q
-              python -m compileall -q src tests
+              python -m compileall -q src tests scripts
             '
 
       - name: Recheck the independently verified immutable patch
