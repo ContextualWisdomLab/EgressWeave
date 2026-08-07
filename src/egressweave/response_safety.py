@@ -12,6 +12,7 @@ identity-coding invariant prevents decompression expansion outside the byte budg
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterable, Iterator
 
 import httpx
@@ -191,11 +192,18 @@ def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
 
 
 async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> None:
-    """Best-effort close a denied async stream without retaining backend errors."""
+    """Best-effort close a denied async stream while preserving caller cancellation.
+
+    A dependency-injected stream can fail or self-cancel during policy cleanup.
+    Those child outcomes are discarded because policy denial has already been
+    decided. Cancellation directed at this coordinator remains observable because
+    cancelling the outer task while it awaits ``gather`` still propagates.
+    """
     try:
-        await stream.aclose()
-    except Exception:  # noqa: BLE001
+        close_awaitable = stream.aclose()
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001
         return
+    await asyncio.gather(close_awaitable, return_exceptions=True)
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
