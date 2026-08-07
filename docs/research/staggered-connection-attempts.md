@@ -24,9 +24,12 @@ child error first observed at or after the deadline is discarded behind the
 stable generic policy failure. After a completed failure observed before the
 deadline, the coordinator checks the same deadline again immediately before it
 would schedule another candidate; if the budget has expired during result
-processing, no later candidate starts and the generic deadline failure wins.
-Staggered racing therefore does not multiply the caller's timeout or turn a
-completion delivered at the timeout boundary into an unbudgeted success. The
+processing, no later candidate starts and the generic deadline failure wins. An
+empty wait follows the same rule: the deadline is rechecked again immediately
+before the delayed candidate would be created, so time consumed between wait
+return and scheduling cannot create an out-of-budget connection task. Staggered
+racing therefore does not multiply the caller's timeout or turn a completion or
+scheduling boundary at the deadline into unbudgeted network work. The
 synchronous transport remains sequential.
 
 When the coordinator's deadline is exhausted, it cancels and awaits every
@@ -67,14 +70,15 @@ own finite connection deadline to child connection implementations.
 
 Python 3.13 documents that `asyncio.wait(..., timeout=...)` returns the `done`
 and `pending` task sets and does not raise `TimeoutError`; unfinished tasks are
-simply returned in the pending set. Because return from the wait and application
-consumption of a completed task are distinct events, EgressWeave rechecks its own
-monotonic deadline immediately after `asyncio.wait(...)` before accepting any
-task result and again before scheduling a later candidate after completed
-failures. Python also documents task cancellation as cooperative. On deadline
-exhaustion EgressWeave therefore cancels and awaits pending tasks explicitly,
-closes already completed successful streams, and does not treat a boundary-time
-completion as permission to exceed the caller's finite budget.
+simply returned in the pending set. Because return from the wait, application
+consumption of completed tasks, and delayed scheduling after an empty wait are
+distinct events, EgressWeave rechecks its own monotonic deadline immediately
+after `asyncio.wait(...)`, before scheduling a later candidate from an empty
+wait, and before scheduling a later candidate after completed failures. Python
+also documents task cancellation as cooperative. On deadline exhaustion
+EgressWeave therefore cancels and awaits pending tasks explicitly, closes already
+completed successful streams, and does not treat a boundary-time completion or
+empty wait as permission to exceed the caller's finite budget.
 
 CWE-400 identifies failure to constrain resource allocation as uncontrolled
 resource consumption and recommends limiting resources according to expected
@@ -106,9 +110,10 @@ also keep the final in-flight race alive after no further candidates remained to
 start. Without a post-wait deadline check, a task that becomes observable exactly
 as the shared budget expires could be accepted despite the caller's finite bound
 or expose target-specific child error text after timeout. Without the later
-pre-scheduling recheck, time spent processing a completed failure could also let
-the budget expire before another candidate is launched while preserving a stale
-child-specific failure as the final result.
+pre-scheduling checks, time spent after either an empty wait or a completed
+failure could let the budget expire before another candidate is launched while
+still creating out-of-budget work or preserving a stale child-specific failure as
+the final result.
 
 The combined controls preserve these invariants:
 
@@ -122,8 +127,9 @@ The combined controls preserve these invariants:
    is returned and every loser is cancelled and awaited;
 8. one absolute monotonic connection deadline is shared across every asynchronous
    attempt and coordinator wait;
-9. the coordinator rechecks that deadline immediately after every wait and before
-   scheduling a later candidate after completed failures; and
+9. the coordinator rechecks that deadline immediately after every wait, before
+   scheduling a later candidate after an empty wait, and before scheduling a
+   later candidate after completed failures; and
 10. deadline exhaustion closes completed successful streams and uses the generic
     egress failure even if a completed child produced more detailed connection
     text.
