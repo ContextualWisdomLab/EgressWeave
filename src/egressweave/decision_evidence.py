@@ -14,7 +14,7 @@ import hashlib
 import ipaddress
 import json
 from dataclasses import dataclass
-from importlib import resources
+from pathlib import Path
 from typing import cast
 
 from egressweave.policy import EgressPolicy
@@ -35,12 +35,8 @@ def get_decision_evidence_json_schema() -> dict[str, object]:
     and decoding the trusted package resource for each call deliberately avoids
     shared mutable schema state and does not require a JSON Schema dependency.
     """
-    schema_resource = (
-        resources.files("egressweave")
-        .joinpath("schemas")
-        .joinpath(_DECISION_EVIDENCE_SCHEMA_FILENAME)
-    )
-    with schema_resource.open("r", encoding="utf-8") as schema_file:
+    schema_path = Path(__file__).with_name("schemas") / _DECISION_EVIDENCE_SCHEMA_FILENAME
+    with schema_path.open("r", encoding="utf-8") as schema_file:
         return cast(dict[str, object], json.load(schema_file))
 
 
