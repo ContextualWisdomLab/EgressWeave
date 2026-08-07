@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib import resources
 from pathlib import Path
 
@@ -92,6 +93,44 @@ def test_schema_accepts_runtime_deny_all_method_policy_shape() -> None:
     allowed_methods = properties["allowed_methods"]
     assert isinstance(allowed_methods, dict)
     assert "minItems" not in allowed_methods
+
+
+def test_schema_method_items_match_runtime_normalization_contract() -> None:
+    """Reject method spellings that normalized runtime evidence cannot emit."""
+    validated = _make_validated_egress_url(
+        "https://api.example.com/v1/models",
+        "api.example.com",
+        443,
+        ("93.184.216.34",),
+    )
+    evidence = egressweave.build_egress_decision_evidence(
+        validated,
+        policy=egressweave.EgressPolicy.from_hosts(
+            "api.example.com",
+            allowed_methods={"get", "m-search"},
+        ),
+    ).as_dict()
+    assert evidence["allowed_methods"] == ["GET", "M-SEARCH"]
+
+    properties = _load_schema()["properties"]
+    assert isinstance(properties, dict)
+    allowed_methods = properties["allowed_methods"]
+    assert isinstance(allowed_methods, dict)
+    method_items = allowed_methods["items"]
+    assert isinstance(method_items, dict)
+    assert method_items == {
+        "type": "string",
+        "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
+        "not": {"const": "CONNECT"},
+    }
+
+    method_pattern = method_items["pattern"]
+    assert isinstance(method_pattern, str)
+    assert all(re.fullmatch(method_pattern, method) for method in evidence["allowed_methods"])
+    assert re.fullmatch(method_pattern, "CONNECT") is not None
+    assert method_items["not"] == {"const": "CONNECT"}
+    for impossible_method in ("get", "GET POST", "méthod"):
+        assert re.fullmatch(method_pattern, impossible_method) is None
 
 
 def test_schema_loader_returns_detached_data_on_every_call() -> None:
