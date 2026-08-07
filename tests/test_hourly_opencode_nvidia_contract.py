@@ -197,3 +197,37 @@ def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
 
     assert checksum_line in workflow_lines
     assert fallback_line in workflow_lines
+
+
+def test_offline_verifier_materializes_the_complete_repository_contract() -> None:
+    """Make every repository-owned test input available before offline checks run."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    verifier = workflow.split(
+        "Test only inside the offline least-privilege verifier container",
+        1,
+    )[1].split("Recheck the independently verified immutable patch", 1)[0]
+
+    for required_directory in (
+        "/source/src",
+        "/source/tests",
+        "/source/docs",
+        "/source/.github",
+        "/source/scripts",
+    ):
+        assert required_directory in verifier
+
+    root_loop = "for root_file in /source/* /source/.[!.]* /source/..?*; do"
+    regular_file_guard = (
+        '[ -f "$root_file" ] && [ ! -L "$root_file" ] || continue'
+    )
+    root_copy = (
+        'cp --no-preserve=ownership,mode,timestamps "$root_file" /work/'
+    )
+    assert root_loop in verifier
+    assert regular_file_guard in verifier
+    assert root_copy in verifier
+    assert verifier.index(root_loop) < verifier.index("ruff check .")
+    assert verifier.index(root_copy) < verifier.index("pytest -q")
+    assert verifier.index(root_copy) < verifier.index(
+        "python -m compileall -q src tests"
+    )
