@@ -77,6 +77,24 @@ class _MalformedAsyncRequestStream(httpx.AsyncByteStream):
             raise RuntimeError("private request stream close failure")
 
 
+class _SynchronousCleanupFailureAsyncRequestStream(httpx.AsyncByteStream):
+    """Raise before returning an awaitable from injected async cleanup."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one chunk and record cleanup entry."""
+        self._chunk = chunk
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured chunk before the wrapper applies its boundary."""
+        yield self._chunk
+
+    def aclose(self):
+        """Model an injected stream that violates the static awaitable contract."""
+        self.closed = True
+        raise RuntimeError("private synchronous request cleanup failure")
+
+
 class _SelfCancellingAsyncRequestStream(httpx.AsyncByteStream):
     """Raise child ``CancelledError`` when an injected source is closed."""
 
@@ -201,6 +219,21 @@ async def test_async_request_stream_preserves_exact_bytes_accounting() -> None:
 
     assert [chunk async for chunk in stream] == [b"abcd"]
     await stream.aclose()
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("chunk", [bytearray(b"abc"), b"abcde"])
+async def test_async_policy_denial_masks_synchronous_cleanup_failure(
+    chunk: object,
+) -> None:
+    """Mask a call-time cleanup error from an injected async request stream."""
+    source = _SynchronousCleanupFailureAsyncRequestStream(chunk)
+    stream = _BoundedAsyncRequestStream(source, max_request_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
     assert source.closed is True
 
 
