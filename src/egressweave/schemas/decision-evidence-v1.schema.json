@@ -35,7 +35,7 @@
     },
     "address_count": {
       "type": "integer",
-      "minimum": 0
+      "minimum": 1
     },
     "ipv4_address_count": {
       "type": "integer",
