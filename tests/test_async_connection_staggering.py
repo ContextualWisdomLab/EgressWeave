@@ -68,6 +68,14 @@ class _SynchronousCloseFailureStream:
         raise RuntimeError("sensitive synchronous close failure")
 
 
+class _AwaitedCloseFailureStream:
+    """Raise while awaiting deadline cleanup from an injected stream."""
+
+    async def aclose(self) -> None:
+        """Expose a hostile asynchronous cleanup failure from an injected stream."""
+        raise RuntimeError("sensitive awaited close failure")
+
+
 class _DeadlineBoundarySuccessBackend:
     """Return one closeable stream immediately at the coordinator boundary."""
 
@@ -90,6 +98,23 @@ class _DeadlineBoundarySynchronousCloseFailureBackend:
 
     def __init__(self) -> None:
         self.stream = _SynchronousCloseFailureStream()
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        return self.stream
+
+
+class _DeadlineBoundaryAwaitedCloseFailureBackend:
+    """Return a stream whose cleanup raises while its awaitable executes."""
+
+    def __init__(self) -> None:
+        self.stream = _AwaitedCloseFailureStream()
 
     async def connect_tcp(
         self,
@@ -279,6 +304,24 @@ async def test_deadline_boundary_masks_synchronous_stream_cleanup_error(
     _install_deadline_boundary_wait(monkeypatch)
     backend = _backend_with_three_addresses()
     boundary_backend = _DeadlineBoundarySynchronousCloseFailureBackend()
+    backend._backend = boundary_backend
+
+    with pytest.raises(OSError) as error:
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
+
+    assert str(error.value) == "egress URL is not allowed"
+    assert error.value.__context__ is None
+    assert error.value.__cause__ is None
+
+
+@pytest.mark.asyncio
+async def test_deadline_boundary_masks_awaited_stream_cleanup_error(
+    monkeypatch,
+) -> None:
+    """Keep an awaited cleanup failure behind the same generic denial."""
+    _install_deadline_boundary_wait(monkeypatch)
+    backend = _backend_with_three_addresses()
+    boundary_backend = _DeadlineBoundaryAwaitedCloseFailureBackend()
     backend._backend = boundary_backend
 
     with pytest.raises(OSError) as error:
