@@ -132,13 +132,17 @@ async def _close_async_request_after_policy_denial(
 ) -> None:
     """Consume child cleanup failures while preserving coordinator cancellation.
 
-    Policy denial has already been decided when this helper runs. A child stream
-    may therefore fail or self-cancel without replacing that decision. Using
-    ``gather(..., return_exceptions=True)`` consumes the child outcome, while a
-    cancellation directed at the coordinator that is awaiting the gather still
-    propagates to its caller.
+    Policy denial has already been decided when this helper runs. A dependency-
+    injected stream may violate the static async contract by raising while
+    ``aclose`` is called, or may fail or self-cancel after returning its awaitable.
+    Those child outcomes are discarded. Cancellation directed at the coordinator
+    while it awaits the gather still propagates to its caller.
     """
-    await asyncio.gather(stream.aclose(), return_exceptions=True)
+    try:
+        close_awaitable = stream.aclose()
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+        return
+    await asyncio.gather(close_awaitable, return_exceptions=True)
 
 
 class _BoundedAsyncRequestStream(httpx.AsyncByteStream):
