@@ -8,14 +8,17 @@ clock-derived fields, so identical inputs produce byte-identical JSON.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import io
 import json
 import os
 import re
 import stat
+import struct
 import tarfile
 import zipfile
+import zlib
 from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
@@ -32,6 +35,14 @@ CYCLONEDX_SPEC_VERSION = "1.7"
 MAX_METADATA_BYTES = MAX_MANIFEST_BYTES = 1_048_576
 MAX_ARCHIVE_MEMBERS = 10_000
 MAX_RELEASE_ARTIFACT_BYTES = 256 * 1024 * 1024
+MAX_EXPANDED_TAR_BYTES = 512 * 1024 * 1024
+MAX_TAR_EXTENSION_BYTES = 1 * 1024 * 1024
+ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
+ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
+ZIP64_EOCD_LOCATOR_SIZE = 20
+ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
+ZIP_EOCD = struct.Struct("<4s4H2LH")
+ZIP_CENTRAL_HEADER = struct.Struct("<4s6H3L5H2L")
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REVIEWED_SPDX_LICENSE_IDS = frozenset(
@@ -271,9 +282,226 @@ def _parse_metadata(payload: bytes, source: str) -> Message:
     return BytesParser(policy=default).parsebytes(payload)
 
 
+def _read_exact(stream: BinaryIO, size: int, error_message: str) -> bytes:
+    """Read exactly ``size`` bytes or reject a truncated untrusted archive."""
+    payload = stream.read(size)
+    if len(payload) != size:
+        raise SystemExit(error_message)
+    return payload
+
+
+def _find_zip_eocd(stream: BinaryIO) -> tuple[int, tuple[int, ...]]:
+    """Locate one canonical single-disk ZIP end record with a bounded tail read."""
+    invalid = "release wheel is not a valid ZIP archive"
+    archive_size = _require_live_artifact_descriptor(stream)
+    tail_size = min(archive_size, ZIP_EOCD.size + 65_535)
+    stream.seek(archive_size - tail_size)
+    tail = _read_exact(stream, tail_size, invalid)
+    candidate = tail.rfind(ZIP_EOCD_SIGNATURE)
+    while candidate >= 0:
+        if candidate + ZIP_EOCD.size <= len(tail):
+            record = ZIP_EOCD.unpack_from(tail, candidate)
+            if candidate + ZIP_EOCD.size + record[-1] == len(tail):
+                return archive_size - tail_size + candidate, record[1:]
+        candidate = tail.rfind(ZIP_EOCD_SIGNATURE, 0, candidate)
+    raise SystemExit(invalid)
+
+
+def _zip_extra_uses_zip64(extra: bytes) -> bool:
+    """Return whether a central-directory extra field declares ZIP64 data."""
+    cursor = 0
+    while cursor < len(extra):
+        if cursor + 4 > len(extra):
+            raise SystemExit("release wheel is not a valid ZIP archive")
+        field_id, field_size = struct.unpack_from("<HH", extra, cursor)
+        cursor += 4
+        if cursor + field_size > len(extra):
+            raise SystemExit("release wheel is not a valid ZIP archive")
+        if field_id == 0x0001:
+            return True
+        cursor += field_size
+    return False
+
+
+def _preflight_wheel_members(stream: BinaryIO) -> None:
+    """Count canonical ZIP members before ``ZipFile`` allocates ``ZipInfo`` objects."""
+    invalid = "release wheel is not a valid ZIP archive"
+    eocd_offset, fields = _find_zip_eocd(stream)
+    disk_number, directory_disk, disk_entries, total_entries, size, offset, _ = fields
+    if (
+        disk_number != 0
+        or directory_disk != 0
+        or disk_entries != total_entries
+        or ZIP64_EOCD_LOCATOR_SIGNATURE
+        in _zip_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+    ):
+        raise SystemExit(invalid)
+    if (
+        total_entries == 0xFFFF
+        or size == 0xFFFFFFFF
+        or offset == 0xFFFFFFFF
+        or offset + size != eocd_offset
+    ):
+        raise SystemExit(invalid)
+    if total_entries > MAX_ARCHIVE_MEMBERS:
+        raise SystemExit("wheel exceeds the archive-member safety bound")
+
+    stream.seek(offset)
+    consumed = 0
+    actual_entries = 0
+    while consumed < size:
+        fixed = _read_exact(stream, ZIP_CENTRAL_HEADER.size, invalid)
+        consumed += len(fixed)
+        values = ZIP_CENTRAL_HEADER.unpack(fixed)
+        if values[0] != ZIP_CENTRAL_SIGNATURE:
+            raise SystemExit(invalid)
+        compressed_size, uncompressed_size = values[8], values[9]
+        name_size, extra_size, comment_size = values[10], values[11], values[12]
+        start_disk, local_offset = values[13], values[16]
+        variable_size = name_size + extra_size + comment_size
+        if consumed + variable_size > size:
+            raise SystemExit(invalid)
+        variable = _read_exact(stream, variable_size, invalid)
+        consumed += variable_size
+        extra = variable[name_size : name_size + extra_size]
+        if (
+            start_disk != 0
+            or compressed_size == 0xFFFFFFFF
+            or uncompressed_size == 0xFFFFFFFF
+            or local_offset == 0xFFFFFFFF
+            or _zip_extra_uses_zip64(extra)
+        ):
+            raise SystemExit(invalid)
+        actual_entries += 1
+        if actual_entries > MAX_ARCHIVE_MEMBERS:
+            raise SystemExit("wheel exceeds the archive-member safety bound")
+    if consumed != size or actual_entries != total_entries:
+        raise SystemExit(invalid)
+    stream.seek(0)
+
+
+def _zip_tail_before(stream: BinaryIO, offset: int, size: int) -> bytes:
+    """Read at most ``size`` bytes immediately before one ZIP structure."""
+    start = max(0, offset - size)
+    stream.seek(start)
+    return _read_exact(
+        stream,
+        offset - start,
+        "release wheel is not a valid ZIP archive",
+    )
+
+
+def _tar_number(field: bytes) -> int:
+    """Parse a canonical non-negative POSIX tar octal number."""
+    if field and field[0] & 0x80:
+        raise SystemExit("release source distribution is not a valid gzip tar")
+    stripped = field.rstrip(b"\x00 ").lstrip(b" ")
+    if not stripped:
+        return 0
+    if any(byte < ord("0") or byte > ord("7") for byte in stripped):
+        raise SystemExit("release source distribution is not a valid gzip tar")
+    return int(stripped, 8)
+
+
+def _require_tar_checksum(header: bytes) -> None:
+    """Require the stored POSIX tar checksum to match one physical header."""
+    expected = _tar_number(header[148:156])
+    observed = sum(header[:148]) + (8 * ord(" ")) + sum(header[156:])
+    if observed != expected:
+        raise SystemExit("release source distribution is not a valid gzip tar")
+
+
+def _read_expanded(
+    stream: BinaryIO,
+    size: int,
+    consumed: int,
+    *,
+    retain: bool = True,
+) -> tuple[bytes, int]:
+    """Read or skip bounded expanded tar bytes without one large allocation."""
+    invalid = "release source distribution is not a valid gzip tar"
+    if size < 0 or consumed + size > MAX_EXPANDED_TAR_BYTES:
+        raise SystemExit("source distribution exceeds the expanded-tar safety bound")
+    chunks: list[bytes] = []
+    remaining = size
+    while remaining:
+        chunk = stream.read(min(remaining, 1_048_576))
+        if not chunk:
+            raise SystemExit(invalid)
+        if retain:
+            chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks), consumed + size
+
+
+def _preflight_sdist_members(stream: BinaryIO) -> None:
+    """Bound gzip/tar expansion and physical headers before semantic parsing."""
+    invalid = "release source distribution is not a valid gzip tar"
+    stream.seek(0)
+    consumed = 0
+    members = 0
+    zero_headers = 0
+    try:
+        with gzip.GzipFile(fileobj=stream, mode="rb") as expanded:
+            while zero_headers < 2:
+                header, consumed = _read_expanded(expanded, 512, consumed)
+                if header == b"\x00" * 512:
+                    zero_headers += 1
+                    continue
+                zero_headers = 0
+                _require_tar_checksum(header)
+                members += 1
+                if members > MAX_ARCHIVE_MEMBERS:
+                    raise SystemExit(
+                        "source distribution exceeds the archive-member safety bound"
+                    )
+                size = _tar_number(header[124:136])
+                type_flag = header[156:157]
+                if type_flag in {b"1", b"2", b"3", b"4", b"6", b"7", b"S"}:
+                    raise SystemExit(
+                        "source distribution contains a link or special file"
+                    )
+                if type_flag not in {b"\x00", b"0", b"5", b"x", b"g", b"L"}:
+                    raise SystemExit(
+                        "source distribution contains an unsupported tar form"
+                    )
+                if type_flag in {b"x", b"g", b"L"} and size > MAX_TAR_EXTENSION_BYTES:
+                    raise SystemExit(
+                        "source distribution extension header exceeds the safety bound"
+                    )
+                padded_size = (size + 511) // 512 * 512
+                payload, consumed = _read_expanded(
+                    expanded,
+                    padded_size,
+                    consumed,
+                    retain=type_flag in {b"x", b"g"},
+                )
+                if type_flag in {b"x", b"g"} and b"GNU.sparse." in payload[:size]:
+                    raise SystemExit(
+                        "source distribution contains a sparse archive form"
+                    )
+            while True:
+                trailing = expanded.read(1_048_576)
+                if not trailing:
+                    break
+                if consumed + len(trailing) > MAX_EXPANDED_TAR_BYTES:
+                    raise SystemExit(
+                        "source distribution exceeds the expanded-tar safety bound"
+                    )
+                if trailing.strip(b"\x00"):
+                    raise SystemExit(invalid)
+                consumed += len(trailing)
+    except SystemExit:
+        raise
+    except (OSError, EOFError, zlib.error) as error:
+        raise SystemExit(invalid) from error
+    finally:
+        stream.seek(0)
+
+
 def _wheel_metadata(stream: BinaryIO) -> Message:
     """Read the sole bounded wheel METADATA member from the bound archive."""
-    stream.seek(0)
+    _preflight_wheel_members(stream)
     try:
         with zipfile.ZipFile(stream) as archive:
             members = archive.infolist()
@@ -291,31 +519,72 @@ def _wheel_metadata(stream: BinaryIO) -> Message:
 
 
 def _sdist_metadata(stream: BinaryIO) -> Message:
-    """Read the sole bounded root PKG-INFO member from the bound archive."""
-    stream.seek(0)
+    """Read one root PKG-INFO while retaining only bounded streaming state."""
+    _preflight_sdist_members(stream)
+    selected_payload: bytes | None = None
+    seen_names: set[str] = set()
+    member_count = 0
     try:
-        with tarfile.open(fileobj=stream, mode="r:gz") as archive:
-            members = archive.getmembers()
-            _check_archive_names([item.name for item in members], "source distribution")
-            if any(item.issym() or item.islnk() or item.isdev() for item in members):
-                raise SystemExit("source distribution contains a link or device")
-            selected = [
-                item
-                for item in members
-                if item.isfile()
-                and len(PurePosixPath(item.name).parts) == 2
-                and PurePosixPath(item.name).name == "PKG-INFO"
-            ]
-            if len(selected) != 1:
-                raise SystemExit("source distribution must contain one root PKG-INFO")
-            if selected[0].size > MAX_METADATA_BYTES:
-                raise SystemExit("source distribution metadata exceeds the safety bound")
-            extracted = archive.extractfile(selected[0])
-            if extracted is None:
-                raise SystemExit("source distribution metadata could not be read")
-            return _parse_metadata(extracted.read(), "source distribution")
+        with tarfile.open(fileobj=stream, mode="r|gz") as archive:
+            for member in archive:
+                member_count += 1
+                if member_count > MAX_ARCHIVE_MEMBERS:
+                    raise SystemExit(
+                        "source distribution exceeds the archive-member safety bound"
+                    )
+                if member.name in seen_names:
+                    raise SystemExit(
+                        "source distribution contains duplicate archive paths"
+                    )
+                seen_names.add(member.name)
+                if not _safe_archive_name(member.name):
+                    raise SystemExit(
+                        "source distribution contains an unsafe archive path"
+                    )
+                if (
+                    member.issym()
+                    or member.islnk()
+                    or member.isdev()
+                    or member.isfifo()
+                ):
+                    raise SystemExit(
+                        "source distribution contains a link or special file"
+                    )
+                if member.issparse():
+                    raise SystemExit(
+                        "source distribution contains a sparse archive form"
+                    )
+                if not (member.isfile() or member.isdir()):
+                    raise SystemExit(
+                        "source distribution contains an unsupported tar form"
+                    )
+                path = PurePosixPath(member.name)
+                if (
+                    member.isfile()
+                    and len(path.parts) == 2
+                    and path.name == "PKG-INFO"
+                ):
+                    if selected_payload is not None:
+                        raise SystemExit(
+                            "source distribution must contain one root PKG-INFO"
+                        )
+                    if member.size > MAX_METADATA_BYTES:
+                        raise SystemExit(
+                            "source distribution metadata exceeds the safety bound"
+                        )
+                    extracted = archive.extractfile(member)
+                    if extracted is None:
+                        raise SystemExit(
+                            "source distribution metadata could not be read"
+                        )
+                    selected_payload = extracted.read(MAX_METADATA_BYTES + 1)
+        if selected_payload is None:
+            raise SystemExit("source distribution must contain one root PKG-INFO")
+        return _parse_metadata(selected_payload, "source distribution")
     except tarfile.TarError as error:
-        raise SystemExit("release source distribution is not a valid gzip tar") from error
+        raise SystemExit(
+            "release source distribution is not a valid gzip tar"
+        ) from error
 
 
 def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:
