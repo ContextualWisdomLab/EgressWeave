@@ -11,6 +11,11 @@ import egressweave
 from egressweave.validation import _make_validated_egress_url
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+_METHOD_ITEM_SCHEMA = {
+    "type": "string",
+    "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
+    "not": {"const": "CONNECT"},
+}
 
 
 def _load_schema() -> dict[str, object]:
@@ -56,7 +61,7 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
     assert properties["allowed_methods"] == {
         "type": "array",
         "uniqueItems": True,
-        "items": {"type": "string", "minLength": 1},
+        "items": _METHOD_ITEM_SCHEMA,
     }
     for count_field in (
         "address_count",
@@ -118,11 +123,7 @@ def test_schema_method_items_match_runtime_normalization_contract() -> None:
     assert isinstance(allowed_methods, dict)
     method_items = allowed_methods["items"]
     assert isinstance(method_items, dict)
-    assert method_items == {
-        "type": "string",
-        "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
-        "not": {"const": "CONNECT"},
-    }
+    assert method_items == _METHOD_ITEM_SCHEMA
 
     method_pattern = method_items["pattern"]
     assert isinstance(method_pattern, str)
