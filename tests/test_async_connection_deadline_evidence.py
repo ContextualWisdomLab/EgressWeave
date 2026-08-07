@@ -55,6 +55,28 @@ class _TrackingSuccessBackend:
         return self.stream
 
 
+class _TrackingMultipleSuccessBackend:
+    """Return one hostile-close stream per candidate while recording starts."""
+
+    def __init__(self) -> None:
+        self.started_hosts: list[str] = []
+        self.streams: list[_TrackingAwaitedCloseFailureStream] = []
+
+    async def connect_tcp(
+        self,
+        host,
+        port,
+        timeout=None,
+        local_address=None,
+        socket_options=None,
+    ):
+        """Create and return a distinct successful stream for this candidate."""
+        self.started_hosts.append(host)
+        stream = _TrackingAwaitedCloseFailureStream()
+        self.streams.append(stream)
+        return stream
+
+
 class _TrackingFailureBackend:
     """Raise a sensitive child error while recording candidate starts."""
 
@@ -113,6 +135,31 @@ def _install_deadline_boundary_wait(monkeypatch) -> None:
     monkeypatch.setattr(transport_module.asyncio, "wait", wait_at_deadline)
 
 
+def _install_two_successes_before_deadline(monkeypatch) -> None:
+    """Expose two successful attempts together while the shared budget remains."""
+    clock = _FakeLoopClock()
+    wait_calls = 0
+
+    async def wait_before_deadline(tasks, *, timeout, return_when):
+        nonlocal wait_calls
+        assert timeout is not None
+        assert return_when is asyncio.FIRST_COMPLETED
+        wait_calls += 1
+        await asyncio.sleep(0)
+        if wait_calls == 1:
+            clock.now = 0.25
+            assert len(tasks) == 1
+            return set(), set(tasks)
+        assert wait_calls == 2
+        assert len(tasks) == 2
+        await asyncio.gather(*tasks)
+        clock.now = 0.5
+        return set(tasks), set()
+
+    monkeypatch.setattr(transport_module.asyncio, "get_running_loop", lambda: clock)
+    monkeypatch.setattr(transport_module.asyncio, "wait", wait_before_deadline)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "stream_type",
@@ -134,6 +181,28 @@ async def test_deadline_cleanup_invokes_hostile_stream_close(monkeypatch, stream
     assert error.value.__cause__ is None
     assert stream.close_called is True
     assert tracking_backend.started_hosts == ["93.184.216.34"]
+
+
+@pytest.mark.asyncio
+async def test_predeadline_losing_stream_cleanup_cannot_replace_selected_stream(
+    monkeypatch,
+) -> None:
+    """Return one winner even when simultaneous loser cleanup raises."""
+    _install_two_successes_before_deadline(monkeypatch)
+    backend = _backend_with_three_addresses()
+    tracking_backend = _TrackingMultipleSuccessBackend()
+    backend._backend = tracking_backend
+
+    selected_stream = await backend.connect_tcp(
+        "api.example.com",
+        443,
+        timeout=1.0,
+    )
+
+    assert selected_stream in tracking_backend.streams
+    assert tracking_backend.started_hosts == ["93.184.216.34", "1.1.1.1"]
+    assert sum(stream.close_called for stream in tracking_backend.streams) == 1
+    assert selected_stream.close_called is False
 
 
 @pytest.mark.asyncio
