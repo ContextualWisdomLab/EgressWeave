@@ -184,7 +184,8 @@ def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
 
 def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
     """Keep shell format escapes on one YAML line so workflow parsing succeeds."""
-    workflow_lines = _read(PRODUCT_WORKFLOW_PATH).splitlines()
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    workflow_lines = workflow.splitlines()
     checksum_line = (
         "          printf '%s  %s\\n' "
         '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
@@ -197,6 +198,7 @@ def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
 
     assert checksum_line in workflow_lines
     assert fallback_line in workflow_lines
+    assert workflow.endswith("\n")
 
 
 def test_offline_verifier_materializes_the_complete_repository_contract() -> None:
