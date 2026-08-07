@@ -167,3 +167,14 @@ def test_authoritative_docs_publish_versioned_schema_contract() -> None:
     ):
         assert required_fragment in architecture
         assert required_fragment in changelog
+
+
+def test_changelog_records_runtime_aligned_schema_bounds() -> None:
+    """Keep release notes explicit about method and address-count validation."""
+    changelog = (_REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    for required_fragment in (
+        "`CONNECT`",
+        "`address_count`",
+    ):
+        assert required_fragment in changelog
