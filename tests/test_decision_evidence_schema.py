@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 from importlib import resources
+from pathlib import Path
 
 import egressweave
 from egressweave.validation import _make_validated_egress_url
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_schema() -> dict[str, object]:
@@ -91,3 +94,16 @@ def test_schema_is_a_packaged_utf8_json_resource() -> None:
         packaged_schema = json.load(schema_file)
 
     assert packaged_schema == _load_schema()
+
+
+def test_authoritative_docs_publish_versioned_schema_contract() -> None:
+    """Keep architecture and changelog aligned with the public schema contract."""
+    architecture = (_REPOSITORY_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    changelog = (_REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+
+    for required_fragment in (
+        "decision-evidence-v1.schema.json",
+        "get_decision_evidence_json_schema()",
+    ):
+        assert required_fragment in architecture
+        assert required_fragment in changelog
