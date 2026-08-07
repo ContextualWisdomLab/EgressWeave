@@ -27,9 +27,11 @@ The control is enforced at three boundaries:
    dishonestly under-declared responses. The first valid byte chunk that would
    exceed the policy budget is not exposed; the source stream is closed and the
    same generic policy error is raised. Policy-denial cleanup is best effort:
-   exceptions raised by a dependency-injected `close()` or `aclose()` are
-   discarded before the stable denial exception is created, so backend-private
-   cleanup details are not retained as its cause or exception context.
+   exceptions or self-cancellation produced by a dependency-injected child
+   `close()` or `aclose()` path are discarded before the stable denial exception
+   is created, so backend-private cleanup details are not retained as its cause
+   or exception context. Cancellation directed at the consuming coordinator
+   while async cleanup is awaited still propagates.
 
 Responses to `HEAD`, informational responses, `204 No Content`, and
 `304 Not Modified` are treated as bodyless. Their `Content-Encoding` and
@@ -58,10 +60,15 @@ byte buffer later exposed to a caller. EgressWeave accepts only exact built-in
 `bytes` chunks and never calls conversion or length protocols on a malformed
 chunk. Cleanup performed because the policy has already denied a stream is also
 an untrusted backend boundary: cleanup is attempted, backend cleanup exceptions
-are consumed internally, and the caller receives a newly created generic policy
-denial with no retained backend cause or exception context. These rules are
+or child self-cancellation are consumed internally, and the caller receives a
+newly created generic policy denial with no retained backend cause or exception
+context. Python 3.13 documents that `CancelledError` is a `BaseException` and
+that `asyncio.gather(..., return_exceptions=True)` treats a cancelled child as a
+result while cancellation of the gather itself propagates to submitted
+awaitables. EgressWeave uses that distinction only for post-denial child cleanup;
+cancellation of the consuming coordinator remains visible. These rules are
 EgressWeave integration-hardening contracts, not claims that HTTPX ordinarily
-emits malformed chunks or hostile cleanup exceptions.
+emits malformed chunks or hostile cleanup failures.
 
 A header-only length check is insufficient because HTTP permits responses whose
 body length is determined by transfer coding or connection closure, and a
@@ -85,7 +92,9 @@ Custom injected response streams must satisfy the same byte-stream contract as
 HTTPX and yield exact built-in `bytes` chunks; accepting subclass or buffer
 coercion would weaken the resource-accounting trust boundary. Ordinary
 caller-requested `close()` or `aclose()` behavior remains unchanged; only cleanup
-performed after a policy denial discards backend cleanup exceptions.
+performed after a policy denial discards backend cleanup exceptions or child
+self-cancellation, and cancellation directed at the caller/coordinator still
+propagates.
 
 ## References
 
@@ -100,3 +109,7 @@ Common Weakness Enumeration. https://cwe.mitre.org/data/definitions/400.html
 
 Encode OSS Ltd. (n.d.). *Developer interface*. HTTPX. Retrieved August 7, 2026,
 from https://www.python-httpx.org/api/
+
+Python Software Foundation. (2026). *Coroutines and tasks — Python 3.13.14
+documentation*. Retrieved August 7, 2026, from
+https://docs.python.org/3.13/library/asyncio-task.html
