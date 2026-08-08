@@ -184,9 +184,17 @@ def _require_exact_response_chunk(chunk: object) -> bytes:
 
 
 def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
-    """Best-effort close a denied sync stream without retaining backend errors."""
+    """Best-effort close a denied sync stream without hiding process control flow.
+
+    Dependency-controlled custom ``BaseException`` subclasses are contained so
+    they cannot replace the already-decided public policy denial. Interpreter
+    control-flow exceptions still propagate and are never converted into an
+    application-level denial.
+    """
     try:
         stream.close()
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
     except BaseException:  # noqa: BLE001
         return
 
@@ -197,13 +205,16 @@ async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> Non
     Policy denial is already decided before this helper runs. A dependency-injected
     implementation may violate the static async-stream contract by raising while
     ``aclose`` is called, returning a non-awaitable value, or failing or
-    self-cancelling after returning its awaitable. Those child outcomes are
-    discarded. Cancellation directed at the coordinator while it awaits the
-    gather still propagates to its caller.
+    self-cancelling after returning its awaitable. Custom child failures and child
+    cancellation are discarded. Keyboard interrupt, process exit, and generator
+    exit raised directly during cleanup setup propagate. Cancellation directed at
+    the coordinator while it awaits the gather also propagates to its caller.
     """
     try:
         close_awaitable = stream.aclose()
         cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
     except BaseException:  # noqa: BLE001
         return
     _ = await cleanup
