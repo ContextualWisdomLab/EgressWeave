@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from egressweave import EgressPolicy
-from egressweave import sync_transport as sync_transport_module
-from egressweave import transport as async_transport_module
+from egressweave import (
+    EgressPolicy,
+    sync_transport as sync_transport_module,
+    transport as async_transport_module,
+)
 
 
 _POLICY = EgressPolicy.from_hosts("api.example.com")
