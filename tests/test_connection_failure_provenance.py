@@ -8,7 +8,6 @@ import pytest
 
 from egressweave import EgressPolicy
 
-
 async_transport_module = import_module("egressweave.transport")
 sync_transport_module = import_module("egressweave.sync_transport")
 
