@@ -74,6 +74,22 @@ def _enforce_declared_request_size(
     return declared_bytes
 
 
+def _close_sync_request_after_policy_denial(stream: httpx.SyncByteStream) -> None:
+    """Contain hostile denied-stream cleanup while preserving process control flow.
+
+    Policy denial has already been decided when this helper runs. Dependency-
+    controlled custom ``BaseException`` subclasses are discarded so they cannot
+    replace or become provenance for the public denial. Interpreter control-flow
+    exceptions remain outside that application-level boundary and propagate.
+    """
+    try:
+        stream.close()
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException:  # noqa: BLE001
+        return
+
+
 class _BoundedSyncRequestStream(httpx.SyncByteStream):
     """Forward one synchronous request within policy and framing bounds."""
 
@@ -93,13 +109,13 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
     def __iter__(self) -> Iterator[bytes]:
         """Yield exact bytes only after cumulative and framing-limit checks."""
         if self._iteration_started:
-            self.close()
+            _close_sync_request_after_policy_denial(self._stream)
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         self._iteration_started = True
 
         for chunk in self._stream:
             if type(chunk) is not bytes:
-                self.close()
+                _close_sync_request_after_policy_denial(self._stream)
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             self._consumed_bytes += len(chunk)
             exceeds_declared_length = (
@@ -110,7 +126,7 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
                 self._consumed_bytes > self._max_request_bytes
                 or exceeds_declared_length
             ):
-                self.close()
+                _close_sync_request_after_policy_denial(self._stream)
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             yield chunk
 
@@ -118,11 +134,11 @@ class _BoundedSyncRequestStream(httpx.SyncByteStream):
             self._declared_request_bytes is not None
             and self._consumed_bytes != self._declared_request_bytes
         ):
-            self.close()
+            _close_sync_request_after_policy_denial(self._stream)
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     def close(self) -> None:
-        """Close the untrusted source without leaking cleanup failures."""
+        """Close the untrusted source without leaking ordinary cleanup failures."""
         with suppress(Exception):
             self._stream.close()
 
@@ -136,13 +152,16 @@ async def _close_async_request_after_policy_denial(
     injected stream may violate the static async contract by raising while
     ``aclose`` is called, returning a non-awaitable value, or failing or
     self-cancelling after returning its awaitable. Those child outcomes are
-    discarded. Cancellation directed at the coordinator while it awaits the
-    gather still propagates to its caller.
+    discarded. Interpreter control flow raised directly during cleanup setup and
+    cancellation directed at the coordinator while it awaits the gather still
+    propagate to the caller.
     """
     try:
         close_awaitable = stream.aclose()
         cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
-    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException:  # noqa: BLE001
         return
     _ = await cleanup
 
