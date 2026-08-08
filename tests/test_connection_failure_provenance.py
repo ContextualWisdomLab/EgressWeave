@@ -6,7 +6,11 @@ import pytest
 
 from egressweave import (
     EgressPolicy,
+)
+from egressweave import (
     sync_transport as sync_transport_module,
+)
+from egressweave import (
     transport as async_transport_module,
 )
 
