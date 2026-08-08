@@ -321,3 +321,67 @@ async def test_async_policy_denial_preserves_caller_cancellation() -> None:
         _ = await consume_task
 
     assert source.closed is True
+
+
+class _DirectCleanupBaseError(BaseException):
+    """Model a dependency-controlled failure outside the ``Exception`` tree."""
+
+
+class _BaseExceptionCleanupSyncStream(httpx.SyncByteStream):
+    """Raise a direct ``BaseException`` when denied sync cleanup is invoked."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one unsafe chunk and record whether cleanup was attempted."""
+        self._chunk = chunk
+        self.closed = False
+
+    def __iter__(self):
+        """Yield the configured unsafe chunk before policy cleanup runs."""
+        yield self._chunk
+
+    def close(self) -> None:
+        """Raise outside ``Exception`` after recording the cleanup attempt."""
+        self.closed = True
+        raise _DirectCleanupBaseError("private direct cleanup failure")
+
+
+class _BaseExceptionCleanupAsyncStream(httpx.AsyncByteStream):
+    """Raise a direct ``BaseException`` while denied async cleanup is invoked."""
+
+    def __init__(self, chunk: object) -> None:
+        """Store one unsafe chunk and record whether cleanup was attempted."""
+        self._chunk = chunk
+        self.closed = False
+
+    async def __aiter__(self):
+        """Yield the configured unsafe chunk before policy cleanup runs."""
+        yield self._chunk
+
+    def aclose(self):
+        """Raise outside ``Exception`` before returning a cleanup awaitable."""
+        self.closed = True
+        raise _DirectCleanupBaseError("private direct cleanup failure")
+
+
+def test_sync_policy_denial_masks_direct_base_exception_cleanup() -> None:
+    """Keep a direct ``BaseException`` from sync cleanup behind generic denial."""
+    source = _BaseExceptionCleanupSyncStream(bytearray(b"abc"))
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        next(iter(stream))
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+async def test_async_policy_denial_masks_direct_base_exception_cleanup() -> None:
+    """Keep a direct ``BaseException`` from async setup behind generic denial."""
+    source = _BaseExceptionCleanupAsyncStream(bytearray(b"abc"))
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(EgressNotAllowedError) as exc_info:
+        await anext(stream.__aiter__())
+
+    _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
