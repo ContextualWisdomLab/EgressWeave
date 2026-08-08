@@ -122,7 +122,7 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
                     local_address=local_address,
                     socket_options=socket_options,
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S112
                 continue
 
         raise OSError(EGRESS_NOT_ALLOWED) from None
