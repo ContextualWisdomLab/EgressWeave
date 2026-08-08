@@ -8,9 +8,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_WORKFLOW_PATH = (
     REPOSITORY_ROOT / ".github" / "workflows" / "hourly-product-development.yml"
 )
-MAINTENANCE_DOCUMENTATION_PATH = (
-    REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
-)
+RCA_DOCUMENTATION_PATH = REPOSITORY_ROOT / "docs" / "hourly-rca-feasibility.md"
 
 
 def _read(path: Path) -> str:
@@ -43,7 +41,7 @@ def test_scheduler_requires_rca_and_operational_feasibility_before_escalation() 
 
 def test_operator_docs_explain_the_rca_feasibility_loop() -> None:
     """Keep the scheduler's blocker-handling contract understandable to operators."""
-    documentation = " ".join(_read(MAINTENANCE_DOCUMENTATION_PATH).split())
+    documentation = " ".join(_read(RCA_DOCUMENTATION_PATH).split())
 
     assert "root-cause analysis" in documentation
     assert "operational feasibility" in documentation
