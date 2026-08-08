@@ -328,11 +328,16 @@ class _DirectCleanupBaseError(BaseException):
 
 
 class _BaseExceptionCleanupSyncStream(httpx.SyncByteStream):
-    """Raise a direct ``BaseException`` when denied sync cleanup is invoked."""
+    """Raise a configured ``BaseException`` when denied sync cleanup is invoked."""
 
-    def __init__(self, chunk: object) -> None:
-        """Store one unsafe chunk and record whether cleanup was attempted."""
+    def __init__(
+        self, chunk: object, *, failure: BaseException | None = None
+    ) -> None:
+        """Store one unsafe chunk, cleanup failure, and attempt state."""
         self._chunk = chunk
+        self._failure = failure or _DirectCleanupBaseError(
+            "private direct cleanup failure"
+        )
         self.closed = False
 
     def __iter__(self):
@@ -340,17 +345,22 @@ class _BaseExceptionCleanupSyncStream(httpx.SyncByteStream):
         yield self._chunk
 
     def close(self) -> None:
-        """Raise outside ``Exception`` after recording the cleanup attempt."""
+        """Raise the configured base exception after recording cleanup."""
         self.closed = True
-        raise _DirectCleanupBaseError("private direct cleanup failure")
+        raise self._failure
 
 
 class _BaseExceptionCleanupAsyncStream(httpx.AsyncByteStream):
-    """Raise a direct ``BaseException`` while denied async cleanup is invoked."""
+    """Raise a configured ``BaseException`` while denied cleanup is invoked."""
 
-    def __init__(self, chunk: object) -> None:
-        """Store one unsafe chunk and record whether cleanup was attempted."""
+    def __init__(
+        self, chunk: object, *, failure: BaseException | None = None
+    ) -> None:
+        """Store one unsafe chunk, cleanup failure, and attempt state."""
         self._chunk = chunk
+        self._failure = failure or _DirectCleanupBaseError(
+            "private direct cleanup failure"
+        )
         self.closed = False
 
     async def __aiter__(self):
@@ -358,13 +368,13 @@ class _BaseExceptionCleanupAsyncStream(httpx.AsyncByteStream):
         yield self._chunk
 
     def aclose(self):
-        """Raise outside ``Exception`` before returning a cleanup awaitable."""
+        """Raise the configured base exception before returning an awaitable."""
         self.closed = True
-        raise _DirectCleanupBaseError("private direct cleanup failure")
+        raise self._failure
 
 
 def test_sync_policy_denial_masks_direct_base_exception_cleanup() -> None:
-    """Keep a direct ``BaseException`` from sync cleanup behind generic denial."""
+    """Keep a direct custom ``BaseException`` behind the generic denial."""
     source = _BaseExceptionCleanupSyncStream(bytearray(b"abc"))
     stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
 
@@ -376,7 +386,7 @@ def test_sync_policy_denial_masks_direct_base_exception_cleanup() -> None:
 
 
 async def test_async_policy_denial_masks_direct_base_exception_cleanup() -> None:
-    """Keep a direct ``BaseException`` from async setup behind generic denial."""
+    """Keep a direct custom ``BaseException`` from async setup behind denial."""
     source = _BaseExceptionCleanupAsyncStream(bytearray(b"abc"))
     stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
 
@@ -384,4 +394,36 @@ async def test_async_policy_denial_masks_direct_base_exception_cleanup() -> None
         await anext(stream.__aiter__())
 
     _assert_clean_policy_denial(exc_info.value)
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit, GeneratorExit])
+def test_sync_policy_denial_preserves_cleanup_control_flow(
+    failure_type: type[BaseException],
+) -> None:
+    """Propagate interpreter control flow raised by direct sync cleanup."""
+    source = _BaseExceptionCleanupSyncStream(
+        bytearray(b"abc"), failure=failure_type("operator control flow")
+    )
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(failure_type):
+        next(iter(stream))
+
+    assert source.closed is True
+
+
+@pytest.mark.parametrize("failure_type", [KeyboardInterrupt, SystemExit, GeneratorExit])
+async def test_async_policy_denial_preserves_cleanup_control_flow(
+    failure_type: type[BaseException],
+) -> None:
+    """Propagate interpreter control flow raised during async cleanup setup."""
+    source = _BaseExceptionCleanupAsyncStream(
+        bytearray(b"abc"), failure=failure_type("operator control flow")
+    )
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    with pytest.raises(failure_type):
+        await anext(stream.__aiter__())
+
     assert source.closed is True
