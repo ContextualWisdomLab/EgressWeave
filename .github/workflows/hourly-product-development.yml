@@ -166,8 +166,15 @@ jobs:
           Work only when there are no open pull requests; the workflow has already verified that condition.
           Inspect README.md, AGENTS.md, CHANGELOG.md, src/, tests/, and docs/. Select exactly one highest-value
           buyer-visible product, security, reliability, compatibility, documentation, or release-readiness gap
-          that can be completed safely in this run. If the protected branch is not green, restoring it is the only
-          permitted objective.
+          that can be completed safely in this run.
+
+          Before selecting, abandoning, or escalating any remediation:
+          - Perform a root-cause analysis from exact current evidence rather than guessing from symptoms.
+          - Enumerate the smallest evidence-backed remediation candidates and validate each candidate's operational feasibility against the exact repository state, available permissions and tools, writer leases, branch protection, required checks, dependency order, and the remaining run time budget.
+          - Execute the smallest safe remediation that is both technically sound and operationally realistic, and verify the hypothesis with a focused regression before broadening the change.
+          - If the preferred remediation is infeasible, record the exact reason in the model result and continue with the next non-conflicting bounded action instead of stopping at the first blocker.
+          - Escalate only after every autonomously actionable path has been exhausted; a failed check, stale base, review delay, dependency, or unavailable tool is not by itself a terminal blocker while a safe next action exists.
+          - If the protected branch is not green, repair it only when the root-cause analysis shows that the cause is inside the permitted edit boundary and can be completed safely in this run. Otherwise leave the working tree unchanged and preserve the evidence in the model result.
 
           Requirements:
           - Use test-first ordering: add or change a focused regression test before changing production code, then
