@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from importlib import import_module
+
 import pytest
 
 from egressweave import EgressPolicy
-from egressweave import sync_transport as sync_transport_module
-from egressweave import transport as async_transport_module
 
+
+async_transport_module = import_module("egressweave.transport")
+sync_transport_module = import_module("egressweave.sync_transport")
 
 _POLICY = EgressPolicy.from_hosts("api.example.com")
 _ADDRESSES = ("93.184.216.34", "1.1.1.1")
