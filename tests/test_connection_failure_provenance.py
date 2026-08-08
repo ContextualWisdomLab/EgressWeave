@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from egressweave import EgressPolicy
-from egressweave.sync_transport import _PinnedEgressSyncNetworkBackend
-from egressweave.transport import _PinnedEgressNetworkBackend
+from egressweave import EgressPolicy, sync_transport, transport
 
 
 _POLICY = EgressPolicy.from_hosts("api.example.com")
@@ -52,7 +50,7 @@ class _SyncSensitiveFailureBackend:
 @pytest.mark.asyncio
 async def test_async_all_candidate_failures_erase_child_error_provenance() -> None:
     """Expose only the generic denial after every async candidate fails."""
-    backend = _PinnedEgressNetworkBackend(
+    backend = transport._PinnedEgressNetworkBackend(
         "api.example.com", 443, _ADDRESSES, _POLICY
     )
     failing_backend = _AsyncSensitiveFailureBackend()
@@ -69,7 +67,7 @@ async def test_async_all_candidate_failures_erase_child_error_provenance() -> No
 
 def test_sync_all_candidate_failures_erase_child_error_provenance() -> None:
     """Expose only the generic denial after every sync candidate fails."""
-    backend = _PinnedEgressSyncNetworkBackend(
+    backend = sync_transport._PinnedEgressSyncNetworkBackend(
         "api.example.com", 443, _ADDRESSES, _POLICY
     )
     failing_backend = _SyncSensitiveFailureBackend()
