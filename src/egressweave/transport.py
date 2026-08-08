@@ -159,7 +159,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
         address_iterator = iter(self._addresses)
         tasks: set[asyncio.Task] = set()
-        deadline_exhausted = False
         more_addresses = True
         next_attempt_at = loop.time()
 
@@ -196,7 +195,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     else max(0.0, deadline - loop.time())
                 )
                 if remaining_budget == 0.0:
-                    deadline_exhausted = True
                     break
 
                 wait_timeout = remaining_budget
@@ -216,7 +214,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 tasks.clear()
                 tasks.update(pending)
                 if deadline is not None and loop.time() >= deadline:
-                    deadline_exhausted = True
                     completed_results = await asyncio.gather(
                         *done, return_exceptions=True
                     )
@@ -230,14 +227,13 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                         if deadline is None or loop.time() < deadline:
                             start_next_attempt()
                         else:
-                            deadline_exhausted = True
                             more_addresses = False
                     continue
                 successful_stream = None
                 for task in done:
                     try:
                         stream = task.result()
-                    except Exception:  # noqa: BLE001  # pragma: no cover
+                    except Exception:  # noqa: BLE001, S112  # pragma: no cover
                         continue
                     if successful_stream is None:
                         successful_stream = stream
@@ -249,7 +245,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     if deadline is None or loop.time() < deadline:
                         start_next_attempt()
                     else:
-                        deadline_exhausted = True
                         more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
