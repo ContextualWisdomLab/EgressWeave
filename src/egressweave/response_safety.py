@@ -12,6 +12,7 @@ identity-coding invariant prevents decompression expansion outside the byte budg
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterable, Iterator
 
 import httpx
@@ -166,8 +167,61 @@ def _enforce_declared_response_size(
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
 
+def _require_exact_response_chunk(chunk: object) -> bytes:
+    """Return one exact built-in ``bytes`` chunk or fail closed.
+
+    Response streams are dependency-injected and must therefore be treated as an
+    untrusted runtime boundary even though HTTPX's interface is typed to yield
+    bytes. An arbitrary object or ``bytes`` subclass can customize ``__len__``
+    and make resource accounting disagree with the caller-visible byte buffer.
+    Requiring the exact built-in type before measuring or exposing the chunk
+    keeps the byte budget bound to Python's immutable native byte length and
+    avoids invoking attacker-controlled conversion or length protocols.
+    """
+    if type(chunk) is not bytes:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+    return chunk
+
+
+def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
+    """Best-effort close a denied sync stream without hiding process control flow.
+
+    Dependency-controlled custom ``BaseException`` subclasses are contained so
+    they cannot replace the already-decided public policy denial. Interpreter
+    control-flow exceptions still propagate and are never converted into an
+    application-level denial.
+    """
+    try:
+        stream.close()
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException:  # noqa: BLE001
+        return
+
+
+async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> None:
+    """Consume child cleanup failures while preserving caller cancellation.
+
+    Policy denial is already decided before this helper runs. A dependency-injected
+    implementation may violate the static async-stream contract by raising while
+    ``aclose`` is called, returning a non-awaitable value, or failing or
+    self-cancelling after returning its awaitable. Custom child failures and child
+    cancellation are discarded. Keyboard interrupt, process exit, and generator
+    exit raised directly during cleanup setup propagate. Cancellation directed at
+    the coordinator while it awaits the gather also propagates to its caller.
+    """
+    try:
+        close_awaitable = stream.aclose()
+        cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException:  # noqa: BLE001
+        return
+    _ = await cleanup
+
+
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
-    """Count identity-coded sync response bytes and close on first overrun."""
+    """Count identity-coded sync response bytes and close on first unsafe chunk."""
 
     def __init__(
         self, stream: httpx.SyncByteStream, max_response_bytes: int
@@ -177,16 +231,23 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield chunks until the next complete chunk exceeds the budget."""
+        """Yield exact byte chunks until the next complete chunk is unsafe."""
         consumed_bytes = 0
         for chunk in self._stream:
-            consumed_bytes += len(chunk)
+            denied = False
+            try:
+                exact_chunk = _require_exact_response_chunk(chunk)
+            except EgressNotAllowedError:
+                denied = True
+            if denied:
+                _close_sync_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+            consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
-                try:
-                    self._stream.close()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-            yield chunk
+                _close_sync_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+            yield exact_chunk
 
     def close(self) -> None:
         """Release the wrapped response stream and its pooled connection."""
@@ -194,7 +255,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
 
 
 class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
-    """Count identity-coded async response bytes and close on first overrun."""
+    """Count identity-coded async response bytes and close on unsafe chunks."""
 
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
@@ -204,16 +265,23 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield chunks until the next complete chunk exceeds the budget."""
+        """Yield exact byte chunks until the next complete chunk is unsafe."""
         consumed_bytes = 0
         async for chunk in self._stream:
-            consumed_bytes += len(chunk)
+            denied = False
+            try:
+                exact_chunk = _require_exact_response_chunk(chunk)
+            except EgressNotAllowedError:
+                denied = True
+            if denied:
+                await _close_async_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+            consumed_bytes += len(exact_chunk)
             if consumed_bytes > self._max_response_bytes:
-                try:
-                    await self._stream.aclose()
-                finally:
-                    raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-            yield chunk
+                await _close_async_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+            yield exact_chunk
 
     async def aclose(self) -> None:
         """Release the wrapped async stream and its pooled connection."""
