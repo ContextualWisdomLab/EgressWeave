@@ -159,7 +159,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
         address_iterator = iter(self._addresses)
         tasks: set[asyncio.Task] = set()
-        last_error: Exception | None = None
         deadline_exhausted = False
         more_addresses = True
         next_attempt_at = loop.time()
@@ -238,8 +237,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 for task in done:
                     try:
                         stream = task.result()
-                    except Exception as exc:  # noqa: BLE001  # pragma: no cover
-                        last_error = exc
+                    except Exception:  # noqa: BLE001  # pragma: no cover
                         continue
                     if successful_stream is None:
                         successful_stream = stream
@@ -255,11 +253,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                         more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
-        if deadline_exhausted:
-            raise OSError(EGRESS_NOT_ALLOWED)
-        if last_error is not None:
-            raise last_error
-        raise OSError(EGRESS_NOT_ALLOWED)
+        raise OSError(EGRESS_NOT_ALLOWED) from None
 
     async def connect_unix_socket(
         self,
