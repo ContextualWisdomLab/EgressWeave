@@ -187,7 +187,7 @@ def _close_sync_after_policy_denial(stream: httpx.SyncByteStream) -> None:
     """Best-effort close a denied sync stream without retaining backend errors."""
     try:
         stream.close()
-    except Exception:  # noqa: BLE001
+    except BaseException:  # noqa: BLE001
         return
 
 
@@ -204,7 +204,7 @@ async def _close_async_after_policy_denial(stream: httpx.AsyncByteStream) -> Non
     try:
         close_awaitable = stream.aclose()
         cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
-    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+    except BaseException:  # noqa: BLE001
         return
     _ = await cleanup
 
