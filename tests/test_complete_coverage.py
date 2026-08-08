@@ -247,7 +247,7 @@ async def test_empty_async_validation_paths_return_none() -> None:
 
 
 def test_sync_backend_covers_no_timeout_and_terminal_errors() -> None:
-    """Cover no-deadline success, last-error propagation, and empty fallback."""
+    """Cover no-deadline success, generic terminal denial, and empty fallback."""
     stream = object()
     backend = _PinnedEgressSyncNetworkBackend(
         "api.example.com", 443, (PUBLIC_ADDRESS,), POLICY
@@ -259,7 +259,7 @@ def test_sync_backend_covers_no_timeout_and_terminal_errors() -> None:
 
     failing_backend = _SyncBackend([OSError("all pinned addresses failed")])
     backend._backend = failing_backend
-    with pytest.raises(OSError, match="all pinned addresses failed"):
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
         backend.connect_tcp("api.example.com", 443)
 
     backend._addresses = ()
