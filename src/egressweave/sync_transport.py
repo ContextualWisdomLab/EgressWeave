@@ -106,7 +106,6 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
         """Connect to the first working pinned address within one timeout budget."""
         self._verify_host_port(host, port)
         deadline = None if timeout is None else time.monotonic() + max(timeout, 0.0)
-        last_error: Exception | None = None
 
         for address in self._addresses:
             pinned_address = _validate_global_address(
@@ -123,12 +122,10 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
                     local_address=local_address,
                     socket_options=socket_options,
                 )
-            except Exception as exc:  # noqa: BLE001
-                last_error = exc
+            except Exception:  # noqa: BLE001
+                continue
 
-        if last_error is not None:
-            raise last_error
-        raise OSError(EGRESS_NOT_ALLOWED)
+        raise OSError(EGRESS_NOT_ALLOWED) from None
 
     def connect_unix_socket(
         self,
