@@ -61,6 +61,23 @@ from egressweave.validation import (
 _CONNECTION_ATTEMPT_DELAY_SECONDS = 0.25
 
 
+async def _close_connection_stream_best_effort(stream) -> None:
+    """Close one rejected child stream without masking coordinator cancellation.
+
+    Dependency-injected stream cleanup may fail before returning an awaitable,
+    while it is awaited, or by self-cancelling. Those child outcomes cannot
+    replace an already-selected connection result or an already-decided deadline
+    denial. Cancellation directed at the coordinator while it awaits the cleanup
+    still propagates because the outer ``await`` remains unguarded.
+    """
+    try:
+        close_awaitable = stream.aclose()
+        cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001
+        return
+    _ = await cleanup
+
+
 class _DenyAllAsyncTransport(httpx.AsyncBaseTransport):
     """Fail-closed transport used when no outbound authority was validated."""
 
@@ -136,13 +153,14 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         local_address: str | None = None,
         socket_options=None,
     ):
-        """Race pinned addresses gradually within one connection-timeout budget."""
+        """Race pinned addresses gradually within one coordinator-owned deadline."""
         self._verify_host_port(host, port)
         loop = asyncio.get_running_loop()
         deadline = None if timeout is None else loop.time() + max(timeout, 0.0)
         address_iterator = iter(self._addresses)
         tasks: set[asyncio.Task] = set()
         last_error: Exception | None = None
+        deadline_exhausted = False
         more_addresses = True
         next_attempt_at = loop.time()
 
@@ -173,16 +191,24 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         start_next_attempt()
         try:
             while tasks:
-                wait_timeout = None
+                remaining_budget = (
+                    None
+                    if deadline is None
+                    else max(0.0, deadline - loop.time())
+                )
+                if remaining_budget == 0.0:
+                    deadline_exhausted = True
+                    break
+
+                wait_timeout = remaining_budget
                 if more_addresses:
-                    wait_timeout = max(0.0, next_attempt_at - loop.time())
-                    if deadline is not None:
-                        remaining_budget = max(0.0, deadline - loop.time())
-                        if remaining_budget <= 0:
-                            more_addresses = False
-                            wait_timeout = None
-                        else:
-                            wait_timeout = min(wait_timeout, remaining_budget)
+                    next_attempt_delay = max(0.0, next_attempt_at - loop.time())
+                    wait_timeout = (
+                        next_attempt_delay
+                        if wait_timeout is None
+                        else min(next_attempt_delay, wait_timeout)
+                    )
+
                 done, pending = await asyncio.wait(
                     tasks,
                     timeout=wait_timeout,
@@ -190,9 +216,23 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 )
                 tasks.clear()
                 tasks.update(pending)
+                if deadline is not None and loop.time() >= deadline:
+                    deadline_exhausted = True
+                    completed_results = await asyncio.gather(
+                        *done, return_exceptions=True
+                    )
+                    for result in completed_results:
+                        if isinstance(result, BaseException):
+                            continue
+                        await _close_connection_stream_best_effort(result)
+                    break
                 if not done:
                     if more_addresses:
-                        start_next_attempt()
+                        if deadline is None or loop.time() < deadline:
+                            start_next_attempt()
+                        else:
+                            deadline_exhausted = True
+                            more_addresses = False
                     continue
                 successful_stream = None
                 for task in done:
@@ -204,16 +244,19 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     if successful_stream is None:
                         successful_stream = stream
                     else:
-                        await stream.aclose()
+                        await _close_connection_stream_best_effort(stream)
                 if successful_stream is not None:
                     return successful_stream
                 if more_addresses and (not tasks or loop.time() >= next_attempt_at):
                     if deadline is None or loop.time() < deadline:
                         start_next_attempt()
                     else:
+                        deadline_exhausted = True
                         more_addresses = False
         finally:
             await self._cancel_and_wait_tasks(tasks)
+        if deadline_exhausted:
+            raise OSError(EGRESS_NOT_ALLOWED)
         if last_error is not None:
             raise last_error
         raise OSError(EGRESS_NOT_ALLOWED)
