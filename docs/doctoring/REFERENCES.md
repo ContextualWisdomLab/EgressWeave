@@ -6,7 +6,7 @@ Status: **PRESENT-CURRENT** as of 2026-08-09 for the product documentation basel
 
 AICPA & CIMA. (2023). *2017 Trust Services Criteria for security, availability, processing integrity, confidentiality, and privacy (with revised points of focus—2022).* Association of International Certified Professional Accountants. https://www.aicpa-cima.com/resources/download/2017-trust-services-criteria-with-revised-points-of-focus-2022
 
-Boyens, J., McWhite, R., & Calloway, L. (2026). *NIST Cybersecurity Supply Chain Management: Due Diligence Assessment Quick-Start Guide* (NIST SP 1326). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.SP.1326
+National Institute of Standards and Technology. (2026). *NIST Cybersecurity Supply Chain Risk Management: Due Diligence Assessment Quick-Start Guide* (NIST SP 1326). https://doi.org/10.6028/NIST.SP.1326
 
 Fielding, R. T., Nottingham, M., & Reschke, J. (2022). *HTTP semantics* (RFC 9110). RFC Editor. https://doi.org/10.17487/RFC9110
 
