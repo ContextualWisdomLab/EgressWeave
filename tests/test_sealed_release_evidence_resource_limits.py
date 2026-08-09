@@ -72,12 +72,35 @@ def test_bounded_snapshot_masks_open_failure(
         )
 
 
-def test_deeply_nested_json_is_masked_by_the_strict_evidence_boundary(
+def test_parser_recursion_failure_is_masked_by_the_strict_evidence_boundary(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Normalize parser recursion failure instead of leaking an exception."""
+    """Normalize a parser recursion failure independently of interpreter internals."""
     sbom = tmp_path / "deep.cdx.json"
-    sbom.write_text("[" * 10_000 + "0" + "]" * 10_000, encoding="utf-8")
+    sbom.write_text("{}", encoding="utf-8")
+
+    def fail_with_recursion(*args, **kwargs):
+        """Model a JSON implementation refusing excessive structural depth."""
+        raise RecursionError("parser recursion limit reached")
+
+    monkeypatch.setattr(release_evidence.json, "loads", fail_with_recursion)
 
     with pytest.raises(SystemExit, match="not strict JSON"):
         release_evidence._load_strict_json(sbom)
+
+
+def test_deeply_nested_non_object_json_fails_closed(
+    tmp_path: Path,
+) -> None:
+    """Reject deeply nested non-object JSON under every supported parser behavior."""
+    sbom = tmp_path / "deep.cdx.json"
+    sbom.write_text("[" * 10_000 + "0" + "]" * 10_000, encoding="utf-8")
+
+    with pytest.raises(SystemExit) as error:
+        release_evidence._load_strict_json(sbom)
+
+    assert str(error.value) in {
+        "SBOM deep.cdx.json is not strict JSON",
+        "SBOM deep.cdx.json must be a JSON object",
+    }
