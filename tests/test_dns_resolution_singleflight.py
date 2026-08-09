@@ -298,3 +298,25 @@ def test_shared_raw_result_is_validated_under_each_callers_policy(monkeypatch) -
         ("denied", None),
     ]
     assert _active_authority_flight() is None
+
+
+def test_unexpected_shared_resolver_failure_has_no_private_provenance(monkeypatch) -> None:
+    """Normalize dependency-controlled resolver failures without retaining a cause."""
+
+    def failing_getaddrinfo(hostname, port, *, type):
+        assert hostname == AUTHORITY_KEY[0]
+        assert port == AUTHORITY_KEY[1]
+        assert type == validation.socket.SOCK_STREAM
+        raise RuntimeError("private resolver detail")
+
+    monkeypatch.setattr(validation.socket, "getaddrinfo", failing_getaddrinfo)
+
+    with pytest.raises(
+        EgressNotAllowedError,
+        match=f"^{EGRESS_NOT_ALLOWED}$",
+    ) as exc_info:
+        validate_egress_url_details("https://api.example.com", policy=_policy())
+
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+    assert _active_authority_flight() is None
