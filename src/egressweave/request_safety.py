@@ -227,6 +227,16 @@ def _copy_timeout_mapping(
         return None
 
 
+def _copy_request_extensions(
+    extensions: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Detach untrusted request extensions or return ``None`` on ordinary failures."""
+    try:
+        return dict(extensions)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _coerce_timeout_number(value: Real) -> float | None:
     """Convert an untrusted real value or return ``None`` without leaking errors."""
     try:
@@ -306,13 +316,14 @@ def _bind_validated_tls_server_name(
     returned copy always carries that validated hostname, preventing later
     consumers from falling back to an untrusted override.
     """
-    if any(
+    safe_extensions = _copy_request_extensions(extensions)
+    if safe_extensions is None or any(
         type(key) is not str or key not in _ALLOWED_REQUEST_EXTENSION_KEYS
-        for key in extensions
+        for key in safe_extensions
     ):
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
-    requested_server_name = extensions.get("sni_hostname")
+    requested_server_name = safe_extensions.get("sni_hostname")
     if requested_server_name is not None:
         if isinstance(requested_server_name, bytes):
             try:
@@ -327,6 +338,5 @@ def _bind_validated_tls_server_name(
         if _normalize_host(requested_server_name_text) != hostname:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
-    safe_extensions = dict(extensions)
     safe_extensions["sni_hostname"] = hostname
     return safe_extensions
