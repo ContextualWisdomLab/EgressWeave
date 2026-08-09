@@ -54,7 +54,7 @@ Implementation maturity:
 
 ### IMPLEMENTED-ON-PROTECTED-MAIN
 
-The protected-main architecture includes normalized policy construction, URL validation, DNS address validation, integrity-bound validated state, pinned synchronous/asynchronous transports, TLS configuration, finite timeout/pool and request/response resource controls, decision evidence, packaging quality gates, and modular naruon integration. Exact details remain sourced from root `ARCHITECTURE.md`, code, and tests.
+The protected-main architecture includes normalized policy construction, URL validation, DNS address validation, integrity-bound validated state, pinned synchronous/asynchronous transports, TLS configuration, finite timeout/pool and request/response resource controls, decision evidence, packaging quality gates, and host-owned adapter compatibility through provider-neutral public contracts. Exact details remain sourced from root `ARCHITECTURE.md`, code, and tests. No naruon-specific adapter is packaged or exported by EgressWeave protected main.
 
 ### ACTIVE-PR
 
@@ -66,11 +66,11 @@ Commercial documentation should remain one cross-linked, machine-tested source-o
 
 ### PLANNED
 
-Further buyer-visible product slices, integration adapters, and operational evidence may be prioritized after current PR/issue work. Planned content requires its own test and review evidence before migration to protected-main status.
+Further buyer-visible product slices, host-owned integration adapters, and operational evidence may be prioritized after current PR/issue work. Planned content requires its own test and review evidence before migration to protected-main status.
 
 ### OUT-OF-SCOPE
 
-Durable application databases, tenant/user identity, business-object authorization, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, and blanket transformation of application PII are host/platform concerns unless a future accepted ADR changes the product boundary.
+Durable application databases, tenant/user identity, business-object authorization, host integration-adapter implementation, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, and blanket transformation of application PII are host/platform concerns unless a future accepted ADR changes the product boundary.
 
 ## 5. Documentation governance
 
@@ -79,7 +79,7 @@ Durable application databases, tenant/user identity, business-object authorizati
 3. API, test, operability, compliance, UML/ERD, ADR, and doctoring documents refine specific views without overriding implementation truth.
 4. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
 5. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
-6. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence ownership, and unresolved template markers.
+6. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, and unresolved template markers.
 
 ## 6. Remaining audit obligations after this PR
 
