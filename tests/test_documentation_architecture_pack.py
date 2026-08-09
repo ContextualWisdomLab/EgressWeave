@@ -14,9 +14,11 @@ REQUIRED_DOCUMENTS = (
     "docs/product/OPERABILITY.md",
     "docs/product/COMPLIANCE_TRACEABILITY.md",
     "docs/product/DOCUMENTATION_AUDIT.md",
+    "docs/product/TRACEABILITY.md",
     "docs/architecture/SYSTEM_ARCHITECTURE.md",
     "docs/architecture/UML.md",
     "docs/architecture/ERD.md",
+    "docs/THREAT_MODEL.md",
     "docs/adr/README.md",
     "docs/adr/0002-documentation-governance-and-persistence-boundary.md",
     "docs/doctoring/REFERENCES.md",
@@ -100,6 +102,17 @@ def test_product_contracts_cross_link_the_authoritative_spine() -> None:
         assert required_link in prd or required_link in trd or required_link in audit
     assert "0001-security-boundaries-and-modular-integration.md" in adr_index
     assert "0002-documentation-governance-and-persistence-boundary.md" in adr_index
+
+
+def test_product_spine_links_explicit_threat_and_traceability_views() -> None:
+    """Make threat analysis and requirement traceability discoverable from the product spine."""
+    prd = _read("docs/product/PRD.md")
+    audit = _read("docs/product/DOCUMENTATION_AUDIT.md")
+
+    assert "TRACEABILITY.md" in prd
+    assert "../THREAT_MODEL.md" in prd
+    assert "TRACEABILITY.md" in audit
+    assert "THREAT_MODEL.md" in audit
 
 
 def test_repository_entrypoints_link_the_canonical_product_graph() -> None:
