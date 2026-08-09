@@ -134,12 +134,15 @@ def test_security_model_matches_implemented_resource_bounds() -> None:
     assert "max_request_bytes" in security_model
 
 
-def test_public_api_contract_does_not_claim_a_packaged_naruon_adapter() -> None:
+def test_product_docs_keep_naruon_adapter_host_owned() -> None:
     """Keep host integration responsibility separate from the package public API."""
     api_contract = _read("docs/product/API_CONTRACT.md")
+    prd = _read("docs/product/PRD.md")
 
     assert "naruon integration adapter that translates host configuration" not in api_contract
+    assert "The standalone builder and naruon adapter SHALL share" not in prd
     assert "host-side adapter" in api_contract
+    assert "host-owned" in prd
 
 
 def test_doctoring_records_authoritative_standards_and_no_certification_claim() -> None:
