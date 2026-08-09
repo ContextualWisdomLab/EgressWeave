@@ -181,6 +181,27 @@ def test_acquisition_doctoring_includes_current_nist_due_diligence_guidance() ->
     assert "does not make EgressWeave a supplier-risk assessment system" in compliance
 
 
+def test_governance_pack_includes_threat_and_requirement_traceability_views() -> None:
+    """Keep threat reasoning and requirement-to-evidence mapping explicit and reviewable."""
+    required = (
+        "docs/THREAT_MODEL.md",
+        "docs/product/TRACEABILITY.md",
+    )
+    missing = [path for path in required if not (REPOSITORY_ROOT / path).is_file()]
+    assert not missing, f"governance documentation is missing: {missing}"
+
+    threat_model = _read("docs/THREAT_MODEL.md")
+    traceability = _read("docs/product/TRACEABILITY.md")
+    assert "docs/security-model.md" in threat_model
+    assert "Attacker capabilities" in threat_model
+    assert "Trust boundaries" in threat_model
+    assert "Explicit non-goals" in threat_model
+    assert "Requirement" in traceability
+    assert "Implementation evidence" in traceability
+    assert "Test evidence" in traceability
+    assert "ADR / standard" in traceability
+
+
 def test_documentation_pack_has_no_unresolved_template_markers() -> None:
     """Prevent placeholder planning prose from becoming the canonical product record."""
     forbidden_markers = ("TODO", "TBD", "PLACEHOLDER", "FIXME")
