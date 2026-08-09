@@ -55,3 +55,38 @@ def test_hostile_extension_mapping_is_masked_by_generic_denial() -> None:
         _bind_validated_tls_server_name(HostileExtensions(), "api.example.com")
 
     assert error.value.__cause__ is None
+
+
+@pytest.mark.parametrize("value_kind", ["bytes", "text"])
+def test_subclassed_sni_values_fail_before_attacker_methods_run(value_kind: str) -> None:
+    """Require exact built-in SNI value types instead of invoking subclass methods."""
+
+    class HostileBytes(bytes):
+        """Raise if the policy boundary invokes a subclass-controlled decoder."""
+
+        def decode(self, *args: object, **kwargs: object) -> str:
+            """Expose an unsafe subclass method call if it occurs."""
+            del args, kwargs
+            raise RuntimeError("private bytes decode")
+
+    class HostileText(str):
+        """Raise if hostname normalization invokes a subclass-controlled method."""
+
+        def strip(self, *args: object, **kwargs: object) -> str:
+            """Expose an unsafe subclass method call if it occurs."""
+            del args, kwargs
+            raise RuntimeError("private text strip")
+
+    value: object
+    if value_kind == "bytes":
+        value = HostileBytes(b"api.example.com")
+    else:
+        value = HostileText("api.example.com")
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as error:
+        _bind_validated_tls_server_name(
+            {"sni_hostname": value},
+            "api.example.com",
+        )
+
+    assert error.value.__cause__ is None
