@@ -32,7 +32,7 @@ class _HostileHeaderBytes(bytes):
 
     def __getitem__(self, key):
         """Reject field-value slicing through this subclass."""
-        raise AssertionError("header bytes subclass indexing executed")
+        raise IndexError("header bytes subclass indexing executed")
 
     def lower(self):
         """Reject case normalization through this subclass."""
