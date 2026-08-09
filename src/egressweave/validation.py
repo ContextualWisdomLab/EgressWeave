@@ -322,7 +322,7 @@ def _resolve_all_global_addresses(
             _DNS_RESOLUTION_SLOTS.release()
             flight.error = exc
             _complete_dns_resolution_flight(key, flight)
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     remaining_timeout = deadline - time.monotonic()
     if remaining_timeout <= 0 or not flight.completed.wait(timeout=remaining_timeout):
