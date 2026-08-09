@@ -63,7 +63,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Deduplicate overlapping same-authority DNS resolution through one live
   in-flight `(hostname, port)` worker while preserving the finite global
   resolver ceiling, per-caller deadlines, and caller-specific address policy.
-  Completed DNS results are never cached, later validations perform a fresh
+  completed DNS results are never cached, later validations perform a fresh
   lookup, and unexpected resolver failures remain behind the generic denial
   boundary without private exception provenance. Asynchronous validation starts
   its caller-owned deadline before executor scheduling, so `asyncio.to_thread`
