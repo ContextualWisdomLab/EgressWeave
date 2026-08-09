@@ -280,3 +280,13 @@ def test_changelog_records_the_commercial_documentation_baseline() -> None:
     assert "TRD" in changelog
     assert "UML" in changelog
     assert "ERD" in changelog
+
+
+def test_audit_keeps_publisher_removal_on_its_active_dependency_stack() -> None:
+    """Keep active publisher-removal documentation out of protected-main truth."""
+    audit = " ".join(_read("docs/product/DOCUMENTATION_AUDIT.md").split())
+
+    assert "repository-local publisher removal" in audit
+    assert "buyer-facing handoff correction" in audit
+    assert "remain ACTIVE-PR" in audit
+    assert "must not replace protected-main automation truth before integration" in audit
