@@ -149,6 +149,18 @@ Primary references:
   transport, re-validating immediately before each connect and refusing any
   host/port drift. The `Host` header is rewritten to the validated netloc.
 
+## Version-stable special-purpose address classification
+
+Supported CPython patch releases have not always agreed on every special-purpose
+range. EgressWeave therefore applies a narrow reviewed compatibility overlay to
+parsed remote addresses before the interpreter's version-sensitive
+classification, while keeping globally reachable exceptions explicit and
+leaving local-development authority unchanged. The overlay is source-controlled,
+not a mutable registry mirror, and adds no runtime network dependency. See
+[version-stable special-purpose address classification](special-purpose-address-classification.md)
+for the IANA/CPython boundary, the `2002::/16` registry nuance, update procedure,
+and APA 7 primary references.
+
 ## Staggered concurrent connection — RFC 8305 (Happy Eyeballs)
 
 When a validated hostname yields several addresses, RFC 8305 section 5 advises
