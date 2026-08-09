@@ -19,6 +19,7 @@ import httpx
 from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
+_PUBLIC_RESPONSE_EXTENSION_KEYS = ("http_version", "reason_phrase")
 
 
 def _coerce_response_header_item(item: object) -> tuple[bytes, bytes] | None:
@@ -97,6 +98,22 @@ def _force_identity_accept_encoding(
     if trusted_host is not None:
         safe_headers.append(trusted_host)
     return safe_headers
+
+
+def _select_public_response_extensions(
+    extensions: dict[str, object],
+) -> dict[str, object]:
+    """Copy only inert response metadata approved for caller visibility.
+
+    HTTPCore may attach capability-bearing objects such as ``network_stream`` to
+    a response. EgressWeave exposes only the protocol version and reason phrase;
+    every other current or future extension remains internal to the transport.
+    """
+    return {
+        key: extensions[key]
+        for key in _PUBLIC_RESPONSE_EXTENSION_KEYS
+        if key in extensions
+    }
 
 
 def _enforce_declared_response_size(
@@ -199,7 +216,7 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
     ) -> None:
-        """Store the wrapped HTTPX stream and its positive policy budget."""
+        """Store the wrapped async stream and its positive policy budget."""
         self._stream = stream
         self._max_response_bytes = max_response_bytes
 
