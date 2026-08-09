@@ -30,6 +30,32 @@ Responses to `HEAD`, informational responses, `204 No Content`, and
 bytes carried in that message and therefore are not interpreted as transferred
 body data.
 
+## Caller-visible response extensions
+
+Response extension mappings are another trust boundary. HTTPCore can attach a
+`network_stream` extension that exposes a raw transport capability with direct
+read/write access beneath EgressWeave's reviewed HTTP method, target, framing,
+and body controls. The synchronous and asynchronous pinned transports therefore
+apply a positive caller-visible response-extension allowlist before constructing
+an `httpx.Response`.
+
+Only inert metadata currently required for ordinary HTTPX inspection is exposed:
+
+- `http_version` when HTTPCore supplied it;
+- `reason_phrase` when HTTPCore supplied it.
+
+The raw `network_stream` capability is never copied to the caller-visible
+response. Unknown or future response extensions are also omitted until an
+explicit security and compatibility review adds them to the allowlist. The
+underlying response stream remains privately wrapped by EgressWeave so ordinary
+body streaming, deterministic closure, and connection-pool reuse retain their
+existing lifecycle without granting the caller the raw transport object.
+
+This is not a Python sandbox claim. Arbitrary code already executing inside the
+embedding process remains outside the security model. The boundary prevents the
+supported EgressWeave response API from advertising a lower-level capability
+that bypasses the package's own HTTP policy surface.
+
 ## Threat model
 
 Destination allowlisting and DNS pinning establish *where* a request may go.
@@ -58,6 +84,12 @@ bounded streaming decoder; EgressWeave does not silently accept compression.
 Integrations that legitimately download larger identity-coded artifacts must set
 a bounded, integration-specific `max_response_bytes` value. There is no unlimited
 sentinel because a deployment mistake must not silently remove the boundary.
+
+Callers that previously depended on arbitrary HTTPCore response extensions must
+also migrate to explicitly supported metadata or a separately reviewed transport.
+In particular, a raw `network_stream` is no longer caller-visible through an
+EgressWeave response. The public body stream and response metadata remain the
+supported interface.
 
 ## References
 
