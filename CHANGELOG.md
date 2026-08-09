@@ -58,6 +58,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
+- Require the hourly product-development maintainer to perform exact-evidence
+  root-cause analysis and operational feasibility validation before selecting,
+  abandoning, or escalating a remediation.
 
 ### Security
 - End the hourly product-development scheduler at a credential-free,
