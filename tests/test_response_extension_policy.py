@@ -5,8 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import httpx
+import pytest
 
-from egressweave import EgressPolicy, sync_transport, transport, validation
+from egressweave import (
+    EgressNotAllowedError,
+    EgressPolicy,
+    sync_transport,
+    transport,
+    validation,
+)
 
 PUBLIC_ADDRESS = "93.184.216.34"
 POLICY = EgressPolicy.from_hosts("api.example.com")
@@ -38,6 +45,14 @@ class _AsyncCoreStream:
 
     async def aclose(self) -> None:
         """Close the synthetic stream."""
+
+
+class _HostileExtensionBytes(bytes):
+    """Represent non-inert metadata that must never reach the public response."""
+
+    def __repr__(self) -> str:
+        """Fail if caller-visible handling executes subclass representation."""
+        raise AssertionError("response extension byte subclass behavior executed")
 
 
 @dataclass
@@ -81,6 +96,36 @@ class _AsyncPool:
         """Close the synthetic pool."""
 
 
+class _SyncExtensionPool:
+    """Return caller-selected low-level response extension metadata."""
+
+    def __init__(self, extensions: dict[str, object]) -> None:
+        """Store the synthetic low-level response extensions."""
+        self._extensions = extensions
+
+    def handle_request(self, request):
+        """Return one response carrying the configured extensions."""
+        return _CoreResponse(_SyncCoreStream(), extensions=self._extensions)
+
+    def close(self) -> None:
+        """Close the synthetic pool."""
+
+
+class _AsyncExtensionPool:
+    """Return caller-selected async low-level response extension metadata."""
+
+    def __init__(self, extensions: dict[str, object]) -> None:
+        """Store the synthetic low-level response extensions."""
+        self._extensions = extensions
+
+    async def handle_async_request(self, request):
+        """Return one response carrying the configured extensions."""
+        return _CoreResponse(_AsyncCoreStream(), extensions=self._extensions)
+
+    async def aclose(self) -> None:
+        """Close the synthetic pool."""
+
+
 def test_sync_response_hides_raw_network_stream_extension() -> None:
     """Expose only reviewed inert metadata through a synchronous response."""
     pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
@@ -107,3 +152,41 @@ async def test_async_response_hides_raw_network_stream_extension() -> None:
         "http_version": b"HTTP/1.1",
         "reason_phrase": b"OK",
     }
+
+
+@pytest.mark.parametrize(
+    "extensions",
+    (
+        {"http_version": object()},
+        {"reason_phrase": _HostileExtensionBytes(b"OK")},
+    ),
+)
+def test_sync_response_rejects_non_exact_public_extension_values(
+    extensions: dict[str, object],
+) -> None:
+    """Fail closed instead of exposing arbitrary response-extension objects."""
+    pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
+    pinned._pool = _SyncExtensionPool(extensions)
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
+
+
+@pytest.mark.parametrize(
+    "extensions",
+    (
+        {"http_version": object()},
+        {"reason_phrase": _HostileExtensionBytes(b"OK")},
+    ),
+)
+async def test_async_response_rejects_non_exact_public_extension_values(
+    extensions: dict[str, object],
+) -> None:
+    """Apply the same inert-metadata type boundary to asynchronous responses."""
+    pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
+    pinned._pool = _AsyncExtensionPool(extensions)
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        await pinned.handle_async_request(
+            httpx.Request("GET", VALIDATED.normalized_url)
+        )
