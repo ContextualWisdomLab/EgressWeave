@@ -22,6 +22,7 @@ PUBLIC_ADDRESS = "93.184.216.34"
 SECOND_PUBLIC_ADDRESS = "93.184.216.35"
 CALLER_COUNT = 4
 DNS_TIMEOUT_SECONDS = 0.75
+AUTHORITY_KEY = ("api.example.com", 443)
 
 
 class _CountingResolutionSlots:
@@ -66,8 +67,8 @@ def _install_blocking_resolver(monkeypatch):
 
     def slow_getaddrinfo(hostname, port, *, type):
         nonlocal call_count
-        assert hostname == "api.example.com"
-        assert port == 443
+        assert hostname == AUTHORITY_KEY[0]
+        assert port == AUTHORITY_KEY[1]
         assert type == validation.socket.SOCK_STREAM
         with call_lock:
             call_count += 1
@@ -84,10 +85,29 @@ def _install_blocking_resolver(monkeypatch):
     return release_resolver, observed_calls
 
 
+def _active_authority_flight():
+    """Return the currently registered test-authority flight, if one is live."""
+    with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
+        return validation._DNS_RESOLUTION_FLIGHTS.get(AUTHORITY_KEY)
+
+
+def _release_and_wait_for_flight(
+    release_resolver: threading.Event,
+    slots: _CountingResolutionSlots,
+) -> None:
+    """Release a controlled worker and wait for slot plus registry cleanup."""
+    flight = _active_authority_flight()
+    release_resolver.set()
+    if flight is not None:
+        assert flight.completed.wait(timeout=3.0)
+    assert slots.wait_until_balanced(timeout=3.0)
+    assert _active_authority_flight() is None
+
+
 def _policy(*, max_resolved_addresses: int = 16) -> EgressPolicy:
     """Return the short-deadline policy used by the concurrency regressions."""
     return EgressPolicy.from_hosts(
-        "api.example.com",
+        AUTHORITY_KEY[0],
         dns_timeout_seconds=DNS_TIMEOUT_SECONDS,
         max_resolved_addresses=max_resolved_addresses,
     )
@@ -134,8 +154,7 @@ def test_sync_same_authority_timeouts_share_one_live_resolver(monkeypatch) -> No
         assert observed_calls() == 1
         assert slots.acquire_count == 1
     finally:
-        release_resolver.set()
-        assert slots.wait_until_balanced(timeout=3.0)
+        _release_and_wait_for_flight(release_resolver, slots)
 
 
 async def test_async_same_authority_timeouts_share_one_live_resolver(monkeypatch) -> None:
@@ -168,8 +187,7 @@ async def test_async_same_authority_timeouts_share_one_live_resolver(monkeypatch
         assert observed_calls() == 1
         assert slots.acquire_count == 1
     finally:
-        release_resolver.set()
-        assert slots.wait_until_balanced(timeout=3.0)
+        _release_and_wait_for_flight(release_resolver, slots)
 
 
 def test_empty_shared_resolver_result_remains_generic(monkeypatch) -> None:
@@ -185,11 +203,10 @@ def test_empty_shared_resolver_result_remains_generic(monkeypatch) -> None:
 
 def test_completed_flight_without_outcome_fails_closed() -> None:
     """Reject an internally incomplete completed flight instead of trusting it."""
-    key = ("api.example.com", 443)
     flight = validation._DNSResolutionFlight()
     flight.completed.set()
     with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
-        validation._DNS_RESOLUTION_FLIGHTS[key] = flight
+        validation._DNS_RESOLUTION_FLIGHTS[AUTHORITY_KEY] = flight
 
     try:
         with pytest.raises(
@@ -199,7 +216,7 @@ def test_completed_flight_without_outcome_fails_closed() -> None:
             validate_egress_url_details("https://api.example.com", policy=_policy())
     finally:
         with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
-            validation._DNS_RESOLUTION_FLIGHTS.pop(key, None)
+            validation._DNS_RESOLUTION_FLIGHTS.pop(AUTHORITY_KEY, None)
 
 
 def test_completed_resolution_is_not_cached(monkeypatch) -> None:
@@ -227,7 +244,15 @@ def test_shared_raw_result_is_validated_under_each_callers_policy(monkeypatch) -
     """Keep policy-specific address cardinality outside the shared DNS worker."""
     release_resolver = threading.Event()
     resolver_started = threading.Event()
+    joiner_arrived = threading.Event()
     call_count = 0
+    original_join = validation._join_dns_resolution_flight
+
+    def observing_join(hostname: str, port: int):
+        result = original_join(hostname, port)
+        if not result[2]:
+            joiner_arrived.set()
+        return result
 
     def two_address_getaddrinfo(hostname, port, *, type):
         nonlocal call_count
@@ -239,6 +264,7 @@ def test_shared_raw_result_is_validated_under_each_callers_policy(monkeypatch) -
             (2, 1, 6, "", (SECOND_PUBLIC_ADDRESS, port)),
         ]
 
+    monkeypatch.setattr(validation, "_join_dns_resolution_flight", observing_join)
     monkeypatch.setattr(validation.socket, "getaddrinfo", two_address_getaddrinfo)
     outcomes: queue.Queue[tuple[str, tuple[str, ...] | None]] = queue.Queue()
 
@@ -259,12 +285,16 @@ def test_shared_raw_result_is_validated_under_each_callers_policy(monkeypatch) -
     strict_caller.start()
     assert resolver_started.wait(timeout=2.0)
     broad_caller.start()
+    assert joiner_arrived.wait(timeout=2.0)
     release_resolver.set()
     strict_caller.join(timeout=3.0)
     broad_caller.join(timeout=3.0)
 
+    assert not strict_caller.is_alive()
+    assert not broad_caller.is_alive()
     assert call_count == 1
     assert sorted(outcomes.get_nowait() for _ in range(2)) == [
         ("allowed", (PUBLIC_ADDRESS, SECOND_PUBLIC_ADDRESS)),
         ("denied", None),
     ]
+    assert _active_authority_flight() is None
