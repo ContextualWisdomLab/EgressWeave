@@ -348,7 +348,7 @@ async def _resolve_all_global_addresses_async(
             asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy),
             timeout=policy.dns_timeout_seconds,
         )
-    except TimeoutError:
+    except asyncio.TimeoutError:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
 
