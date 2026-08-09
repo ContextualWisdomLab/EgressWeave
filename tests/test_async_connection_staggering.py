@@ -242,6 +242,29 @@ def _backend_with_three_addresses() -> _PinnedEgressNetworkBackend:
 
 
 @pytest.mark.asyncio
+async def test_zero_budget_does_not_create_initial_connection_task(monkeypatch) -> None:
+    """Do not create even the first child after an already exhausted deadline."""
+    backend = _backend_with_three_addresses()
+    ignoring_backend = _TimeoutIgnoringBackend()
+    backend._backend = ignoring_backend
+    real_create_task = asyncio.create_task
+    created_task_count = 0
+
+    def tracked_create_task(coro):
+        nonlocal created_task_count
+        created_task_count += 1
+        return real_create_task(coro)
+
+    monkeypatch.setattr(transport_module.asyncio, "create_task", tracked_create_task)
+
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
+        await backend.connect_tcp("api.example.com", 443, timeout=0.0)
+
+    assert created_task_count == 0
+    assert ignoring_backend.started_hosts == []
+
+
+@pytest.mark.asyncio
 async def test_connection_attempts_are_staggered(monkeypatch) -> None:
     monkeypatch.setattr(
         transport_module,
