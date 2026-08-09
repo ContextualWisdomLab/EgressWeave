@@ -74,6 +74,18 @@ class _HostileExtensionDict(dict):
         raise AssertionError("response extension mapping behavior executed")
 
 
+class _HostileExtensionKey:
+    """Collide with one reviewed key and fail if dictionary equality executes."""
+
+    def __hash__(self) -> int:
+        """Return the same hash as the reviewed HTTP-version extension key."""
+        return hash("http_version")
+
+    def __eq__(self, other: object) -> bool:
+        """Expose exact-dict lookup of dependency-controlled key behavior."""
+        raise RuntimeError("private response extension key comparison")
+
+
 @dataclass
 class _CoreResponse:
     """Small response object matching the attributes consumed by transports."""
@@ -299,3 +311,33 @@ async def test_async_response_rejects_non_exact_public_extension_values(
         )
 
     assert pool.stream.closed is True
+
+
+def test_sync_response_rejects_hostile_exact_dict_key_and_closes_source() -> None:
+    """Contain exact-dict key behavior inside the synchronous denial boundary."""
+    pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
+    pool = _SyncExtensionPool({_HostileExtensionKey(): b"unreachable"})
+    pinned._pool = pool
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as caught:
+        pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
+
+    assert pool.stream.closed is True
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+async def test_async_response_rejects_hostile_exact_dict_key_and_closes_source() -> None:
+    """Contain exact-dict key behavior inside the asynchronous denial boundary."""
+    pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
+    pool = _AsyncExtensionPool({_HostileExtensionKey(): b"unreachable"})
+    pinned._pool = pool
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as caught:
+        await pinned.handle_async_request(
+            httpx.Request("GET", VALIDATED.normalized_url)
+        )
+
+    assert pool.stream.closed is True
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
