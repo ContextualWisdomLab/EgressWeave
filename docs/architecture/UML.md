@@ -130,6 +130,8 @@ stateDiagram-v2
 
 ## 4. Asynchronous connection-race behavior
 
+Maturity: **ACTIVE-PR** — the sequence below describes the global coordinator-deadline hardening currently under review and is not protected-main behavior. Protected main already staggers validated address attempts and gives later children only the connection-timeout budget remaining when they start, but it does not yet apply one coordinator-owned outer deadline to every wait after all candidates have been launched. See the code-current root architecture and protected-main transport tests for shipped behavior.
+
 ```mermaid
 sequenceDiagram
     participant T as Async pinned transport
@@ -153,7 +155,7 @@ sequenceDiagram
     end
 ```
 
-The exact implementation details evolve through reviewed pull requests; protected-main code and tests determine which refinements are currently shipped.
+Do not use this ACTIVE-PR view as as-built evidence until the corresponding exact head is independently accepted and merged.
 
 ## 5. Decision-evidence production
 
