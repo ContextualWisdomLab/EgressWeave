@@ -74,6 +74,20 @@ def test_architecture_pack_contains_machine_readable_diagrams() -> None:
     assert "erDiagram" in erd
 
 
+def test_system_architecture_orders_pre_request_validation_before_network_setup() -> None:
+    """Keep the request-path view aligned with the fail-before-I/O transport contract."""
+    system_architecture = _read("docs/architecture/SYSTEM_ARCHITECTURE.md")
+
+    assert "pre_request_checks[Method + authority + target + headers + framing + declared body + timeout checks]" in system_architecture
+    assert "stream_request_checks[Streamed request-body exact-byte + cumulative budget checks during send]" in system_architecture
+    assert system_architecture.index("pre_request_checks[") < system_architecture.index(
+        "tcp[Connect to one validated IP]"
+    )
+    assert system_architecture.index("tls[TLS handshake using approved hostname identity]") < system_architecture.index(
+        "stream_request_checks["
+    )
+
+
 def test_erd_records_the_no_owned_persistence_boundary() -> None:
     """Do not invent an EgressWeave database merely to satisfy an ERD request."""
     erd = " ".join(_read("docs/architecture/ERD.md").split())
@@ -192,6 +206,14 @@ def test_acquisition_doctoring_includes_current_nist_due_diligence_guidance() ->
     assert "July 8, 2026" in compliance
     assert "supplier due diligence" in compliance
     assert "does not make EgressWeave a supplier-risk assessment system" in compliance
+
+
+def test_nist_sp_1326_reference_matches_the_final_nist_record() -> None:
+    """Use the corporate author and exact title published by NIST for SP 1326."""
+    references = _read("docs/doctoring/REFERENCES.md")
+
+    assert "National Institute of Standards and Technology. (2026). *NIST Cybersecurity Supply Chain Risk Management: Due Diligence Assessment Quick-Start Guide* (NIST SP 1326)." in references
+    assert "Boyens, J., McWhite, R., & Calloway, L. (2026)." not in references
 
 
 def test_governance_pack_includes_threat_and_requirement_traceability_views() -> None:
