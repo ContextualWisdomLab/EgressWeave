@@ -26,6 +26,9 @@ def test_request_extension_capability_boundary_is_documented() -> None:
         "HTTPCore",
         "`timeout`",
         "`sni_hostname`",
+        "exact built-in `bytes`",
+        "exact built-in `str`",
+        "Subclasses of `bytes` and `str` are rejected",
         "`target`",
         "`trace`",
         "fail closed",
@@ -52,12 +55,25 @@ def test_request_extension_guide_is_discoverable_from_research_index() -> None:
     """Keep the request-extension capability boundary reachable from the index."""
     research_index = _read(RESEARCH_INDEX_PATH)
 
-    assert "request-extension-capabilities.md" in research_index
+    assert (
+        "[HTTPCore request-extension capability boundary]"
+        "(request-extension-capabilities.md)"
+    ) in research_index
 
 
 def test_changelog_records_request_extension_capability_hardening() -> None:
     """Keep the compatibility-tightening security change visible to integrators."""
     changelog = " ".join(_read(CHANGELOG_PATH).split()).lower()
 
-    assert "request extension" in changelog
-    assert "trace" in changelog
+    for fragment in (
+        "restrict low-level httpcore request extensions",
+        "`timeout`",
+        "`sni_hostname`",
+        "`trace`",
+        "`target`",
+        "unknown extension keys",
+        "non-string keys",
+        "hostile extension mappings",
+        "fail closed before pool dispatch",
+    ):
+        assert fragment in changelog
