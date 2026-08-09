@@ -30,7 +30,12 @@ before the delayed candidate would be created, so time consumed between wait
 return and scheduling cannot create an out-of-budget connection task. Staggered
 racing therefore does not multiply the caller's timeout or turn a completion or
 scheduling boundary at the deadline into unbudgeted network work. The
-synchronous transport remains sequential.
+synchronous transport remains sequential. Before every synchronous TCP attempt
+it recomputes the shared deadline's remaining budget after pinned-address
+revalidation. A zero remaining connection budget does not start a TCP attempt;
+the backend returns the existing generic denial instead. This avoids delegating
+an already-expired budget to a dependency-injected backend while leaving
+ordinary positive-budget candidate order and first-success semantics unchanged.
 
 When the coordinator's deadline is exhausted, it cancels and awaits every
 pending attempt, consumes completed task outcomes without exposing their private
