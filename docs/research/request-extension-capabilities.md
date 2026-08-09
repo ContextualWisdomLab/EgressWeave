@@ -89,9 +89,9 @@ regression tests, documentation, and release note before widening the allowlist.
 A caller may supply only an exact built-in `bytes` value containing ASCII or an
 exact built-in `str` hostname when it canonicalizes to the already validated
 hostname. EgressWeave then overwrites the outbound extension with that validated
-hostname. Alternate TLS identity is rejected. Subclasses of `bytes` and `str`
-are rejected before HTTPCore dispatch with the same generic
-`EgressNotAllowedError`.
+hostname. Alternate TLS identity is rejected.
+Subclasses of `bytes` and `str` are rejected before HTTPCore dispatch with the
+same generic `EgressNotAllowedError`.
 
 ### `timeout`
 
