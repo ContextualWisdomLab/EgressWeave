@@ -325,15 +325,15 @@ def _bind_validated_tls_server_name(
 
     requested_server_name = safe_extensions.get("sni_hostname")
     if requested_server_name is not None:
-        if isinstance(requested_server_name, bytes):
+        if type(requested_server_name) is bytes:
             try:
                 requested_server_name_text = requested_server_name.decode("ascii")
             except UnicodeDecodeError as exc:
                 raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
-        elif isinstance(requested_server_name, str):
+        elif type(requested_server_name) is str:
             requested_server_name_text = requested_server_name
         else:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
         if _normalize_host(requested_server_name_text) != hostname:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
