@@ -6,7 +6,7 @@ EgressWeave treats low-level HTTPCore request extensions as security-relevant
 capabilities rather than opaque metadata. The pinned transports therefore use a
 positive allowlist: only the reviewed `timeout` metadata and the validated
 `sni_hostname` identity channel may reach HTTPCore. Every other request
-extension fails closed with the same generic `EgressNotAllowedError` used for
+extension must fail closed with the same generic `EgressNotAllowedError` used for
 other indeterminate egress decisions.
 
 This boundary is intentionally narrower than HTTPCore's general extension API.
