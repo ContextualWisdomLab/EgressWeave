@@ -1,3 +1,4 @@
+import asyncio
 import math
 import threading
 import time
@@ -104,6 +105,33 @@ async def test_async_validation_uses_same_bounded_dns_timeout(monkeypatch):
         assert time.monotonic() - started_at < 0.5
     finally:
         _release_and_wait_for_resolver(release)
+
+
+async def test_async_dns_timeout_includes_to_thread_scheduling_delay(monkeypatch):
+    """Count executor scheduling delay inside the public async DNS deadline."""
+    policy = EgressPolicy.from_hosts(
+        "api.openai.com",
+        dns_timeout_seconds=0.05,
+    )
+
+    async def delayed_to_thread(function, *args):
+        assert function is v._resolve_all_global_addresses
+        assert args == ("api.openai.com", 443, policy)
+        await asyncio.sleep(0.25)
+        return ("93.184.216.34",)
+
+    monkeypatch.setattr(v.asyncio, "to_thread", delayed_to_thread)
+    started_at = time.monotonic()
+
+    with pytest.raises(
+        EgressNotAllowedError, match="^egress URL is not allowed$"
+    ):
+        await validate_egress_url_details_async(
+            "https://api.openai.com/v1",
+            policy=policy,
+        )
+
+    assert time.monotonic() - started_at < 0.2
 
 
 def test_resolver_failure_remains_generic(monkeypatch):
