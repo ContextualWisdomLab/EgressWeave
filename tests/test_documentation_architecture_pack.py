@@ -169,6 +169,18 @@ def test_doctoring_records_authoritative_standards_and_no_certification_claim() 
     assert "does not claim certification" in compliance
 
 
+def test_acquisition_doctoring_includes_current_nist_due_diligence_guidance() -> None:
+    """Keep acquisition readiness grounded in the current final NIST C-SCRM guide."""
+    references = _read("docs/doctoring/REFERENCES.md")
+    compliance = _read("docs/product/COMPLIANCE_TRACEABILITY.md")
+
+    assert "NIST SP 1326" in references
+    assert "Due Diligence Assessment Quick-Start Guide" in references
+    assert "July 8, 2026" in compliance
+    assert "supplier due diligence" in compliance
+    assert "does not make EgressWeave a supplier-risk assessment system" in compliance
+
+
 def test_documentation_pack_has_no_unresolved_template_markers() -> None:
     """Prevent placeholder planning prose from becoming the canonical product record."""
     forbidden_markers = ("TODO", "TBD", "PLACEHOLDER", "FIXME")
