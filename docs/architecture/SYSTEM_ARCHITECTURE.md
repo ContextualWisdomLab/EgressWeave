@@ -32,20 +32,24 @@ flowchart TD
     dns --> classify[Deduplicate, classify, and bound every address]
     classify --> state[Create integrity-bound validated state]
     state --> revalidate[Revalidate against current policy]
-    revalidate --> tcp[Connect to one validated IP]
+    revalidate --> pre_request_checks[Method + authority + target + headers + framing + declared body + timeout checks]
+    pre_request_checks --> pool_call[Invoke bounded HTTPCore/HTTPX pool request]
+    pool_call --> tcp[Connect to one validated IP]
     tcp --> tls[TLS handshake using approved hostname identity]
-    tls --> request_checks[Target + headers + framing + body + timeout/pool checks]
-    request_checks --> http_dispatch[HTTPCore/HTTPX dispatch]
-    http_dispatch --> response_checks[Response headers + encoding + body-byte checks]
+    tls --> stream_request_checks[Streamed request-body exact-byte + cumulative budget checks during send]
+    stream_request_checks --> response_checks[Response headers + encoding + body-byte checks]
     response_checks --> caller[Caller-visible response]
 
     parse -->|reject| deny[Stable EgressNotAllowedError]
     authority -->|reject| deny
     classify -->|reject| deny
     revalidate -->|reject| deny
-    request_checks -->|reject| deny
+    pre_request_checks -->|reject| deny
+    stream_request_checks -->|reject| deny
     response_checks -->|reject| deny
 ```
+
+The transport completes method, authority, request-target, final-header, framing, declared-body-size, and timeout-extension validation before it calls the connection pool. The bounded request-body wrapper is consumed lazily by HTTPCore during the network send, so exact-byte and cumulative streamed-body accounting occurs only after the pool has established the applicable connection/TLS path. The diagram therefore distinguishes pre-network validation from checks that necessarily occur while the body is being transmitted rather than implying that all request checks happen after TLS.
 
 The validated IP is a connection target, not a new logical authority. SNI, certificate hostname validation, and HTTP authority continue to use the normalized approved hostname.
 
