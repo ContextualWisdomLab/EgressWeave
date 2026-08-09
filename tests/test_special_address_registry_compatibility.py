@@ -41,12 +41,12 @@ def _force_address_properties(
         ("5f00::1", ipaddress.IPv6Address),
     ],
 )
-def test_current_iana_non_global_ranges_remain_denied_when_stdlib_says_global(
+def test_reviewed_non_global_compatibility_ranges_remain_denied_when_stdlib_says_global(
     monkeypatch: pytest.MonkeyPatch,
     address: str,
     address_type: type[ipaddress.IPv4Address | ipaddress.IPv6Address],
 ) -> None:
-    """Deny current IANA non-global ranges independently of stdlib patch data."""
+    """Deny reviewed compatibility ranges independently of stdlib patch data."""
     _force_address_properties(
         monkeypatch,
         address_type,
