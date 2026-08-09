@@ -134,6 +134,14 @@ def test_security_model_matches_implemented_resource_bounds() -> None:
     assert "max_request_bytes" in security_model
 
 
+def test_public_api_contract_does_not_claim_a_packaged_naruon_adapter() -> None:
+    """Keep host integration responsibility separate from the package public API."""
+    api_contract = _read("docs/product/API_CONTRACT.md")
+
+    assert "naruon integration adapter that translates host configuration" not in api_contract
+    assert "host-side adapter" in api_contract
+
+
 def test_doctoring_records_authoritative_standards_and_no_certification_claim() -> None:
     """Keep standards traceability explicit without overclaiming compliance status."""
     references = _read("docs/doctoring/REFERENCES.md")
