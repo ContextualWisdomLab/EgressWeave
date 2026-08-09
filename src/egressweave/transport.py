@@ -166,6 +166,9 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
 
         def start_next_attempt() -> bool:
             nonlocal more_addresses, next_attempt_at
+            if deadline is not None and loop.time() >= deadline:
+                more_addresses = False
+                return False
             try:
                 address = next(address_iterator)
             except StopIteration:
