@@ -4,12 +4,13 @@ Status: Proposed product-control mapping. This document **does not claim certifi
 
 ## 1. Scope
 
-EgressWeave is a security library, not a complete information system. It can contribute technical evidence to a host's security and compliance program, but controls that depend on organization governance, identity lifecycle, physical security, human processes, service operations, data residency, backup, incident response, or certified cloud-service scope remain host/platform responsibilities.
+EgressWeave is a security library, not a complete information system. It can contribute technical evidence to a host's security and compliance program, but controls that depend on organization governance, identity lifecycle, physical security, human processes, service operations, data residency, backup, incident response, supplier governance, or certified cloud-service scope remain host/platform responsibilities.
 
 ## 2. Standards baseline
 
 The current documentation baseline distinguishes final standards from drafts:
 
+- NIST SP 1326, *NIST Cybersecurity Supply Chain Management: Due Diligence Assessment Quick-Start Guide*, became final on **July 8, 2026**. It is used here to structure acquisition-oriented supplier due diligence evidence boundaries, not to claim a supplier assessment outcome.
 - NIST SP 800-218, Secure Software Development Framework (SSDF) Version 1.1, is the current final core SSDF publication.
 - NIST SP 800-218 Rev. 1 / SSDF Version 1.2 is an Initial Public Draft published in December 2025 and is tracked as informative future direction rather than a final normative baseline.
 - OWASP Application Security Verification Standard (ASVS) 5.0.0 was released in May 2025.
@@ -20,7 +21,23 @@ The current documentation baseline distinguishes final standards from drafts:
 
 See [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) for APA 7 references.
 
-## 3. NIST SSDF traceability
+## 3. NIST C-SCRM acquisition due-diligence traceability
+
+NIST SP 1326 frames supplier due diligence as a supply-chain risk assessment input for ICT acquisition and identifies five assessment components: Foreign Ownership, Control, or Influence (FOCI); provenance; resilience; foundational cyber practices; and supply-chain tiers.
+
+EgressWeave can contribute bounded technical evidence to only part of that inquiry:
+
+| NIST SP 1326 area | EgressWeave contribution | Evidence the acquirer/host still needs |
+|---|---|---|
+| Provenance | Exact-source release identity, checksums, deterministic package evidence, SBOM/provenance work where actually integrated | Supplier corporate provenance, build-service trust, artifact custody, distribution-channel and upstream provenance assessment |
+| Resilience | Finite network/resource policies, deterministic denial boundaries, rollback/release guidance | Supplier continuity, dependency concentration, recovery capacity, operational history and service redundancy |
+| Foundational cyber practices | Secure-SDLC rules, exact-head CI/security evidence, threat model, least-privilege automation boundaries | Organization-wide vulnerability management, identity governance, incident response, workforce/security-program evidence |
+| Supply-chain tiers | Reviewed dependency locks and SBOM evidence where actually generated | Complete direct/indirect supplier mapping, subcontractor/service dependencies and tier-risk assessment |
+| FOCI | None intrinsic to a Python security library | Ownership, control, jurisdiction, influence and other organizational due-diligence evidence |
+
+This mapping **does not make EgressWeave a supplier-risk assessment system** and does not determine whether ContextualWisdomLab, a distributor, a hosting platform, or any dependency is acceptable to a particular acquirer. Acquirers must evaluate the complete supplier/product/service context and apply their own risk criteria.
+
+## 4. NIST SSDF traceability
 
 | SSDF theme | EgressWeave contribution | Host/platform responsibility |
 |---|---|---|
@@ -31,7 +48,7 @@ See [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) for APA 7 referen
 
 The draft SSDF v1.2 Source-track concepts are useful for future evidence design, but this documentation does not relabel draft requirements as final SSDF obligations.
 
-## 4. OWASP ASVS and SSRF traceability
+## 5. OWASP ASVS and SSRF traceability
 
 EgressWeave contributes to server-side request and communications controls through:
 
@@ -47,7 +64,7 @@ EgressWeave contributes to server-side request and communications controls throu
 
 The host must still perform application authorization, authentication, tenant isolation, input semantics, output encoding, data validation, access control, secrets management, and all other ASVS controls outside the transport boundary.
 
-## 5. SLSA v1.2 traceability
+## 6. SLSA v1.2 traceability
 
 ### Source-track contributions
 
@@ -57,7 +74,7 @@ Repository branch protection, independent review, immutable exact-head check evi
 
 Hash-locked toolchains, deterministic package checks, source identity, SBOM/release-evidence work, and protected release workflows can contribute to build provenance. The package must not claim a SLSA Build level merely because a provenance file or attestation exists; the builder and full SLSA level requirements must be independently verified.
 
-## 6. SOC 2 Trust Services Criteria-oriented traceability
+## 7. SOC 2 Trust Services Criteria-oriented traceability
 
 | Trust Services Criteria area | EgressWeave contribution | Host/platform evidence still required |
 |---|---|---|
@@ -69,13 +86,13 @@ Hash-locked toolchains, deterministic package checks, source identity, SBOM/rele
 
 A host pursuing SOC 2 must establish and operate the complete applicable control system over a defined period; EgressWeave supplies only a subset of technical control evidence.
 
-## 7. CSAP-oriented traceability
+## 8. CSAP-oriented traceability
 
 KISA's CSAP program evaluates the defined cloud-service certification scope, including related systems, facilities, organizations, and support services. EgressWeave can contribute to secure outbound communications, secure development evidence, dependency/supply-chain controls, least privilege, and bounded security logging in a host SaaS/IaaS/DaaS architecture.
 
 The host/cloud-service operator remains responsible for the certification scope, Korean public-cloud requirements, asset and personnel controls, network/system security, incident response, logging/monitoring, vulnerability assessment, penetration testing, data protection, backup/recovery, and the formal application/evaluation/renewal process.
 
-## 8. PII and privacy design
+## 9. PII and privacy design
 
 EgressWeave does not solve privacy by blanket masking payloads. The core remains payload-opaque and purpose-limited:
 
@@ -86,7 +103,7 @@ EgressWeave does not solve privacy by blanket masking payloads. The core remains
 - hosts should use explicit authorization, encryption, scoped retention, tenant access controls, and purpose limitation;
 - reversible tokenization or pseudonymized analytics belongs in the host data architecture when required by business workflow.
 
-## 9. Evidence expectations
+## 10. Evidence expectations
 
 Commercial procurement evidence should be reproducible and tied to exact source/release identity. Depending on release maturity it can include:
 
@@ -99,4 +116,4 @@ Commercial procurement evidence should be reproducible and tied to exact source/
 - release/rollback runbook;
 - host control-mapping package explaining shared responsibility.
 
-Absence of one of these artifacts must be represented as a gap or non-applicable control, not silently inferred as passing.
+These product artifacts may support an acquirer's supplier due diligence, but they are inputs rather than a supplier approval decision. Absence of one of these artifacts must be represented as a gap or non-applicable control, not silently inferred as passing.
