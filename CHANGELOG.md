@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
+  metadata and validated `sni_hostname` identity channel. `trace`, `target`,
+  unknown extension keys, non-string keys, and hostile extension mappings now
+  fail closed before pool dispatch so raw transport callback capabilities cannot
+  bypass the EgressWeave HTTP policy surface.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
