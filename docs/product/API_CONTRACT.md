@@ -24,7 +24,9 @@ The protected-main API includes these public concepts and repository-tested equi
 
 A host-side adapter, including one owned by naruon or another CWL service, may translate host configuration into this same public policy/builder path. That adapter remains host-owned and is not a packaged EgressWeave public symbol.
 
-A future **ACTIVE-PR** may add a versioned machine-readable decision-evidence schema. It is not part of protected-main API until merged.
+Protected main already exports `DECISION_EVIDENCE_SCHEMA_VERSION`, `EgressDecisionEvidence`, and deterministic JSON-compatible `as_dict()` output. That v1 runtime mapping is shipped API behavior; it is distinct from a separately packaged schema document.
+
+The **ACTIVE-PR** schema-artifact work may add a packaged JSON Schema Draft 2020-12 resource, a detached loader for that artifact, and package-acceptance checks binding the resource into wheel/source distributions. Those artifact-level additions are not protected-main API until merged and must not be confused with the already-shipped v1 runtime evidence mapping.
 
 ## 3. Policy construction contract
 
