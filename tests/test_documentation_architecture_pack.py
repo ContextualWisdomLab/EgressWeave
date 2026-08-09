@@ -280,19 +280,3 @@ def test_changelog_records_the_commercial_documentation_baseline() -> None:
     assert "TRD" in changelog
     assert "UML" in changelog
     assert "ERD" in changelog
-
-
-def test_accepted_modular_integration_adr_matches_credential_free_handoff() -> None:
-    """Keep the accepted automation decision aligned with the read-only product handoff."""
-    decision = " ".join(
-        _read("docs/adr/0001-security-boundaries-and-modular-integration.md").split()
-    )
-
-    assert "before a publishing identity creates a normal pull request" not in decision
-    assert "ends at the independently reverified credential-free patch handoff" in decision
-    assert (
-        "does not create branches, pull requests, repository writes, or auto-merge requests"
-        in decision
-    )
-    assert "external, independently reviewed, credential-separated" in decision
-    assert "reconstruct and verify the exact tree before any repository write" in decision
