@@ -84,3 +84,20 @@ def test_sync_all_candidate_failures_erase_child_error_provenance() -> None:
     assert error.value.__context__ is None
     assert error.value.__cause__ is None
     assert failing_backend.started_hosts == list(_ADDRESSES)
+
+
+def test_sync_zero_budget_does_not_start_connection_candidate() -> None:
+    """Create no synchronous connection attempt after the budget is exhausted."""
+    backend = sync_transport_module._PinnedEgressSyncNetworkBackend(
+        "api.example.com", 443, _ADDRESSES, _POLICY
+    )
+    failing_backend = _SyncSensitiveFailureBackend()
+    backend._backend = failing_backend
+
+    with pytest.raises(OSError) as error:
+        backend.connect_tcp("api.example.com", 443, timeout=0.0)
+
+    assert str(error.value) == "egress URL is not allowed"
+    assert error.value.__context__ is None
+    assert error.value.__cause__ is None
+    assert failing_backend.started_hosts == []
