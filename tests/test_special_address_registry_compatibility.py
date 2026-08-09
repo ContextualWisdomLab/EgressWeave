@@ -14,7 +14,7 @@ _REMOTE_POLICY = EgressPolicy.from_hosts("api.example.com")
 
 def _force_address_properties(
     monkeypatch: pytest.MonkeyPatch,
-    address_type: type[ipaddress.IPv4Address] | type[ipaddress.IPv6Address],
+    address_type: type[ipaddress.IPv4Address | ipaddress.IPv6Address],
     *,
     private: bool,
     global_: bool,
@@ -44,7 +44,7 @@ def _force_address_properties(
 def test_current_iana_non_global_ranges_remain_denied_when_stdlib_says_global(
     monkeypatch: pytest.MonkeyPatch,
     address: str,
-    address_type: type[ipaddress.IPv4Address] | type[ipaddress.IPv6Address],
+    address_type: type[ipaddress.IPv4Address | ipaddress.IPv6Address],
 ) -> None:
     """Deny current IANA non-global ranges independently of stdlib patch data."""
     _force_address_properties(
@@ -75,7 +75,7 @@ def test_current_iana_non_global_ranges_remain_denied_when_stdlib_says_global(
 def test_current_iana_global_exceptions_remain_allowed_when_stdlib_parent_is_private(
     monkeypatch: pytest.MonkeyPatch,
     address: str,
-    address_type: type[ipaddress.IPv4Address] | type[ipaddress.IPv6Address],
+    address_type: type[ipaddress.IPv4Address | ipaddress.IPv6Address],
 ) -> None:
     """Honor explicit IANA-global exceptions despite stale parent classification."""
     _force_address_properties(
