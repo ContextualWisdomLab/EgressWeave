@@ -6,8 +6,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from egressweave import EgressPolicy
-from egressweave import sync_transport, transport, validation
+from egressweave import EgressPolicy, sync_transport, transport, validation
 
 PUBLIC_ADDRESS = "93.184.216.34"
 POLICY = EgressPolicy.from_hosts("api.example.com")
