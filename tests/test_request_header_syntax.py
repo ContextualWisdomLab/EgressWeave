@@ -19,6 +19,26 @@ _INVALID_HEADER_SETS = (
 )
 
 
+class _HostileHeaderBytes(bytes):
+    """Fail if request-header validation executes subclass behavior."""
+
+    def __len__(self) -> int:
+        """Reject truthiness or resource accounting through this subclass."""
+        raise AssertionError("header bytes subclass length executed")
+
+    def __iter__(self):
+        """Reject field-name octet iteration through this subclass."""
+        raise AssertionError("header bytes subclass iteration executed")
+
+    def __getitem__(self, key):
+        """Reject field-value slicing through this subclass."""
+        raise AssertionError("header bytes subclass indexing executed")
+
+    def lower(self):
+        """Reject case normalization through this subclass."""
+        raise AssertionError("header bytes subclass lower executed")
+
+
 def _validated_result():
     """Return factory-issued validation state without performing network I/O."""
     return _make_validated_egress_url(
@@ -69,6 +89,26 @@ def test_safe_header_builder_restores_one_validated_host() -> None:
     )
 
     assert headers == [(b"X-Trace", b"one\ttwo"), (b"host", b"api.openai.com")]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    (
+        ((_HostileHeaderBytes(b"X-Test"), b"value"),),
+        ((b"X-Test", _HostileHeaderBytes(b"value")),),
+    ),
+)
+def test_safe_header_builder_rejects_bytes_subclasses_before_custom_behavior(
+    headers: tuple[tuple[bytes, bytes], ...],
+) -> None:
+    """Reject header subclasses before invoking attacker-controlled protocols."""
+    with pytest.raises(
+        EgressNotAllowedError, match="^egress URL is not allowed$"
+    ) as error:
+        _build_safe_request_headers(headers, b"api.openai.com")
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
 
 
 @pytest.mark.parametrize("headers", _INVALID_HEADER_SETS)
