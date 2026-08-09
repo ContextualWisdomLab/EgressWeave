@@ -399,7 +399,7 @@ def _revalidate_pinned_egress_url(
     if type(validated) is not ValidatedEgressURL:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
-    integrity_signature = validated._integrity_signature
+    integrity_signature = getattr(validated, "_integrity_signature", None)
     if (
         not isinstance(integrity_signature, bytes)
         or not isinstance(validated.normalized_url, str)
