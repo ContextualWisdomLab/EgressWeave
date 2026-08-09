@@ -163,3 +163,14 @@ def test_documentation_pack_has_no_unresolved_template_markers() -> None:
             if marker in content:
                 violations.append(f"{path}: {marker}")
     assert not violations, f"documentation placeholders remain: {violations}"
+
+
+def test_changelog_records_the_commercial_documentation_baseline() -> None:
+    """Keep the new canonical product source of truth visible in release history."""
+    changelog = " ".join(_read("CHANGELOG.md").split())
+
+    assert "commercial documentation baseline" in changelog
+    assert "PRD" in changelog
+    assert "TRD" in changelog
+    assert "UML" in changelog
+    assert "ERD" in changelog
