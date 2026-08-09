@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Stabilize special-purpose address classification across supported interpreter
+  patch-level differences with a small reviewed compatibility overlay on parsed
+  addresses. Explicit globally reachable exceptions remain usable only after all
+  ordinary EgressWeave authority checks, while reviewed non-global ranges remain
+  fail-closed without a runtime registry download or mutable network dependency.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
