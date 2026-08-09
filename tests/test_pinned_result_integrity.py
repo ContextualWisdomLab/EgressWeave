@@ -15,11 +15,12 @@ POLICY = EgressPolicy.from_hosts("api.openai.com")
 
 
 class _HostileValidatedResult(ValidatedEgressURL):
-    """Expose any pre-type-check attribute access through an obvious failure."""
+    """Expose pre-type-check integrity-signature access through a test descriptor."""
 
-    def __getattribute__(self, name: str) -> object:
-        """Fail if validation reads subclass-controlled attributes."""
-        raise AssertionError(f"untrusted validated-result attribute read: {name}")
+    @property
+    def _integrity_signature(self) -> bytes:
+        """Fail if validation reads subclass-controlled integrity state."""
+        raise AssertionError("untrusted validated-result signature read")
 
 
 def _forge_untrusted_result() -> ValidatedEgressURL:
