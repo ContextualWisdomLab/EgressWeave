@@ -12,9 +12,14 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _normalized_text(path: Path) -> str:
+    """Return whitespace-normalized case-insensitive prose for semantic checks."""
+    return " ".join(_read(path).split()).casefold()
+
+
 def test_http_field_guide_documents_exact_builtin_bytes_only() -> None:
     """Keep the protocol guide aligned with the request-header trust boundary."""
-    guide = " ".join(_read(HTTP_FIELD_GUIDE).split())
+    guide = _normalized_text(HTTP_FIELD_GUIDE)
 
     assert "exact built-in `bytes`" in guide
     assert "byte subclasses" in guide
@@ -23,7 +28,7 @@ def test_http_field_guide_documents_exact_builtin_bytes_only() -> None:
 
 def test_changelog_records_exact_request_header_byte_hardening() -> None:
     """Keep the compatibility-tightening boundary visible in release history."""
-    changelog = " ".join(_read(CHANGELOG).split())
+    changelog = _normalized_text(CHANGELOG)
 
     assert "request-header names and values" in changelog
     assert "exact built-in `bytes`" in changelog
