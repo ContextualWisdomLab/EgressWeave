@@ -20,3 +20,12 @@ def test_trace_extension_is_rejected_before_httpcore_dispatch() -> None:
             {"trace": trace_callback},
             "api.example.com",
         )
+
+
+def test_unreviewed_request_extension_is_rejected_before_httpcore_dispatch() -> None:
+    """Fail closed instead of forwarding a future capability-bearing extension."""
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        _bind_validated_tls_server_name(
+            {"future_transport_capability": object()},
+            "api.example.com",
+        )
