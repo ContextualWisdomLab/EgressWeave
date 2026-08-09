@@ -10,6 +10,7 @@ import pytest
 from egressweave import (
     EgressNotAllowedError,
     EgressPolicy,
+    response_safety,
     sync_transport,
     transport,
     validation,
@@ -63,6 +64,14 @@ class _HostileExtensionBytes(bytes):
     def __repr__(self) -> str:
         """Fail if caller-visible handling executes subclass representation."""
         raise AssertionError("response extension byte subclass behavior executed")
+
+
+class _HostileExtensionDict(dict):
+    """Represent a mapping subclass whose behavior must never be trusted."""
+
+    def __contains__(self, key: object) -> bool:
+        """Fail if extension filtering invokes subclass membership behavior."""
+        raise AssertionError("response extension mapping behavior executed")
 
 
 @dataclass
@@ -136,6 +145,14 @@ class _AsyncExtensionPool:
 
     async def aclose(self) -> None:
         """Close the synthetic pool."""
+
+
+def test_response_extension_container_must_be_exact_dict() -> None:
+    """Reject mapping subclasses before any dependency-controlled method runs."""
+    extensions = _HostileExtensionDict(http_version=b"HTTP/1.1")
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
+        response_safety._select_public_response_extensions(extensions)
 
 
 def test_sync_response_hides_raw_network_stream_extension() -> None:
