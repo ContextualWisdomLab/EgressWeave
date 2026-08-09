@@ -21,7 +21,8 @@ The protected-main API includes these public concepts and repository-tested equi
 - `EgressNotAllowedError` — stable public policy denial.
 - `validate_egress_url(...)` and asynchronous validation equivalent.
 - synchronous and asynchronous pinned-client builders.
-- naruon integration adapter that translates host configuration into the same core policy/builder path.
+
+A host-side adapter, including one owned by naruon or another CWL service, may translate host configuration into this same public policy/builder path. That adapter remains host-owned and is not a packaged EgressWeave public symbol.
 
 A future **ACTIVE-PR** may add a versioned machine-readable decision-evidence schema. It is not part of protected-main API until merged.
 
@@ -96,7 +97,8 @@ The host application owns:
 - retry/idempotency semantics;
 - service-level objectives and alerting;
 - network/firewall/service-mesh controls;
-- legal/privacy purpose limitation for payload data.
+- legal/privacy purpose limitation for payload data;
+- any naruon/CWL configuration adapter and its lifecycle.
 
 See [`OPERABILITY.md`](OPERABILITY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and [`../architecture/ERD.md`](../architecture/ERD.md).
 
