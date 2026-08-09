@@ -41,6 +41,26 @@ _PRIVATE_LOCAL_NETWORKS = (
     ipaddress.ip_network("192.168.0.0/16"),
     ipaddress.ip_network("fc00::/7"),
 )
+_SPECIAL_PURPOSE_GLOBAL_EXCEPTIONS = (
+    ipaddress.ip_network("192.0.0.9/32"),
+    ipaddress.ip_network("192.0.0.10/32"),
+    ipaddress.ip_network("2001:1::1/128"),
+    ipaddress.ip_network("2001:1::2/128"),
+    ipaddress.ip_network("2001:1::3/128"),
+    ipaddress.ip_network("2001:3::/32"),
+    ipaddress.ip_network("2001:4:112::/48"),
+    ipaddress.ip_network("2001:20::/28"),
+    ipaddress.ip_network("2001:30::/28"),
+)
+_SPECIAL_PURPOSE_NON_GLOBAL_NETWORKS = (
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("64:ff9b:1::/48"),
+    ipaddress.ip_network("100:0:0:1::/64"),
+    ipaddress.ip_network("2001::/23"),
+    ipaddress.ip_network("2002::/16"),
+    ipaddress.ip_network("3fff::/20"),
+    ipaddress.ip_network("5f00::/16"),
+)
 
 
 class EgressNotAllowedError(ValueError):
@@ -156,6 +176,17 @@ def _is_private_local_address(
     return any(ip_address in network for network in _PRIVATE_LOCAL_NETWORKS)
 
 
+def _special_purpose_global_override(
+    ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool | None:
+    """Return a reviewed current-registry override for version-sensitive ranges."""
+    if any(ip_address in network for network in _SPECIAL_PURPOSE_GLOBAL_EXCEPTIONS):
+        return True
+    if any(ip_address in network for network in _SPECIAL_PURPOSE_NON_GLOBAL_NETWORKS):
+        return False
+    return None
+
+
 def _format_normalized_netloc(hostname: str, port: int, *, explicit_port: bool) -> str:
     """Render one canonical URL authority while preserving explicit-port intent."""
     host_part = f"[{hostname}]" if ":" in hostname else hostname
@@ -173,6 +204,8 @@ def _validate_global_address(
     local names may resolve only to loopback addresses. An explicitly allowlisted
     single-label container name may resolve only to loopback or private network
     space. IP-literal URLs and dotted remote hosts never inherit either exception.
+    Reviewed special-purpose registry corrections are applied before the running
+    interpreter's version-sensitive ``ipaddress`` classification for remote hosts.
     """
     try:
         ip_address = ipaddress.ip_address(address)
@@ -187,6 +220,12 @@ def _validate_global_address(
     if hostname and _is_allowlisted_local_host(hostname, policy):
         if not (ip_address.is_loopback or _is_private_local_address(ip_address)):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+        return str(ip_address)
+
+    special_purpose_global = _special_purpose_global_override(ip_address)
+    if special_purpose_global is False:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    if special_purpose_global is True:
         return str(ip_address)
 
     if (
