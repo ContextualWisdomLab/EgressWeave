@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+ARCHITECTURE_PATH = REPOSITORY_ROOT / "ARCHITECTURE.md"
 RESEARCH_INDEX_PATH = REPOSITORY_ROOT / "docs" / "research" / "README.md"
 REQUEST_EXTENSION_GUIDE_PATH = (
     REPOSITORY_ROOT / "docs" / "research" / "request-extension-capabilities.md"
@@ -31,6 +32,20 @@ def test_request_extension_capability_boundary_is_documented() -> None:
         "NetworkStream",
     ):
         assert fragment in guide
+
+
+def test_architecture_names_the_positive_request_extension_allowlist() -> None:
+    """Keep the authoritative transport architecture aligned with capability policy."""
+    architecture = _read(ARCHITECTURE_PATH)
+
+    for fragment in (
+        "positive request-extension allowlist",
+        "`timeout`",
+        "`sni_hostname`",
+        "`target`",
+        "`trace`",
+    ):
+        assert fragment in architecture
 
 
 def test_request_extension_guide_is_discoverable_from_research_index() -> None:
