@@ -60,6 +60,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Deduplicate overlapping same-authority DNS resolution through one live
+  in-flight `(hostname, port)` worker while preserving the finite global
+  resolver ceiling, per-caller deadlines, and caller-specific address policy.
+  completed DNS results are never cached, later validations perform a fresh
+  lookup, and unexpected resolver failures remain behind the generic denial
+  boundary without private exception provenance.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
