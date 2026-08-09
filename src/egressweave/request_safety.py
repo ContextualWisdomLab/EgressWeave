@@ -298,14 +298,16 @@ def _bind_validated_tls_server_name(
     ``target`` extension overrides the request target carried by the URL and can
     encode an absolute URI for forward-proxy dispatch, creating a second
     destination channel independent of the validated authority. It is therefore
-    always rejected.
+    always rejected. HTTPCore ``trace`` callbacks are also rejected because
+    connection-completion events can expose raw network-stream return values to
+    caller code outside EgressWeave's reviewed HTTP policy surface.
 
     HTTPCore also honors ``sni_hostname`` while opening TLS. A caller-supplied
     value must either name the already validated host or be rejected. The
     returned copy always carries the validated hostname, preventing later
     consumers from falling back to an untrusted override.
     """
-    if "target" in extensions:
+    if "target" in extensions or "trace" in extensions:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
     requested_server_name = extensions.get("sni_hostname")
