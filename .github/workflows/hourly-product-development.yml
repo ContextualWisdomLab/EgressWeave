@@ -176,6 +176,14 @@ jobs:
           - Escalate only after every autonomously actionable path has been exhausted; a failed check, stale base, review delay, dependency, or unavailable tool is not by itself a terminal blocker while a safe next action exists.
           - If the protected branch is not green, repair it only when the root-cause analysis shows that the cause is inside the permitted edit boundary and can be completed safely in this run. Otherwise leave the working tree unchanged and preserve the evidence in the model result.
 
+          Work-conserving continuation for the selected cohesive slice:
+          - After every completed or deferred sub-action, reassess the remaining safe work for this same cohesive slice.
+          - Do not stop because one candidate is blocked, one fix is complete, or one documentation artifact is updated. Continue through the next safe test, implementation, documentation, or evidence action while the slice remains inside the edit, file-count, diff-size, authority, and run-time boundaries.
+          - Reassess documentation completeness whenever the slice changes a material product, security, operational, or architecture boundary. Check PRD, TRD, ADR, Architecture, UML, and ERD applicability plus directly related operator guidance; update only the records materially affected by this slice.
+          - An ERD may be explicitly not applicable when the core owns no persistence. Document that ownership boundary instead of inventing a database or durable entity model.
+          - Only leave the working tree unchanged when no safe material improvement remains inside the allowed edit boundary, or every remaining action requires forbidden authority, unavailable evidence, or exceeds the bounded validation contract.
+          - This continuation rule does not authorize unrelated opportunistic work: retain one cohesive change, touch at most 10 files, and stay below 1,000 changed lines.
+
           Requirements:
           - Use test-first ordering: add or change a focused regression test before changing production code, then
             implement the smallest coherent fix. Do not execute repository code in this credential-bearing step;
