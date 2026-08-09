@@ -22,7 +22,7 @@ def test_response_guide_defines_caller_visible_extension_allowlist() -> None:
     guide = _read(RESPONSE_GUIDE_PATH)
 
     for fragment in (
-        "caller-visible response extensions",
+        "Caller-visible response extensions",
         "`http_version`",
         "`reason_phrase`",
         "`network_stream`",
