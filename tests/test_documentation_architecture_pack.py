@@ -88,6 +88,26 @@ def test_system_architecture_orders_pre_request_validation_before_network_setup(
     )
 
 
+def test_root_architecture_separates_declared_and_streamed_request_body_timing() -> None:
+    """Keep root architecture truthful about checks before dispatch versus during send."""
+    architecture = _read("ARCHITECTURE.md")
+
+    assert "enforce declared and streamed request-body budgets" not in architecture
+    assert "reject unsafe declared request-body lengths before pool dispatch" in architecture
+    assert "wrap the request body with a bounded stream and dispatch to HTTPCore" in architecture
+    assert "enforce actual streamed-body and declared-length equality while HTTPCore consumes the body" in architecture
+
+
+def test_operability_keeps_global_connection_deadline_as_active_pr() -> None:
+    """Do not present the coordinator-owned global deadline as protected-main behavior."""
+    operability = _read("docs/product/OPERABILITY.md")
+
+    assert "preserve the finite global connection deadline" not in operability
+    assert "finite per-attempt connect timeouts" in operability
+    assert "global connection deadline" in operability
+    assert "ACTIVE-PR" in operability
+
+
 def test_erd_records_the_no_owned_persistence_boundary() -> None:
     """Do not invent an EgressWeave database merely to satisfy an ERD request."""
     erd = " ".join(_read("docs/architecture/ERD.md").split())
