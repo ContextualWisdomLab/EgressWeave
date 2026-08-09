@@ -28,23 +28,33 @@ VALIDATED = validation._make_validated_egress_url(
 class _SyncCoreStream:
     """Minimal synchronous HTTP-core stream for transport boundary tests."""
 
+    def __init__(self) -> None:
+        """Start with an open synthetic stream."""
+        self.closed = False
+
     def __iter__(self):
         """Yield one ordinary response body chunk."""
         yield b"ok"
 
     def close(self) -> None:
-        """Close the synthetic stream."""
+        """Record deterministic stream closure."""
+        self.closed = True
 
 
 class _AsyncCoreStream:
     """Minimal asynchronous HTTP-core stream for transport boundary tests."""
+
+    def __init__(self) -> None:
+        """Start with an open synthetic async stream."""
+        self.closed = False
 
     async def __aiter__(self):
         """Yield one ordinary response body chunk."""
         yield b"ok"
 
     async def aclose(self) -> None:
-        """Close the synthetic stream."""
+        """Record deterministic async stream closure."""
+        self.closed = True
 
 
 class _HostileExtensionBytes(bytes):
@@ -100,12 +110,13 @@ class _SyncExtensionPool:
     """Return caller-selected low-level response extension metadata."""
 
     def __init__(self, extensions: dict[str, object]) -> None:
-        """Store the synthetic low-level response extensions."""
+        """Store the extensions and one inspectable response stream."""
         self._extensions = extensions
+        self.stream = _SyncCoreStream()
 
     def handle_request(self, request):
         """Return one response carrying the configured extensions."""
-        return _CoreResponse(_SyncCoreStream(), extensions=self._extensions)
+        return _CoreResponse(self.stream, extensions=self._extensions)
 
     def close(self) -> None:
         """Close the synthetic pool."""
@@ -115,12 +126,13 @@ class _AsyncExtensionPool:
     """Return caller-selected async low-level response extension metadata."""
 
     def __init__(self, extensions: dict[str, object]) -> None:
-        """Store the synthetic low-level response extensions."""
+        """Store the extensions and one inspectable async response stream."""
         self._extensions = extensions
+        self.stream = _AsyncCoreStream()
 
     async def handle_async_request(self, request):
         """Return one response carrying the configured extensions."""
-        return _CoreResponse(_AsyncCoreStream(), extensions=self._extensions)
+        return _CoreResponse(self.stream, extensions=self._extensions)
 
     async def aclose(self) -> None:
         """Close the synthetic pool."""
@@ -164,12 +176,15 @@ async def test_async_response_hides_raw_network_stream_extension() -> None:
 def test_sync_response_rejects_non_exact_public_extension_values(
     extensions: dict[str, object],
 ) -> None:
-    """Fail closed instead of exposing arbitrary response-extension objects."""
+    """Fail closed and release the source instead of exposing arbitrary objects."""
     pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
-    pinned._pool = _SyncExtensionPool(extensions)
+    pool = _SyncExtensionPool(extensions)
+    pinned._pool = pool
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
+
+    assert pool.stream.closed is True
 
 
 @pytest.mark.parametrize(
@@ -182,11 +197,14 @@ def test_sync_response_rejects_non_exact_public_extension_values(
 async def test_async_response_rejects_non_exact_public_extension_values(
     extensions: dict[str, object],
 ) -> None:
-    """Apply the same inert-metadata type boundary to asynchronous responses."""
+    """Apply the same inert-metadata and cleanup boundary asynchronously."""
     pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
-    pinned._pool = _AsyncExtensionPool(extensions)
+    pool = _AsyncExtensionPool(extensions)
+    pinned._pool = pool
 
     with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$"):
         await pinned.handle_async_request(
             httpx.Request("GET", VALIDATED.normalized_url)
         )
+
+    assert pool.stream.closed is True
