@@ -102,6 +102,29 @@ def test_product_contracts_cross_link_the_authoritative_spine() -> None:
     assert "0002-documentation-governance-and-persistence-boundary.md" in adr_index
 
 
+def test_repository_entrypoints_link_the_canonical_product_graph() -> None:
+    """Make the commercial source of truth discoverable from normal repo entrypoints."""
+    readme = _read("README.md")
+    agents = _read("AGENTS.md")
+    claude = _read("CLAUDE.md")
+
+    for required_link in (
+        "docs/product/PRD.md",
+        "docs/product/TRD.md",
+        "docs/architecture/UML.md",
+        "docs/architecture/ERD.md",
+        "docs/adr/README.md",
+    ):
+        assert required_link in readme, f"README does not link {required_link}"
+
+    assert "docs/product/PRD.md" in agents
+    assert "docs/product/TRD.md" in agents
+    assert "docs/adr/README.md" in agents
+    assert "docs/product/PRD.md" in claude
+    assert "docs/product/TRD.md" in claude
+    assert "Independent non-author approval" in agents
+
+
 def test_security_model_matches_implemented_resource_bounds() -> None:
     """Reject stale security prose that denies currently implemented response controls."""
     security_model = _read("docs/security-model.md")
