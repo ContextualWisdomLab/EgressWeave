@@ -55,9 +55,9 @@ def _release_and_wait_for_resolver(release: threading.Event) -> None:
     with v._DNS_RESOLUTION_FLIGHTS_LOCK:
         flight = v._DNS_RESOLUTION_FLIGHTS.get(_AUTHORITY_KEY)
 
+    assert flight is not None
     release.set()
-    if flight is not None:
-        assert flight.completed.wait(timeout=1.0)
+    assert flight.completed.wait(timeout=1.0)
 
     with v._DNS_RESOLUTION_FLIGHTS_LOCK:
         assert _AUTHORITY_KEY not in v._DNS_RESOLUTION_FLIGHTS
