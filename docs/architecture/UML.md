@@ -97,8 +97,9 @@ sequenceDiagram
     Validator->>State: create integrity-bound validated state
     App->>Transport: build client from state + policy + TLS configuration
     Transport->>State: verify integrity, authority, address set and scope
-    Transport->>Transport: validate method, target, headers, body and phase budgets
+    Transport->>Transport: validate method, target, headers, framing + declared body + phase budgets
     Transport->>Peer: connect only to pinned revalidated address with original TLS identity
+    Transport->>Transport: stream exact request bytes while HTTPCore consumes body
     Peer-->>Transport: response metadata and identity-coded body
     Transport->>Transport: enforce response field and max_response_bytes budgets
     Transport-->>App: caller-visible response or generic policy denial
@@ -114,10 +115,12 @@ stateDiagram-v2
     Resolving --> Denied: timeout / resolver error / unsafe address / excessive candidates
     Resolving --> Validated: all candidates accepted and state sealed
     Validated --> DispatchCheck: request enters pinned transport
-    DispatchCheck --> Denied: authority / method / target / field / framing / body / timeout violation
-    DispatchCheck --> Connecting: request remains within policy
+    DispatchCheck --> Denied: authority / method / target / field / framing / declared body / timeout violation
+    DispatchCheck --> Connecting: request remains within pre-dispatch policy
     Connecting --> Denied: address revalidation or policy-bound connect failure
-    Connecting --> Receiving: pinned TLS connection established
+    Connecting --> Sending: pinned TLS connection established
+    Sending --> Denied: streamed body violation
+    Sending --> Receiving: bounded request stream consumed and response begins
     Receiving --> Denied: response field / coding / declared-size / streamed-size violation
     Receiving --> Delivered: bounded response accepted
     Denied --> Cleanup: best-effort dependency cleanup
