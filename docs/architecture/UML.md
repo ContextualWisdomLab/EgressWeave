@@ -43,9 +43,12 @@ classDiagram
       +keepalive_expiry_seconds
     }
     class EgressDecisionEvidence {
-      +canonical_authority
-      +method_policy
-      +address_family_counts
+      +schema_version
+      +authority
+      +allowed_methods
+      +address_count
+      +ipv4_address_count
+      +ipv6_address_count
       +policy_fingerprint
       +decision_fingerprint
     }
