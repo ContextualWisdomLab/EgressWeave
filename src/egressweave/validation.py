@@ -329,9 +329,7 @@ def _resolve_all_global_addresses(
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     if flight.error is not None:
-        if isinstance(flight.error, EgressNotAllowedError):
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from flight.error
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
     if flight.raw_addresses is None:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
     return _validate_bounded_unique_addresses(
