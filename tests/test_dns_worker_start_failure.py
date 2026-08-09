@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from egressweave.errors import EGRESS_NOT_ALLOWED
 
-from egressweave import EgressNotAllowedError, EgressPolicy, validation
+from egressweave import (
+    EGRESS_NOT_ALLOWED,
+    EgressNotAllowedError,
+    EgressPolicy,
+    validation,
+)
 
 _HOSTNAME = "worker-start.example.com"
 _PORT = 443
