@@ -17,6 +17,14 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _caller_visible_extension_section() -> str:
+    """Return the canonical response-extension section without later headings."""
+    guide = _read(RESPONSE_GUIDE_PATH)
+    return guide.split("## Caller-visible response extensions", 1)[1].split(
+        "\n## ", 1
+    )[0]
+
+
 def test_response_guide_defines_caller_visible_extension_allowlist() -> None:
     """Document inert response metadata and hidden raw transport capability."""
     guide = _read(RESPONSE_GUIDE_PATH)
@@ -30,6 +38,19 @@ def test_response_guide_defines_caller_visible_extension_allowlist() -> None:
         "future response extensions",
     ):
         assert fragment in guide
+
+
+def test_response_guide_contains_hostile_exact_dict_keys() -> None:
+    """Document fail-closed handling of dependency-controlled exact-dict keys."""
+    section = " ".join(_caller_visible_extension_section().split())
+
+    for fragment in (
+        "exact built-in `dict`",
+        "dependency-controlled key",
+        "generic `EgressNotAllowedError`",
+        "source stream is closed",
+    ):
+        assert fragment in section
 
 
 def test_architecture_hides_raw_response_transport_capabilities() -> None:
