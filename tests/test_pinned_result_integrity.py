@@ -14,6 +14,14 @@ from egressweave import validation as v
 POLICY = EgressPolicy.from_hosts("api.openai.com")
 
 
+class _HostileValidatedResult(ValidatedEgressURL):
+    """Expose any pre-type-check attribute access through an obvious failure."""
+
+    def __getattribute__(self, name: str) -> object:
+        """Fail if validation reads subclass-controlled attributes."""
+        raise AssertionError(f"untrusted validated-result attribute read: {name}")
+
+
 def _forge_untrusted_result() -> ValidatedEgressURL:
     validated = object.__new__(ValidatedEgressURL)
     object.__setattr__(validated, "normalized_url", "https://api.openai.com")
@@ -48,6 +56,13 @@ def test_validated_result_constructor_is_factory_only() -> None:
 def test_build_pinned_client_rejects_untrusted_result() -> None:
     with pytest.raises(EgressNotAllowedError):
         build_pinned_https_async_client(_forge_untrusted_result(), policy=POLICY)
+
+
+def test_build_pinned_client_rejects_subclass_before_attribute_access() -> None:
+    hostile_result = object.__new__(_HostileValidatedResult)
+
+    with pytest.raises(EgressNotAllowedError):
+        build_pinned_https_async_client(hostile_result, policy=POLICY)
 
 
 @pytest.mark.parametrize(
