@@ -27,11 +27,14 @@ The control is enforced at three boundaries:
    dishonestly under-declared responses. The first valid byte chunk that would
    exceed the policy budget is not exposed; the source stream is closed and the
    same generic policy error is raised. Policy-denial cleanup is best effort:
-   exceptions or self-cancellation produced by a dependency-injected child
-   `close()` or `aclose()` path are discarded before the stable denial exception
-   is created, so backend-private cleanup details are not retained as its cause
-   or exception context. Cancellation directed at the consuming coordinator
-   while async cleanup is awaited still propagates.
+   dependency-controlled custom `BaseException` failures from direct child
+   `close()` / call-time `aclose()` or async cleanup setup, plus ordinary async
+   child exceptions and child self-cancellation, are contained before the stable
+   denial is created so backend-private details are not retained as its cause or
+   exception context. Direct `KeyboardInterrupt`, `SystemExit`, and
+   `GeneratorExit` raised during cleanup setup explicitly propagate, and
+   cancellation directed at the consuming coordinator while async cleanup is
+   awaited also propagates.
 
 Responses to `HEAD`, informational responses, `204 No Content`, and
 `304 Not Modified` are treated as bodyless. Their `Content-Encoding` and
@@ -59,11 +62,13 @@ exact runtime type could make an attacker-controlled length disagree with the
 byte buffer later exposed to a caller. EgressWeave accepts only exact built-in
 `bytes` chunks and never calls conversion or length protocols on a malformed
 chunk. Cleanup performed because the policy has already denied a stream is also
-an untrusted backend boundary: cleanup is attempted, backend cleanup exceptions
-or child self-cancellation are consumed internally, and the caller receives a
-newly created generic policy denial with no retained backend cause or exception
-context. Python 3.13 documents that `CancelledError` is a `BaseException` and
-that `asyncio.gather(..., return_exceptions=True)` treats a cancelled child as a
+an untrusted backend boundary: dependency-controlled custom `BaseException`
+failures and async child outcomes are contained internally, while direct
+`KeyboardInterrupt`, `SystemExit`, and `GeneratorExit` during cleanup setup
+propagate. The caller otherwise receives a newly created generic policy denial
+with no retained backend cause or exception context. Python 3.13 documents that
+`CancelledError` is a `BaseException` and that
+`asyncio.gather(..., return_exceptions=True)` treats a cancelled child as a
 result while cancellation of the gather itself propagates to submitted
 awaitables. EgressWeave uses that distinction only for post-denial child cleanup;
 cancellation of the consuming coordinator remains visible. These rules are
@@ -91,10 +96,11 @@ sentinel because a deployment mistake must not silently remove the boundary.
 Custom injected response streams must satisfy the same byte-stream contract as
 HTTPX and yield exact built-in `bytes` chunks; accepting subclass or buffer
 coercion would weaken the resource-accounting trust boundary. Ordinary
-caller-requested `close()` or `aclose()` behavior remains unchanged; only cleanup
-performed after a policy denial discards backend cleanup exceptions or child
-self-cancellation, and cancellation directed at the caller/coordinator still
-propagates.
+caller-requested `close()` or `aclose()` behavior remains unchanged. Cleanup
+performed after a policy denial contains dependency-controlled custom
+`BaseException` failures and async child exceptions or self-cancellation, but
+direct `KeyboardInterrupt`, `SystemExit`, and `GeneratorExit` during cleanup
+setup and cancellation directed at the caller/coordinator propagate.
 
 ## References
 
