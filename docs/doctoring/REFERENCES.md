@@ -6,6 +6,8 @@ Status: **PRESENT-CURRENT** as of 2026-08-09 for the product documentation basel
 
 AICPA & CIMA. (2023). *2017 Trust Services Criteria for security, availability, processing integrity, confidentiality, and privacy (with revised points of focus—2022).* Association of International Certified Professional Accountants. https://www.aicpa-cima.com/resources/download/2017-trust-services-criteria-with-revised-points-of-focus-2022
 
+Boyens, J., McWhite, R., & Calloway, L. (2026). *NIST Cybersecurity Supply Chain Management: Due Diligence Assessment Quick-Start Guide* (NIST SP 1326). National Institute of Standards and Technology. https://doi.org/10.6028/NIST.SP.1326
+
 Fielding, R. T., Nottingham, M., & Reschke, J. (2022). *HTTP semantics* (RFC 9110). RFC Editor. https://doi.org/10.17487/RFC9110
 
 KISA. (n.d.). *클라우드 보안인증제(CSAP).* 한국인터넷진흥원 정보보호 및 개인정보보호관리체계 인증 포털. Retrieved August 9, 2026, from https://isms-p.kisa.or.kr/
@@ -26,6 +28,7 @@ SLSA Community. (2025). *SLSA specification version 1.2.* https://slsa.dev/spec/
 
 ## Status notes used by compliance traceability
 
+- **NIST SP 1326 is final.** NIST released the final ICT supplier due-diligence Quick-Start Guide on July 8, 2026, superseding the 2024 draft. Its due-diligence factors include foreign ownership/control/influence, provenance, resilience, foundational cyber practices, and supply-chain tiers. EgressWeave can provide product evidence relevant to some of those questions but does not perform a complete supplier assessment.
 - **NIST SP 800-218 / SSDF 1.1 is the current final core SSDF publication.** NIST's publication list identifies SP 800-218 Rev. 1 / SSDF 1.2 as a Draft released December 17, 2025. Draft SSDF material is informative future direction until NIST publishes a final revision.
 - **NIST SP 800-218A is final.** It augments SSDF 1.1 for generative AI and dual-use foundation model development. EgressWeave uses this only where autonomous/model-backed engineering boundaries are relevant.
 - **OWASP ASVS 5.0.0 is released.** EgressWeave uses it as application-security verification guidance but does not claim all host-application ASVS requirements are implemented by a transport library.
@@ -45,11 +48,12 @@ Key governed topics include:
 - IDNA/Unicode hostname normalization;
 - bounded request/response resource consumption;
 - TLS identity and mutual-TLS configuration;
-- deterministic release evidence, SBOM and provenance; and
+- deterministic release evidence, SBOM and provenance;
+- supplier/acquisition due-diligence evidence boundaries; and
 - exact-head review/security/release evidence.
 
 ## Citation policy
 
 Material protocol, security, compliance, interoperability or supply-chain decisions should prefer current final standards and official primary documentation. Drafts must be labelled as drafts. Peer-reviewed primary research should be used where a question is empirical rather than normative.
 
-Repository documentation must not claim SOC 2, CSAP, SLSA level, NIST conformance, OWASP certification, or any other assessment result without the corresponding scoped evidence and external or program-specific requirements.
+Repository documentation must not claim SOC 2, CSAP, SLSA level, NIST conformance, OWASP certification, supplier approval, or any other assessment result without the corresponding scoped evidence and external or program-specific requirements.
