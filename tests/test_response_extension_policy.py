@@ -118,14 +118,27 @@ class _AsyncPool:
 class _SyncExtensionPool:
     """Return caller-selected low-level response extension metadata."""
 
-    def __init__(self, extensions: dict[str, object]) -> None:
-        """Store the extensions and one inspectable response stream."""
+    def __init__(
+        self,
+        extensions: dict[str, object],
+        *,
+        status: int = 200,
+        headers: tuple[tuple[bytes, bytes], ...] = ((b"content-length", b"2"),),
+    ) -> None:
+        """Store extensions, response metadata, and one inspectable stream."""
         self._extensions = extensions
+        self._status = status
+        self._headers = headers
         self.stream = _SyncCoreStream()
 
     def handle_request(self, request):
         """Return one response carrying the configured extensions."""
-        return _CoreResponse(self.stream, extensions=self._extensions)
+        return _CoreResponse(
+            self.stream,
+            status=self._status,
+            headers=self._headers,
+            extensions=self._extensions,
+        )
 
     def close(self) -> None:
         """Close the synthetic pool."""
@@ -134,14 +147,27 @@ class _SyncExtensionPool:
 class _AsyncExtensionPool:
     """Return caller-selected async low-level response extension metadata."""
 
-    def __init__(self, extensions: dict[str, object]) -> None:
-        """Store the extensions and one inspectable async response stream."""
+    def __init__(
+        self,
+        extensions: dict[str, object],
+        *,
+        status: int = 200,
+        headers: tuple[tuple[bytes, bytes], ...] = ((b"content-length", b"2"),),
+    ) -> None:
+        """Store extensions, response metadata, and one inspectable async stream."""
         self._extensions = extensions
+        self._status = status
+        self._headers = headers
         self.stream = _AsyncCoreStream()
 
     async def handle_async_request(self, request):
         """Return one response carrying the configured extensions."""
-        return _CoreResponse(self.stream, extensions=self._extensions)
+        return _CoreResponse(
+            self.stream,
+            status=self._status,
+            headers=self._headers,
+            extensions=self._extensions,
+        )
 
     async def aclose(self) -> None:
         """Close the synthetic pool."""
@@ -180,6 +206,54 @@ async def test_async_response_hides_raw_network_stream_extension() -> None:
     assert response.extensions == {
         "http_version": b"HTTP/1.1",
         "reason_phrase": b"OK",
+    }
+
+
+def test_sync_bodyless_response_hides_raw_network_stream_extension() -> None:
+    """Apply the same extension boundary to an RFC-bodyless response."""
+    pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
+    pool = _SyncExtensionPool(
+        {
+            "http_version": b"HTTP/1.1",
+            "reason_phrase": b"No Content",
+            "network_stream": object(),
+        },
+        status=204,
+        headers=(),
+    )
+    pinned._pool = pool
+
+    response = pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
+
+    assert response.status_code == 204
+    assert response.extensions == {
+        "http_version": b"HTTP/1.1",
+        "reason_phrase": b"No Content",
+    }
+
+
+async def test_async_bodyless_response_hides_raw_network_stream_extension() -> None:
+    """Apply the same extension boundary to an async RFC-bodyless response."""
+    pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
+    pool = _AsyncExtensionPool(
+        {
+            "http_version": b"HTTP/1.1",
+            "reason_phrase": b"No Content",
+            "network_stream": object(),
+        },
+        status=204,
+        headers=(),
+    )
+    pinned._pool = pool
+
+    response = await pinned.handle_async_request(
+        httpx.Request("GET", VALIDATED.normalized_url)
+    )
+
+    assert response.status_code == 204
+    assert response.extensions == {
+        "http_version": b"HTTP/1.1",
+        "reason_phrase": b"No Content",
     }
 
 
