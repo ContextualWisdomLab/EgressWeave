@@ -19,6 +19,7 @@ from egressweave import (
 )
 
 PUBLIC_ADDRESS = "93.184.216.34"
+SECOND_PUBLIC_ADDRESS = "93.184.216.35"
 CALLER_COUNT = 4
 DNS_TIMEOUT_SECONDS = 0.75
 
@@ -83,11 +84,12 @@ def _install_blocking_resolver(monkeypatch):
     return release_resolver, observed_calls
 
 
-def _policy() -> EgressPolicy:
+def _policy(*, max_resolved_addresses: int = 16) -> EgressPolicy:
     """Return the short-deadline policy used by the concurrency regressions."""
     return EgressPolicy.from_hosts(
         "api.example.com",
         dns_timeout_seconds=DNS_TIMEOUT_SECONDS,
+        max_resolved_addresses=max_resolved_addresses,
     )
 
 
@@ -168,3 +170,101 @@ async def test_async_same_authority_timeouts_share_one_live_resolver(monkeypatch
     finally:
         release_resolver.set()
         assert slots.wait_until_balanced(timeout=3.0)
+
+
+def test_empty_shared_resolver_result_remains_generic(monkeypatch) -> None:
+    """Normalize one shared worker's empty DNS result to the public denial."""
+    monkeypatch.setattr(validation.socket, "getaddrinfo", lambda *args, **kwargs: [])
+
+    with pytest.raises(
+        EgressNotAllowedError,
+        match=f"^{EGRESS_NOT_ALLOWED}$",
+    ):
+        validate_egress_url_details("https://api.example.com", policy=_policy())
+
+
+def test_completed_flight_without_outcome_fails_closed() -> None:
+    """Reject an internally incomplete completed flight instead of trusting it."""
+    key = ("api.example.com", 443)
+    flight = validation._DNSResolutionFlight()
+    flight.completed.set()
+    with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
+        validation._DNS_RESOLUTION_FLIGHTS[key] = flight
+
+    try:
+        with pytest.raises(
+            EgressNotAllowedError,
+            match=f"^{EGRESS_NOT_ALLOWED}$",
+        ):
+            validate_egress_url_details("https://api.example.com", policy=_policy())
+    finally:
+        with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
+            validation._DNS_RESOLUTION_FLIGHTS.pop(key, None)
+
+
+def test_completed_resolution_is_not_cached(monkeypatch) -> None:
+    """Perform a fresh DNS lookup after each completed same-authority flight."""
+    call_count = 0
+
+    def counting_getaddrinfo(hostname, port, *, type):
+        nonlocal call_count
+        call_count += 1
+        return [(2, 1, 6, "", (PUBLIC_ADDRESS, port))]
+
+    monkeypatch.setattr(validation.socket, "getaddrinfo", counting_getaddrinfo)
+
+    first = validate_egress_url_details("https://api.example.com", policy=_policy())
+    second = validate_egress_url_details("https://api.example.com", policy=_policy())
+
+    assert first is not None
+    assert second is not None
+    assert first.addresses == (PUBLIC_ADDRESS,)
+    assert second.addresses == (PUBLIC_ADDRESS,)
+    assert call_count == 2
+
+
+def test_shared_raw_result_is_validated_under_each_callers_policy(monkeypatch) -> None:
+    """Keep policy-specific address cardinality outside the shared DNS worker."""
+    release_resolver = threading.Event()
+    resolver_started = threading.Event()
+    call_count = 0
+
+    def two_address_getaddrinfo(hostname, port, *, type):
+        nonlocal call_count
+        call_count += 1
+        resolver_started.set()
+        assert release_resolver.wait(timeout=5.0)
+        return [
+            (2, 1, 6, "", (PUBLIC_ADDRESS, port)),
+            (2, 1, 6, "", (SECOND_PUBLIC_ADDRESS, port)),
+        ]
+
+    monkeypatch.setattr(validation.socket, "getaddrinfo", two_address_getaddrinfo)
+    outcomes: queue.Queue[tuple[str, tuple[str, ...] | None]] = queue.Queue()
+
+    def validate_with_limit(limit: int) -> None:
+        try:
+            result = validate_egress_url_details(
+                "https://api.example.com",
+                policy=_policy(max_resolved_addresses=limit),
+            )
+        except EgressNotAllowedError:
+            outcomes.put(("denied", None))
+        else:
+            assert result is not None
+            outcomes.put(("allowed", result.addresses))
+
+    strict_caller = threading.Thread(target=validate_with_limit, args=(1,))
+    broad_caller = threading.Thread(target=validate_with_limit, args=(2,))
+    strict_caller.start()
+    assert resolver_started.wait(timeout=2.0)
+    broad_caller.start()
+    release_resolver.set()
+    strict_caller.join(timeout=3.0)
+    broad_caller.join(timeout=3.0)
+
+    assert call_count == 1
+    assert sorted(outcomes.get_nowait() for _ in range(2)) == [
+        ("allowed", (PUBLIC_ADDRESS, SECOND_PUBLIC_ADDRESS)),
+        ("denied", None),
+    ]
