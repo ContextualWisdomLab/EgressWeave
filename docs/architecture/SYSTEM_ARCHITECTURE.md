@@ -4,7 +4,7 @@ Status: Proposed supplementary views of **IMPLEMENTED-ON-PROTECTED-MAIN** behavi
 
 ## 1. System context
 
-EgressWeave is embedded inside a host application. It constrains outbound HTTP authority but does not own business authorization, durable persistence, tenant identity, or network perimeter enforcement.
+EgressWeave is embedded inside a host application. It constrains outbound HTTP authority but does not own business authorization, durable persistence, tenant identity, host integration-adapter implementation, or network perimeter enforcement.
 
 ```mermaid
 flowchart LR
@@ -62,9 +62,9 @@ The validated IP is a connection target, not a new logical authority. SNI, certi
 | Response safety | Header/body/content-coding resource boundary | Malware/content classification |
 | TLS configuration | Trust roots, client identity, protocol policy | Enterprise CA lifecycle/KMS |
 | Decision evidence | Bounded deterministic accepted-decision facts | Durable audit database or certification claim |
-| naruon adapter | Translate host config into core objects | A second transport/security implementation |
+| Host-owned integration adapter | Translate host config into public core objects outside this package | EgressWeave-owned provider/tenant/configuration lifecycle |
 
-## 4. Standalone and naruon deployment views
+## 4. Standalone and host-owned integration views
 
 ```mermaid
 flowchart TB
@@ -74,8 +74,8 @@ flowchart TB
     end
 
     subgraph naruon_host[naruon or CWL service]
-        naruon_config[Host configuration] --> adapter[naruon integration adapter]
-        adapter --> builder_two[Same EgressWeave builder]
+        naruon_config[Host configuration] --> adapter[host-owned integration adapter]
+        adapter --> builder_two[Same EgressWeave public builder]
         builder_two --> client_two[Guarded HTTPX client]
     end
 
@@ -83,7 +83,7 @@ flowchart TB
     client_two --> internet
 ```
 
-The modularity invariant is that host adapters reuse the same policy/validation/transport layer. Cross-repository integration must not create hidden coupling to a mutable branch or duplicate the core SSRF policy.
+The naruon/CWL branch is a **NON-NORMATIVE external integration example**, not a packaged protected-main EgressWeave component. The modularity invariant is that any host-owned adapter reuses the same public policy/validation/transport layer. Cross-repository integration must not create hidden coupling to a mutable branch or duplicate the core SSRF policy.
 
 ## 5. Runtime trust boundaries
 
@@ -97,7 +97,7 @@ URLs, DNS answers, HTTP metadata, streaming chunks, remote responses, dependency
 
 ### Host-owned sensitive context
 
-Credentials, application payloads, users, tenants, business authorization, detailed logs, and persistence remain outside the core evidence model.
+Credentials, application payloads, users, tenants, business authorization, detailed logs, integration adapters, and persistence remain outside the core evidence model.
 
 ## 6. Denial and cleanup architecture
 
