@@ -39,3 +39,17 @@ def test_changelog_records_same_authority_dns_worker_deduplication() -> None:
     assert "same-authority DNS" in changelog
     assert "in-flight" in changelog
     assert "completed DNS results" in changelog
+
+
+def test_operator_guidance_counts_async_executor_scheduling_inside_deadline() -> None:
+    """State that async timeout accounting starts before executor scheduling."""
+    guidance = _normalized(RESEARCH_PATH)
+
+    assert "before executor scheduling" in guidance
+
+
+def test_changelog_records_async_executor_scheduling_deadline() -> None:
+    """Keep the async DNS deadline tightening visible in release history."""
+    changelog = _normalized(CHANGELOG_PATH)
+
+    assert "executor scheduling" in changelog
