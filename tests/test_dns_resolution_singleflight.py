@@ -15,8 +15,8 @@ from egressweave import (
     EgressPolicy,
     validate_egress_url_details,
     validate_egress_url_details_async,
+    validation,
 )
-from egressweave import validation
 
 PUBLIC_ADDRESS = "93.184.216.34"
 CALLER_COUNT = 4
@@ -108,7 +108,7 @@ def test_sync_same_authority_timeouts_share_one_live_resolver(monkeypatch) -> No
             )
         except EgressNotAllowedError as exc:
             outcomes.put(str(exc))
-        except BaseException as exc:  # pragma: no cover - diagnostic only
+        except Exception as exc:  # noqa: BLE001 - preserve thread diagnostics
             outcomes.put(f"unexpected {type(exc).__name__}: {exc}")
         else:
             outcomes.put("unexpected success")
