@@ -20,7 +20,7 @@ def test_prd_separates_declared_body_preflight_from_stream_accounting() -> None:
 
     assert "finite request-body consumption" not in prd
     assert "declared request-body length" in prd
-    assert "before pool dispatch" in prd
+    assert "Before pool dispatch" in prd
     assert "actual streamed request bytes" in prd
     assert "while HTTPCore consumes" in prd
 
@@ -35,6 +35,6 @@ def test_uml_places_stream_accounting_after_connection_setup() -> None:
     assert uml.index("connect only to pinned revalidated address with original TLS identity") < uml.index(
         "stream exact request bytes while HTTPCore consumes body"
     )
-    assert "body / timeout violation" not in uml
-    assert "declared body / timeout violation" in uml
+    assert "framing / body / timeout violation" not in uml
+    assert "framing / declared body / timeout violation" in uml
     assert "streamed body violation" in uml
