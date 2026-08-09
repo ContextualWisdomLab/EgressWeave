@@ -166,9 +166,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
 
         def start_next_attempt() -> bool:
             nonlocal more_addresses, next_attempt_at
-            if deadline is not None and loop.time() >= deadline:
-                more_addresses = False
-                return False
             try:
                 address = next(address_iterator)
             except StopIteration:
@@ -177,6 +174,9 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
             remaining_timeout = None
             if deadline is not None:
                 remaining_timeout = max(0.0, deadline - loop.time())
+                if remaining_timeout == 0.0:
+                    more_addresses = False
+                    return False
             tasks.add(
                 asyncio.create_task(
                     self._connect_validated_ip_address(
