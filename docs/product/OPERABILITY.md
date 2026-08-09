@@ -75,8 +75,11 @@ For DNS timeout, candidate overflow, or connect-deadline failures:
 - compare observed candidate fanout with the policy's maximum;
 - verify that all resolved candidates belong to the intended public/local class;
 - check whether a remote service has changed to an architecture requiring an explicitly reviewed authority/network decision;
-- preserve the finite global connection deadline and candidate ordering;
+- preserve the protected-main finite per-attempt connect timeouts and candidate ordering;
+- treat the coordinator-owned global connection deadline across all staggered waits as **ACTIVE-PR** behavior until that change reaches protected main and completes operational acceptance;
 - use host retry policy only when the business operation is safe to retry.
+
+The maturity distinction matters operationally: a runbook must not instruct an operator to rely on the ACTIVE-PR global connection deadline while the installed protected-main package still exposes only its current per-attempt timeout and candidate-launch behavior. Re-evaluate this section after the corresponding implementation is integrated rather than silently promoting the target behavior.
 
 ## 7. TLS runbook
 
