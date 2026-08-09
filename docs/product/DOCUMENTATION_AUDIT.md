@@ -62,6 +62,8 @@ The protected-main architecture includes normalized policy construction, URL val
 
 Multiple security, release-evidence, scheduler, and evidence-schema changes can exist concurrently. Their PR numbers and SHAs are deliberately not embedded as timeless architecture. Until each change reaches protected main, its implementation remains ACTIVE-PR and its prior review/check evidence must not be transferred to a different head or base.
 
+In particular, the repository-local publisher removal and its matching buyer-facing handoff correction remain ACTIVE-PR on their dependency-aware stack. They must not replace protected-main automation truth before integration. The canonical main-based documentation therefore records their maturity and ownership boundary without rewriting the accepted protected-main automation description as if the later handoff-only design were already shipped.
+
 ### ACCEPTED-TARGET
 
 Commercial documentation should remain one cross-linked, machine-tested source-of-truth graph, and hourly maintenance should remain work-conserving rather than stopping at the first blocked action. Target contracts are not shipped merely because they appear in this audit.
