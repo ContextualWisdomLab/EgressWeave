@@ -139,14 +139,17 @@ def test_product_docs_keep_naruon_adapter_host_owned() -> None:
     api_contract = _read("docs/product/API_CONTRACT.md")
     prd = _read("docs/product/PRD.md")
     system_architecture = _read("docs/architecture/SYSTEM_ARCHITECTURE.md")
+    audit = _read("docs/product/DOCUMENTATION_AUDIT.md")
 
     assert "naruon integration adapter that translates host configuration" not in api_contract
     assert "The standalone builder and naruon adapter SHALL share" not in prd
     assert "| naruon adapter |" not in system_architecture
     assert "adapter[naruon integration adapter]" not in system_architecture
+    assert "and modular naruon integration." not in audit
     assert "host-side adapter" in api_contract
     assert "host-owned" in prd
     assert "host-owned integration adapter" in system_architecture
+    assert "host-owned adapter compatibility" in audit
 
 
 def test_doctoring_records_authoritative_standards_and_no_certification_claim() -> None:
