@@ -328,8 +328,8 @@ def _bind_validated_tls_server_name(
         if type(requested_server_name) is bytes:
             try:
                 requested_server_name_text = requested_server_name.decode("ascii")
-            except UnicodeDecodeError as exc:
-                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+            except UnicodeDecodeError:
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         elif type(requested_server_name) is str:
             requested_server_name_text = requested_server_name
         else:
