@@ -57,6 +57,18 @@ def test_hostile_extension_mapping_is_masked_by_generic_denial() -> None:
     assert error.value.__cause__ is None
 
 
+def test_non_ascii_sni_bytes_are_denied_without_decode_provenance() -> None:
+    """Hide decoder details when exact bytes cannot represent an ASCII SNI name."""
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as error:
+        _bind_validated_tls_server_name(
+            {"sni_hostname": b"api.\xff.example"},
+            "api.example.com",
+        )
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+
+
 @pytest.mark.parametrize("value_kind", ["bytes", "text"])
 def test_subclassed_sni_values_fail_before_attacker_methods_run(value_kind: str) -> None:
     """Require exact built-in SNI value types instead of invoking subclass methods."""
