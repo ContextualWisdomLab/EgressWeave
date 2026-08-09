@@ -53,6 +53,29 @@ an unrelated in-scope action unsafe. Conversely, the instruction to continue is
 not authority to cross a writer lease, weaken a test, bypass branch protection,
 change credentials, or replace missing evidence with an assertion.
 
+## Work-conserving continuation inside one patch
+
+The bounded maintainer is **work-conserving** within the one cohesive product
+slice selected for the run. After every completed or deferred sub-action it must
+reassess what safe material work remains inside that same slice instead of
+stopping because one candidate is blocked, one fix is complete, or one
+publication-independent documentation artifact has been updated.
+
+The reassessment includes product behavior, tests, security and reliability,
+release-readiness evidence, and **documentation completeness**. For a material
+architecture or product-boundary change it must inspect the applicability of
+**PRD, TRD, ADR, Architecture, UML, and ERD** records as well as directly related
+operator guidance. An ERD may be explicitly not applicable when the core owns
+**no persistence**; the scheduler must document that boundary rather than invent
+a database merely to satisfy a document checklist.
+
+Continuation never broadens the patch into unrelated opportunistic work. The
+one-slice, ten-file, and 1,000-line limits still apply, and the maintainer must
+leave unrelated findings for later governed work. It may leave the working tree
+unchanged only when no safe material improvement remains inside the allowed edit
+boundary for the selected slice, or when every remaining action would require
+forbidden authority or exceed the bounded validation contract.
+
 ## Protected-branch failure
 
 If protected `main` is not green, restoring it is the only permitted objective
