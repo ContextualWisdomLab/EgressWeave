@@ -342,8 +342,14 @@ def _resolve_all_global_addresses(
 async def _resolve_all_global_addresses_async(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
-    """Run the same bounded resolver without blocking the event loop."""
-    return await asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy)
+    """Run the bounded resolver under one caller-owned asynchronous deadline."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy),
+            timeout=policy.dns_timeout_seconds,
+        )
+    except TimeoutError:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
 
 def _parse_and_validate_candidate_url(
