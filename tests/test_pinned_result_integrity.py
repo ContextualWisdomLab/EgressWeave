@@ -1,5 +1,8 @@
 """Regression tests for forged or tampered validation results."""
 
+from collections.abc import Callable
+
+import httpx
 import pytest
 
 from egressweave import (
@@ -7,11 +10,17 @@ from egressweave import (
     EgressPolicy,
     ValidatedEgressURL,
     build_pinned_https_async_client,
+    build_pinned_https_client,
     validate_egress_url_details,
 )
 from egressweave import validation as v
 
 POLICY = EgressPolicy.from_hosts("api.openai.com")
+PinnedBuilder = Callable[..., httpx.Client | httpx.AsyncClient]
+PINNED_BUILDERS = (
+    pytest.param(build_pinned_https_client, id="sync"),
+    pytest.param(build_pinned_https_async_client, id="async"),
+)
 
 
 class _HostileValidatedResult(ValidatedEgressURL):
@@ -54,18 +63,23 @@ def test_validated_result_constructor_is_factory_only() -> None:
         )
 
 
-def test_build_pinned_client_rejects_untrusted_result() -> None:
+@pytest.mark.parametrize("builder", PINNED_BUILDERS)
+def test_build_pinned_client_rejects_untrusted_result(builder: PinnedBuilder) -> None:
     with pytest.raises(EgressNotAllowedError):
-        build_pinned_https_async_client(_forge_untrusted_result(), policy=POLICY)
+        builder(_forge_untrusted_result(), policy=POLICY)
 
 
-def test_build_pinned_client_rejects_subclass_before_attribute_access() -> None:
+@pytest.mark.parametrize("builder", PINNED_BUILDERS)
+def test_build_pinned_client_rejects_subclass_before_attribute_access(
+    builder: PinnedBuilder,
+) -> None:
     hostile_result = object.__new__(_HostileValidatedResult)
 
     with pytest.raises(EgressNotAllowedError):
-        build_pinned_https_async_client(hostile_result, policy=POLICY)
+        builder(hostile_result, policy=POLICY)
 
 
+@pytest.mark.parametrize("builder", PINNED_BUILDERS)
 @pytest.mark.parametrize(
     "field_name, replacement",
     [
@@ -92,10 +106,13 @@ def test_build_pinned_client_rejects_subclass_before_attribute_access() -> None:
     ],
 )
 def test_build_pinned_client_rejects_tampered_trusted_result(
-    monkeypatch, field_name: str, replacement: object
+    monkeypatch,
+    builder: PinnedBuilder,
+    field_name: str,
+    replacement: object,
 ) -> None:
     validated = _validated_result(monkeypatch)
     object.__setattr__(validated, field_name, replacement)
 
     with pytest.raises(EgressNotAllowedError):
-        build_pinned_https_async_client(validated, policy=POLICY)
+        builder(validated, policy=POLICY)
