@@ -11,11 +11,16 @@ history.
 - **Superseded** — replaced by a later ADR, retained for history.
 - **Deprecated** — still present for compatibility but not recommended.
 
+An ADR status describes a decision's governance state. It does **not** by itself
+prove that the corresponding implementation is present on protected `main`.
+Product documents separately label implementation maturity.
+
 ## Index
 
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-security-boundaries-and-modular-integration.md) | Accepted | Keep EgressWeave provider-neutral, fail-closed, standalone, and modular while binding all outbound authority channels to validated state. |
+| [0002](0002-documentation-governance-and-persistence-boundary.md) | Proposed | Establish the canonical commercial documentation graph, explicit implementation-maturity labels, and the rule that EgressWeave core owns no durable database. |
 
 ## When an ADR is required
 
@@ -27,6 +32,7 @@ Write or supersede an ADR when a change alters any of the following:
 - naruon/CWL integration boundary;
 - persistence or database model;
 - autonomous workflow identity, credentials, permissions, or verification;
+- documentation-governance or evidence-authority model;
 - release, provenance, or support policy; or
 - a numerical or scientific method.
 
