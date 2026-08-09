@@ -108,19 +108,30 @@ def _select_public_response_extensions(extensions: object) -> dict[str, bytes]:
     every other current or future extension remains internal to the transport.
     The low-level extension container must be an exact built-in ``dict``, and an
     exposed value must be exact built-in ``bytes`` so a custom mapping or value
-    object cannot cross the caller-visible HTTPX response boundary.
+    object cannot cross the caller-visible HTTPX response boundary. Ordinary
+    failures from dependency-controlled dictionary keys are normalized after
+    leaving their active exception context so the transport can apply its normal
+    fail-closed response-stream cleanup without leaking private exception detail.
     """
     if type(extensions) is not dict:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
+    denied = False
     public_extensions: dict[str, bytes] = {}
-    for key in _PUBLIC_RESPONSE_EXTENSION_KEYS:
-        if key not in extensions:
-            continue
-        value = extensions[key]
-        if type(value) is not bytes:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
-        public_extensions[key] = value
+    try:
+        for key in _PUBLIC_RESPONSE_EXTENSION_KEYS:
+            if key not in extensions:
+                continue
+            value = extensions[key]
+            if type(value) is not bytes:
+                denied = True
+                break
+            public_extensions[key] = value
+    except Exception:  # noqa: BLE001
+        denied = True
+
+    if denied:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
     return public_extensions
 
 
