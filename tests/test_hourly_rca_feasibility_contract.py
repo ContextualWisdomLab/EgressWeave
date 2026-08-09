@@ -9,6 +9,7 @@ PRODUCT_WORKFLOW_PATH = (
     REPOSITORY_ROOT / ".github" / "workflows" / "hourly-product-development.yml"
 )
 RCA_DOCUMENTATION_PATH = REPOSITORY_ROOT / "docs" / "hourly-rca-feasibility.md"
+CHANGELOG_PATH = REPOSITORY_ROOT / "CHANGELOG.md"
 
 
 def _read(path: Path) -> str:
@@ -46,3 +47,12 @@ def test_operator_docs_explain_the_rca_feasibility_loop() -> None:
     assert "root-cause analysis" in documentation
     assert "operational feasibility" in documentation
     assert "every autonomously actionable path has been exhausted" in documentation
+
+
+def test_changelog_records_the_scheduler_rca_feasibility_contract() -> None:
+    """Keep the governed scheduler behavior visible in release-facing change history."""
+    changelog = " ".join(_read(CHANGELOG_PATH).split())
+
+    assert "hourly product-development maintainer" in changelog
+    assert "root-cause analysis" in changelog
+    assert "operational feasibility" in changelog
