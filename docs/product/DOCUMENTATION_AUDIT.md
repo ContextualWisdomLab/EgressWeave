@@ -37,9 +37,11 @@ Implementation maturity:
 | `AGENTS.md` | PRESENT-CURRENT | Strong engineering invariants and integration rules | Keep authoritative for contributor constraints |
 | `CLAUDE.md` | PRESENT-CURRENT | Repository agent context exists | Keep aligned with AGENTS/architecture over time |
 | `docs/security-model.md` | PRESENT-STALE | Explicit non-goal said the package does not cap response size even though protected main implements finite request/response body policies | Correct the non-goal and name current byte policies |
+| Explicit threat model | PARTIAL | `docs/security-model.md` already described assets, attacker capabilities, invariants and non-goals, but there was no separate acquisition/design-review threat-analysis view tied to the documentation spine | Add [`../THREAT_MODEL.md`](../THREAT_MODEL.md) while keeping `security-model.md` normative for runtime boundaries |
 | Product PRD | MISSING | No canonical buyer/problem/requirement/acceptance document | Add [`PRD.md`](PRD.md) |
 | Technical requirements | MISSING | Architecture existed but no separate verifiable TRD | Add [`TRD.md`](TRD.md) |
 | API contract | PARTIAL | README/source/tests explain behavior, but compatibility and host-ownership rules are fragmented | Add [`API_CONTRACT.md`](API_CONTRACT.md) |
+| Requirement-to-evidence traceability | MISSING | Requirements, code, tests, ADRs and standards were individually strong but not mapped in one durable matrix | Add [`TRACEABILITY.md`](TRACEABILITY.md) with protected-main/active-PR maturity separation |
 | Test strategy | PARTIAL | Strong executable tests and contributor rules, but no central verification strategy | Add [`TEST_STRATEGY.md`](TEST_STRATEGY.md) |
 | Operability/runbook | PARTIAL | Security integration guidance exists, but SLI/SLO/shared-responsibility/runbooks are fragmented | Add [`OPERABILITY.md`](OPERABILITY.md) |
 | Compliance traceability | MISSING | Standards are cited per topic, but SOC 2/CSAP/shared-responsibility mapping is not centralized | Add [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md) |
@@ -76,13 +78,15 @@ Durable application databases, tenant/user identity, business-object authorizati
 
 1. Protected-main code/tests and root `ARCHITECTURE.md` are the primary implementation truth.
 2. PRD defines buyer problems and product acceptance; TRD defines verifiable technical constraints.
-3. API, test, operability, compliance, UML/ERD, ADR, and doctoring documents refine specific views without overriding implementation truth.
-4. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
-5. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
-6. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, and unresolved template markers.
+3. API, threat, traceability, test, operability, compliance, UML/ERD, ADR, and doctoring documents refine specific views without overriding implementation truth.
+4. [`../THREAT_MODEL.md`](../THREAT_MODEL.md) is the explicit threat-analysis view; [`../security-model.md`](../security-model.md) remains the normative runtime security-boundary description.
+5. [`TRACEABILITY.md`](TRACEABILITY.md) maps durable requirements to implementation/test/ADR/standard evidence and must distinguish protected-main evidence from ACTIVE-PR work.
+6. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
+7. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
+8. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, and unresolved template markers.
 
 ## 6. Remaining audit obligations after this PR
 
-Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, API contract, runbooks, control mappings, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
+Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, runbooks, control mappings, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
 
 The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, and buyer workflows remain separate gates.
