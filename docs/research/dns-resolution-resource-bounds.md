@@ -32,6 +32,7 @@ The sharing boundary is intentionally live-only:
   finite `dns_timeout_seconds` deadline and independently applies all-address
   classification, local-development rules, deduplication, and its own
   `max_resolved_addresses` ceiling;
+- for asynchronous validation, that caller-owned deadline starts **before executor scheduling** of the synchronous resolver wrapper, so time spent waiting for `asyncio.to_thread(...)` executor capacity counts against `dns_timeout_seconds` instead of extending the public wait budget;
 - empty answers, capacity exhaustion, worker-start failure, resolver failure,
   caller deadline exhaustion, and incomplete shared outcomes all fail closed;
 - unexpected resolver exceptions are normalized to the public generic denial
@@ -50,6 +51,12 @@ that call on a daemon thread so the caller can stop waiting at its configured
 deadline, but Python does not provide a safe general operation for forcibly
 terminating arbitrary already-running thread work. EgressWeave therefore
 **cannot safely cancel** an already-running platform `socket.getaddrinfo` call.
+
+For the asynchronous API, `asyncio.wait_for(...)` bounds the caller-visible
+operation beginning before executor scheduling. Cancellation of that await does
+not imply that a resolver wrapper or platform resolver already running on a
+thread has been force-stopped. The same live-only single-flight and finite global
+resolver-slot rules remain the resource backstop after a caller stops waiting.
 
 A timed-out resolver worker may remain alive and keep one global resolver slot
 until the platform call returns. Single-flight prevents repeated callers for one
@@ -83,7 +90,8 @@ entries when a more specific weakness is available.
 Host applications and operators should preserve these assumptions:
 
 1. A DNS timeout is a caller-wait bound, not a guarantee that the platform
-   resolver thread has terminated.
+   resolver thread has terminated. For async validation the bound includes
+   executor scheduling delay before the synchronous wrapper starts.
 2. Repeated generic DNS denials or resolver-capacity pressure should be measured
    outside the core library using purpose-limited counters; raw candidate URLs,
    credentials, resolved IP addresses, and resolver exception text should not be
