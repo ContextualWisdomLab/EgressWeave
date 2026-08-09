@@ -65,6 +65,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unknown extension keys, non-string keys, and hostile extension mappings now
   fail closed before pool dispatch so raw transport callback capabilities cannot
   bypass the EgressWeave HTTP policy surface.
+- Require outbound request-header names and values to be exact built-in `bytes`.
+  Byte subclasses fail closed before field parsing or subclass-defined Python
+  behavior can run, preserving the generic denial boundary before HTTPCore
+  dispatch.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
