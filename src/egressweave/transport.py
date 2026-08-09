@@ -392,6 +392,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 resp.headers,
                 self._policy.max_response_bytes,
             )
+            safe_response_extensions = _select_public_response_extensions(
+                resp.extensions
+            )
         except EgressNotAllowedError:
             response_denied = True
         if response_denied:
@@ -407,7 +410,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             stream=_BoundedAsyncResponseStream(
                 AsyncResponseStream(resp.stream), self._policy.max_response_bytes
             ),
-            extensions=_select_public_response_extensions(resp.extensions),
+            extensions=safe_response_extensions,
         )
 
     async def aclose(self) -> None:
