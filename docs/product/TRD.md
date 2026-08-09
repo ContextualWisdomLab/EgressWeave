@@ -98,16 +98,13 @@ Exact numeric defaults are public API behavior and must be verified from the cur
 
 ## 8. Concurrency requirements
 
-The asynchronous pinned backend may stagger validated address attempts, but:
+**IMPLEMENTED-ON-PROTECTED-MAIN.** The asynchronous pinned backend staggers validated address attempts and gives a newly started child connection only the remaining connection-timeout budget. The protected-main coordinator also stops starting later candidates when its current deadline budget is exhausted. However, protected main does not yet enforce one coordinator-owned deadline across every coordinator wait after all candidates have started; the final in-flight wait can therefore outlive that outer budget when an injected backend does not finish within the child timeout as expected.
 
-- all attempts share one bounded connection deadline;
-- no later candidate is launched once the deadline is exhausted;
-- first accepted success wins under the documented ordering rules;
-- pending and completed loser tasks/streams are deterministically reconciled;
-- child failures do not become public policy provenance after all candidates fail;
-- cancellation directed at the outer coordinator is not accidentally consumed by child-cleanup containment.
+Protected-main behavior still requires that first accepted success wins under the current ordering rules and that losing tasks are cancelled and awaited after success. Exact hostname/port authorization, DNS-pinned address revalidation, TLS identity, proxy isolation, and finite child connection timeouts remain shipped behavior.
 
-The synchronous backend must preserve equivalent terminal authority and error semantics where concurrency mechanics do not apply.
+**ACTIVE-PR.** The global-deadline hardening under review requires one coordinator-owned absolute monotonic deadline across every asynchronous attempt and coordinator wait, including after all candidates have started. It also normalizes terminal all-candidate failure, rejects completions first observed at or after the deadline, and contains dependency-controlled child cleanup failure without consuming outer coordinator cancellation. These refinements are not protected-main behavior until their pull request is accepted and merged.
+
+The synchronous backend must preserve equivalent terminal authority and error semantics where concurrency mechanics do not apply; global terminal-error normalization that exists only on an active PR is likewise not described as shipped here.
 
 ## 9. API and integration constraints
 
