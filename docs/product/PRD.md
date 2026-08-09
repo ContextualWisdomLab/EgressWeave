@@ -89,7 +89,7 @@ The public client builders SHALL support explicit immutable TLS configuration, i
 
 ### PRD-FR-006 — Request semantics
 
-Before dispatch the library SHALL enforce canonical authorized methods, trusted `Host` handling, forbidden connection/proxy upgrade controls, unambiguous request-body framing, valid field syntax, finite target size, finite header fanout/bytes, finite request-body consumption, and finite timeout/pool policy.
+Before pool dispatch the library SHALL enforce canonical authorized methods, trusted `Host` handling, forbidden connection/proxy upgrade controls, unambiguous request-body framing, valid field syntax, finite target size, finite header fanout/bytes, valid declared request-body length, and finite timeout/pool policy. The bounded request stream SHALL enforce actual streamed request bytes, the cumulative `max_request_bytes` budget, and declared-length equality while HTTPCore consumes the body.
 
 ### PRD-FR-007 — Response semantics
 
