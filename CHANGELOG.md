@@ -64,9 +64,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `bytes` value before byte-budget accounting or caller-visible delivery.
   Malformed dependency-injected chunks, including `bytes` subclasses with custom
   length behavior, now fail closed and release the source stream. Cleanup after
-  a policy denial is best effort: hostile `close()` or `aclose()` failures are
-  discarded before a fresh generic policy error is created, leaving no retained
-  backend exception in its cause or exception context.
+  a policy denial is best effort: dependency-controlled `close()` or `aclose()`
+  failures are discarded before a fresh generic policy error is created, except
+  direct `KeyboardInterrupt`, `SystemExit`, and `GeneratorExit`, which propagate;
+  contained backend failures leave no retained cause or exception context.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
