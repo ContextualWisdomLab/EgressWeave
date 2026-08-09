@@ -4,7 +4,7 @@ Status: Proposed documentation baseline for protected-main behavior and accepted
 
 ## 1. Product definition
 
-EgressWeave is a provider-neutral outbound HTTP security library for Python applications that need explicit, reviewable egress authority instead of ambient network trust. It is intended to be useful as a standalone package and as a modular dependency of naruon and other ContextualWisdomLab services.
+EgressWeave is a provider-neutral outbound HTTP security library for Python applications that need explicit, reviewable egress authority instead of ambient network trust. It is intended to be useful as a standalone package and as a modular dependency that host-owned adapters in naruon and other ContextualWisdomLab services can consume.
 
 The authoritative description of behavior already implemented on the protected branch is the repository-root [`ARCHITECTURE.md`](../../ARCHITECTURE.md). This PRD expresses buyer problems, product requirements, acceptance criteria, and ownership boundaries; it does not replace implementation architecture.
 
@@ -55,7 +55,7 @@ They need documented control contributions, reproducible package and release evi
 
 ### PRD-G-004 — Provider-neutral modular integration
 
-**IMPLEMENTED-ON-PROTECTED-MAIN.** Core behavior is not coupled to one cloud, model provider, gateway, or host product. naruon integration is an adapter over the same public policy and transport contracts.
+**IMPLEMENTED-ON-PROTECTED-MAIN.** The core public policy, validation, TLS, and transport contracts are not coupled to one cloud, model provider, gateway, or host product and can be consumed by host-owned integration adapters without a second security implementation. The naruon adapter itself is **OUT-OF-SCOPE** for the EgressWeave package and remains host-owned.
 
 ### PRD-G-005 — Evidence without payload disclosure
 
@@ -107,9 +107,9 @@ Security invariants shared by synchronous and asynchronous clients SHALL be cove
 
 The package SHALL provide deterministic, bounded decision evidence for accepted egress decisions without asserting causal, certification, or infrastructure facts it cannot establish.
 
-### PRD-FR-011 — Standalone and naruon integration
+### PRD-FR-011 — Standalone and host-owned integration
 
-The standalone builder and naruon adapter SHALL share the same security-critical policy objects. Host-specific configuration SHALL be translated at the adapter boundary rather than duplicated into a second transport implementation.
+EgressWeave public policy and builder contracts SHALL remain suitable for host-owned naruon and CWL adapters. Host-specific configuration translation SHALL remain outside core and SHALL reuse the public EgressWeave security path rather than introduce a second transport implementation.
 
 ## 7. Non-functional requirements
 
@@ -147,6 +147,7 @@ The following are **OUT-OF-SCOPE** for EgressWeave core unless a future accepted
 - application-level authorization for URL paths, query semantics, request bodies, business objects, API keys, OAuth scopes, users, or tenants;
 - malware classification or semantic inspection of response payloads;
 - durable databases, tenant stores, queues, application audit stores, or retention policy enforcement;
+- host-specific integration-adapter implementation and lifecycle, including naruon configuration translation;
 - replacing a firewall, service mesh, cloud egress control, sandbox, or operating-system isolation;
 - arbitrary proxy support, Unix sockets, redirects across authorities, or caller-selected destination IPs;
 - blanket PII masking that would change legitimate application payload behavior.
@@ -155,7 +156,7 @@ The following are **OUT-OF-SCOPE** for EgressWeave core unless a future accepted
 
 A buyer-facing release is acceptable only when the exact protected release source satisfies the repository's required CI, security, coverage/docstring, packaging, dependency/supply-chain, provenance/SBOM where applicable, independent review, release and operational-acceptance gates. A green feature branch, model review comment, or stale predecessor check is not release evidence.
 
-Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md) and [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md).
+Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, host-owned adapters, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md) and [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md).
 
 ## 10. Documentation spine
 
