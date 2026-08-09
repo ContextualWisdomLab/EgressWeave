@@ -12,6 +12,8 @@ from egressweave import (
 )
 from egressweave import validation as v
 
+_AUTHORITY_KEY = ("api.openai.com", 443)
+
 
 @pytest.mark.parametrize(
     "timeout",
@@ -48,6 +50,18 @@ def _install_blocking_resolver(monkeypatch):
     return started, release
 
 
+def _release_and_wait_for_resolver(release: threading.Event) -> None:
+    with v._DNS_RESOLUTION_FLIGHTS_LOCK:
+        flight = v._DNS_RESOLUTION_FLIGHTS.get(_AUTHORITY_KEY)
+
+    release.set()
+    if flight is not None:
+        assert flight.completed.wait(timeout=1.0)
+
+    with v._DNS_RESOLUTION_FLIGHTS_LOCK:
+        assert _AUTHORITY_KEY not in v._DNS_RESOLUTION_FLIGHTS
+
+
 def test_sync_validation_enforces_dns_timeout(monkeypatch):
     started, release = _install_blocking_resolver(monkeypatch)
     policy = EgressPolicy.from_hosts(
@@ -67,7 +81,7 @@ def test_sync_validation_enforces_dns_timeout(monkeypatch):
         assert started.wait(timeout=0.2)
         assert time.monotonic() - started_at < 0.5
     finally:
-        release.set()
+        _release_and_wait_for_resolver(release)
 
 
 async def test_async_validation_uses_same_bounded_dns_timeout(monkeypatch):
@@ -89,7 +103,7 @@ async def test_async_validation_uses_same_bounded_dns_timeout(monkeypatch):
         assert started.wait(timeout=0.2)
         assert time.monotonic() - started_at < 0.5
     finally:
-        release.set()
+        _release_and_wait_for_resolver(release)
 
 
 def test_resolver_failure_remains_generic(monkeypatch):
