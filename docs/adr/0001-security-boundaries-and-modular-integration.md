@@ -80,19 +80,12 @@ publication before a public GitHub Release.
 
 ### 6. Credential-separated automation
 
-The organization-owned pull-request review scheduler remains a separate control
-plane and retains its existing review-agent identity and inherited-secret
-contract. Autonomous product development uses a pinned OpenCode CLI with
-`NVIDIA_NIM_API_KEY`, never `COPILOT_GITHUB_TOKEN`. Model execution cannot
-directly publish changes.
-
-Repository-local product development ends at the independently reverified
-credential-free patch handoff and does not create branches, pull requests,
-repository writes, or auto-merge requests. Any future repository promotion is
-external, independently reviewed, credential-separated, and must reconstruct
-and verify the exact tree before any repository write. Successful
-credential-free reverification is evidence for that later decision; it does not
-itself authorize publication.
+The organization-owned review scheduler retains its existing identity and
+inherited-secret contract. Autonomous product development uses a pinned
+OpenCode CLI with `NVIDIA_NIM_API_KEY`, never `COPILOT_GITHUB_TOKEN`. Model
+execution cannot directly publish changes. A separate credential-free lane
+reverifies a bounded patch before a publishing identity creates a normal pull
+request.
 
 ## Alternatives considered
 
@@ -133,8 +126,8 @@ startup.
 - Authority, TLS, DNS, framing, and resource invariants are tested in one place.
 - Current-head and release evidence support procurement and acquisition due
   diligence.
-- Autonomous product work can continue without a repository-local publishing
-  identity for a model-modified tree.
+- Autonomous work can continue without granting model execution a publishing
+  credential.
 
 ### Costs
 
@@ -153,8 +146,7 @@ This ADR is supported by:
 - the component and trust-boundary model in `ARCHITECTURE.md`;
 - the threat model in `docs/security-model.md`;
 - exact-head CI and package-acceptance workflows;
-- the organization-owned PR-maintenance workflow and the credential-free
-  OpenCode product-development handoff workflow; and
+- hourly review/merge and OpenCode product-development workflows; and
 - protocol-specific APA 7th research notes under `docs/research/`.
 
 ## References
