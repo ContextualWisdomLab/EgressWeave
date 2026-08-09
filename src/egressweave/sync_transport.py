@@ -113,7 +113,9 @@ class _PinnedEgressSyncNetworkBackend(httpcore.NetworkBackend):
             )
             remaining_timeout = None
             if deadline is not None:
-                remaining_timeout = max(0.0, deadline - time.monotonic())
+                remaining_timeout = deadline - time.monotonic()
+                if remaining_timeout <= 0.0:
+                    break
             try:
                 return self._backend.connect_tcp(
                     pinned_address,
