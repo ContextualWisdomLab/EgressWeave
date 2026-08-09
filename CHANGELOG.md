@@ -66,6 +66,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first observed at or after that deadline, and returns the generic egress failure
   instead of exposing a child-specific error, without widening exact authority,
   DNS pinning, TLS identity, proxy isolation, or network policy.
+- Make the synchronous pinned transport refuse to start a TCP attempt when its
+  shared finite deadline has a zero remaining connection budget. The backend
+  returns the existing generic denial without delegating expired work to the
+  dependency-injected TCP backend, while positive-budget address order,
+  pinned-address revalidation, TLS identity, proxy isolation, and first-success
+  semantics remain unchanged.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
