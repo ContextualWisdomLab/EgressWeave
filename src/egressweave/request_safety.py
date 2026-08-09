@@ -31,6 +31,7 @@ _FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES = frozenset(
         b"upgrade",
     }
 )
+_ALLOWED_REQUEST_EXTENSION_KEYS = frozenset({"sni_hostname", "timeout"})
 _REQUEST_TIMEOUT_EXTENSION_KEYS = ("connect", "read", "write", "pool")
 
 
@@ -292,23 +293,24 @@ def _bind_bounded_request_timeouts(
 def _bind_validated_tls_server_name(
     extensions: Mapping[str, Any], hostname: str
 ) -> dict[str, Any]:
-    """Return safe HTTP extensions with TLS SNI bound to ``hostname``.
+    """Return reviewed HTTP extensions with TLS SNI bound to ``hostname``.
 
-    HTTPX and HTTPCore expose low-level request extensions to transports. The
-    ``target`` extension overrides the request target carried by the URL and can
-    encode an absolute URI for forward-proxy dispatch, creating a second
-    destination channel independent of the validated authority. It is therefore
-    always rejected. HTTPCore ``trace`` callbacks are also rejected because
-    connection-completion events can expose raw network-stream return values to
-    caller code outside EgressWeave's reviewed HTTP policy surface.
+    HTTPCore extensions are capability-bearing escape hatches around its small
+    HTTP request abstraction. EgressWeave therefore forwards only the reviewed
+    ``timeout`` metadata and ``sni_hostname`` identity channel. ``target`` can
+    create a second proxy/tunnel destination, ``trace`` callbacks can receive
+    raw connection return values, and unknown future extensions have no reviewed
+    security meaning, so every other key fails closed before pool dispatch.
 
-    HTTPCore also honors ``sni_hostname`` while opening TLS. A caller-supplied
-    value must either name the already validated host or be rejected. The
-    returned copy always carries the validated hostname, preventing later
+    A caller-supplied ``sni_hostname`` must name the already validated host. The
+    returned copy always carries that validated hostname, preventing later
     consumers from falling back to an untrusted override.
     """
-    if "target" in extensions or "trace" in extensions:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    if any(
+        type(key) is not str or key not in _ALLOWED_REQUEST_EXTENSION_KEYS
+        for key in extensions
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     requested_server_name = extensions.get("sni_hostname")
     if requested_server_name is not None:
