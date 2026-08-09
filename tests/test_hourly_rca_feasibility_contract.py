@@ -40,6 +40,22 @@ def test_scheduler_requires_rca_and_operational_feasibility_before_escalation() 
     assert not missing, f"scheduler RCA contract is missing: {missing}"
 
 
+def test_scheduler_keeps_working_after_each_intermediate_result() -> None:
+    """Prevent one blocker, fix, or documentation artifact from ending useful work."""
+    prompt = _maintainer_prompt(_read(PRODUCT_WORKFLOW_PATH))
+    required_contract = (
+        "After every completed or deferred sub-action, reassess the remaining safe work for this same cohesive slice",
+        "Do not stop because one candidate is blocked, one fix is complete, or one documentation artifact is updated",
+        "documentation completeness",
+        "PRD, TRD, ADR, Architecture, UML, and ERD applicability",
+        "An ERD may be explicitly not applicable when the core owns no persistence",
+        "Only leave the working tree unchanged when no safe material improvement remains inside the allowed edit boundary",
+    )
+
+    missing = [fragment for fragment in required_contract if fragment not in prompt]
+    assert not missing, f"scheduler continuation contract is missing: {missing}"
+
+
 def test_operator_docs_explain_the_rca_feasibility_loop() -> None:
     """Keep the scheduler's blocker-handling contract understandable to operators."""
     documentation = " ".join(_read(RCA_DOCUMENTATION_PATH).split())
@@ -47,6 +63,10 @@ def test_operator_docs_explain_the_rca_feasibility_loop() -> None:
     assert "root-cause analysis" in documentation
     assert "operational feasibility" in documentation
     assert "every autonomously actionable path has been exhausted" in documentation
+    assert "work-conserving" in documentation
+    assert "PRD" in documentation
+    assert "ERD" in documentation
+    assert "no persistence" in documentation
 
 
 def test_changelog_records_the_scheduler_rca_feasibility_contract() -> None:
