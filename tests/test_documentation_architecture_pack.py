@@ -90,7 +90,7 @@ def test_system_architecture_orders_pre_request_validation_before_network_setup(
 
 def test_root_architecture_separates_declared_and_streamed_request_body_timing() -> None:
     """Keep root architecture truthful about checks before dispatch versus during send."""
-    architecture = _read("ARCHITECTURE.md")
+    architecture = " ".join(_read("ARCHITECTURE.md").split())
 
     assert "enforce declared and streamed request-body budgets" not in architecture
     assert "reject unsafe declared request-body lengths before pool dispatch" in architecture
