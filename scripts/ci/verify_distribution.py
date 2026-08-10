@@ -290,7 +290,7 @@ def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
         digest = _sha256_file(archive_path)
         lines.append(f"{digest}  {archive_path.name}\n")
     try:
-        with checksum_path.open("x", encoding="ascii") as checksum_file:
+        with checksum_path.open("x", encoding="ascii", newline="\n") as checksum_file:
             checksum_file.write("".join(lines))
     except OSError:
         raise SystemExit("checksum output path already exists or is unsafe") from None
