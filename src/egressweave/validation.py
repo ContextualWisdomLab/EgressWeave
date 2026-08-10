@@ -18,7 +18,6 @@ import asyncio
 import hashlib
 import hmac
 import ipaddress
-import queue
 import secrets
 import socket
 import threading
@@ -33,6 +32,19 @@ EGRESS_NOT_ALLOWED = "egress URL is not allowed"
 _VALIDATED_EGRESS_URL_INTEGRITY_KEY = secrets.token_bytes(32)
 _MAX_CONCURRENT_DNS_RESOLUTIONS = 32
 _DNS_RESOLUTION_SLOTS = threading.BoundedSemaphore(_MAX_CONCURRENT_DNS_RESOLUTIONS)
+
+
+@dataclass
+class _DNSResolutionFlight:
+    """Share one live resolver result among callers of the same authority."""
+
+    completed: threading.Event = field(default_factory=threading.Event)
+    raw_addresses: tuple[str, ...] | None = None
+    error: Exception | None = None
+
+
+_DNS_RESOLUTION_FLIGHTS_LOCK = threading.Lock()
+_DNS_RESOLUTION_FLIGHTS: dict[tuple[str, int], _DNSResolutionFlight] = {}
 
 _LOCAL_DEV_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
 _PRIVATE_LOCAL_NETWORKS = (
@@ -222,10 +234,8 @@ def _validate_bounded_unique_addresses(
     return tuple(validated_addresses)
 
 
-def _resolve_all_global_addresses_blocking(
-    hostname: str, port: int, policy: EgressPolicy
-) -> tuple[str, ...]:
-    """Resolve and validate a finite unique address set on the worker thread."""
+def _resolve_raw_addresses_blocking(hostname: str, port: int) -> tuple[str, ...]:
+    """Resolve raw address strings without applying any caller-specific policy."""
     try:
         address_infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
     except (OSError, UnicodeError) as exc:
@@ -233,11 +243,43 @@ def _resolve_all_global_addresses_blocking(
 
     if not address_infos:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    return tuple(str(address_info[4][0]) for address_info in address_infos)
+
+
+def _resolve_all_global_addresses_blocking(
+    hostname: str, port: int, policy: EgressPolicy
+) -> tuple[str, ...]:
+    """Resolve and validate a finite unique address set on the worker thread."""
     return _validate_bounded_unique_addresses(
-        (str(address_info[4][0]) for address_info in address_infos),
+        _resolve_raw_addresses_blocking(hostname, port),
         policy,
         hostname=hostname,
     )
+
+
+def _join_dns_resolution_flight(
+    hostname: str,
+    port: int,
+) -> tuple[tuple[str, int], _DNSResolutionFlight, bool]:
+    """Return the live authority flight, creating it for exactly one owner."""
+    key = (hostname, port)
+    with _DNS_RESOLUTION_FLIGHTS_LOCK:
+        flight = _DNS_RESOLUTION_FLIGHTS.get(key)
+        if flight is not None:
+            return key, flight, False
+        flight = _DNSResolutionFlight()
+        _DNS_RESOLUTION_FLIGHTS[key] = flight
+        return key, flight, True
+
+
+def _complete_dns_resolution_flight(
+    key: tuple[str, int],
+    flight: _DNSResolutionFlight,
+) -> None:
+    """Remove one completed live flight before waking its current waiters."""
+    with _DNS_RESOLUTION_FLIGHTS_LOCK:
+        _DNS_RESOLUTION_FLIGHTS.pop(key, None)
+    flight.completed.set()
 
 
 def _resolve_all_global_addresses(
@@ -245,59 +287,72 @@ def _resolve_all_global_addresses(
 ) -> tuple[str, ...]:
     """Resolve addresses within a bounded, fail-closed synchronous deadline."""
     deadline = time.monotonic() + policy.dns_timeout_seconds
-    if not _DNS_RESOLUTION_SLOTS.acquire(timeout=policy.dns_timeout_seconds):
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    key, flight, owns_flight = _join_dns_resolution_flight(hostname, port)
+
+    if owns_flight:
+        if not _DNS_RESOLUTION_SLOTS.acquire(timeout=policy.dns_timeout_seconds):
+            flight.error = EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            _complete_dns_resolution_flight(key, flight)
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+        remaining_timeout = deadline - time.monotonic()
+        if remaining_timeout <= 0:
+            _DNS_RESOLUTION_SLOTS.release()
+            flight.error = EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            _complete_dns_resolution_flight(key, flight)
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+
+        def resolve_on_worker() -> None:
+            try:
+                flight.raw_addresses = _resolve_raw_addresses_blocking(hostname, port)
+            except Exception as exc:  # noqa: BLE001
+                flight.error = exc
+            finally:
+                _DNS_RESOLUTION_SLOTS.release()
+                _complete_dns_resolution_flight(key, flight)
+
+        worker = threading.Thread(
+            target=resolve_on_worker,
+            name="egressweave-dns-resolver",
+            daemon=True,
+        )
+        worker_start_failed = False
+        try:
+            worker.start()
+        except RuntimeError as exc:
+            _DNS_RESOLUTION_SLOTS.release()
+            flight.error = exc
+            _complete_dns_resolution_flight(key, flight)
+            worker_start_failed = True
+        if worker_start_failed:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     remaining_timeout = deadline - time.monotonic()
-    if remaining_timeout <= 0:
-        _DNS_RESOLUTION_SLOTS.release()
+    if remaining_timeout <= 0 or not flight.completed.wait(timeout=remaining_timeout):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+    if flight.error is not None:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+    if flight.raw_addresses is None:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-
-    resolution_result: queue.Queue[
-        tuple[tuple[str, ...] | None, Exception | None]
-    ] = queue.Queue(maxsize=1)
-
-    def resolve_on_worker() -> None:
-        try:
-            addresses = _resolve_all_global_addresses_blocking(hostname, port, policy)
-            resolution_result.put((addresses, None))
-        except Exception as exc:  # noqa: BLE001
-            resolution_result.put((None, exc))
-        finally:
-            _DNS_RESOLUTION_SLOTS.release()
-
-    worker = threading.Thread(
-        target=resolve_on_worker,
-        name="egressweave-dns-resolver",
-        daemon=True,
+    return _validate_bounded_unique_addresses(
+        flight.raw_addresses,
+        policy,
+        hostname=hostname,
     )
-    try:
-        worker.start()
-    except RuntimeError as exc:
-        _DNS_RESOLUTION_SLOTS.release()
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
-
-    try:
-        addresses, error = resolution_result.get(
-            timeout=max(0.0, deadline - time.monotonic())
-        )
-    except queue.Empty as exc:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
-
-    if error is not None:
-        if isinstance(error, EgressNotAllowedError):
-            raise error
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from error
-    if addresses is None:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
-    return addresses
 
 
 async def _resolve_all_global_addresses_async(
     hostname: str, port: int, policy: EgressPolicy
 ) -> tuple[str, ...]:
-    """Run the same bounded resolver without blocking the event loop."""
-    return await asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy)
+    """Run the bounded resolver under one caller-owned asynchronous deadline."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_resolve_all_global_addresses, hostname, port, policy),
+            timeout=policy.dns_timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
 
 def _parse_and_validate_candidate_url(
