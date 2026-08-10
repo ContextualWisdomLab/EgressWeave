@@ -18,13 +18,17 @@ an exact `EgressConnectionPoolPolicy` with different documented field values
 instead. This boundary does not claim EgressWeave sandboxes arbitrary Python
 code already executing inside the embedding process.
 
-`max_connections` must be a positive integer or ASCII decimal string.
-`max_keepalive_connections` may be zero to retain no idle connections but must
-not exceed total capacity. `keepalive_expiry_seconds` must be a finite
+Count fields accept only exact built-in integers or ASCII decimal strings;
+integer subclasses are rejected before a capacity value is retained.
+`max_connections` must be positive. `max_keepalive_connections` may be zero to
+retain no idle connections but must not exceed total capacity. Accepted decimal
+text is converted to the same exact built-in integer representation before the
+relational capacity check. `keepalive_expiry_seconds` must be a finite
 non-negative real number and may be zero for immediate expiry. Booleans,
 fractional counts, signed or non-ASCII count text, negative values, non-finite
 expiry values, unrelated objects, and contradictory capacities fail during
-trusted policy construction.
+trusted policy construction. This primitive-value check does not make
+EgressWeave a Python sandbox.
 
 ## Standards basis
 
@@ -54,18 +58,22 @@ and portable across standalone and modular integrations.
 1. Both public `EgressPolicy` constructors accept the same immutable pool policy.
 2. Trusted construction accepts only the exact `EgressConnectionPoolPolicy`
    type; subclasses are rejected before transport pool values are read.
-3. Total connection capacity is always positive and finite.
-4. Idle capacity is finite, may be zero, and cannot exceed total capacity.
-5. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
-6. Synchronous and asynchronous HTTPCore pools receive the exact normalized
+3. `max_connections` and `max_keepalive_connections` retain exact built-in
+   integer values; non-exact integer subclasses do not cross trusted
+   construction.
+4. Total connection capacity is always positive and finite.
+5. Idle capacity is finite, may be zero, and cannot exceed total capacity.
+6. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
+7. Synchronous and asynchronous HTTPCore pools receive the exact normalized
    values from the policy.
-7. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
-8. The normalized pool policy participates in deterministic policy and decision
+8. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
+9. The normalized pool policy participates in deterministic policy and decision
    fingerprints without recording live connection state.
-9. Defaults, valid environment-style count text, invalid configuration,
-   relational invariants, exact policy-type enforcement, sync/async delegation,
-   public API exposure, and fingerprint drift are covered by offline regression
-   tests with complete production statement and branch coverage.
+10. Defaults, valid environment-style count text, invalid configuration,
+    primitive count-value sealing, relational invariants, exact policy-type
+    enforcement, sync/async delegation, public API exposure, and fingerprint
+    drift are covered by offline regression tests with complete production
+    statement and branch coverage.
 
 ## Operational guidance
 
@@ -80,8 +88,10 @@ assuming it is universally safer.
 
 Applications that previously subclassed `EgressConnectionPoolPolicy` must
 migrate to an exact instance and configure the supported finite fields directly.
-The exact-type check runs during trusted startup, before a pool or request can
-consume those values.
+Applications that used a custom integer subclass for either connection-count
+field must convert it deliberately to a built-in `int` or reviewed ASCII decimal
+text before policy construction. These exact-type checks run during trusted
+startup, before a pool or request can consume the values.
 
 ## References
 
