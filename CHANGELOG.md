@@ -55,6 +55,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Stream wheel and source-distribution SHA-256 generation in 1 MiB chunks so
+  release verification no longer materializes complete distribution archives in
+  memory while preserving deterministic `SHA256SUMS` bytes.
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
