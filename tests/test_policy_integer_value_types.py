@@ -73,3 +73,10 @@ def test_policy_configuration_integrity_guide_is_discoverable_and_current() -> N
     assert "ASCII decimal strings" in guide
     assert "does not make EgressWeave a Python sandbox" in guide
     assert "https://docs.python.org/3.14/reference/datamodel.html" in guide
+
+
+def test_changelog_records_shared_policy_integer_value_sealing() -> None:
+    """Record the trusted scalar policy tightening in release history."""
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "Reject non-exact integer subclasses in shared policy integer fields" in changelog
