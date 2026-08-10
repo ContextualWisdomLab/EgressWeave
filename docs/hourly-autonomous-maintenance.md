@@ -104,10 +104,26 @@ reverification succeeds.
 
 A fresh runner has no secrets, no OIDC permission, and no repository-write
 permission. Before applying the patch, it rechecks all open pull-request pages
-and the exact protected-main base SHA. It then builds a verifier image from the
-protected branch and installs the trusted dependency and test toolchain. The
-Python base image is resolved to an immutable repository digest, and the built
-verifier is addressed by its immutable image ID.
+and the exact protected-main base SHA. It then builds a verifier image from an
+explicit repository-reviewed Docker Official Image digest and installs the
+trusted dependency and test toolchain. The current reviewed base is
+`python@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91`.
+The workflow validates the exact `python@sha256:<64-hex>` form before Docker
+executes, pulls that digest directly, uses the same value in the Dockerfile
+`FROM`, and addresses the completed verifier by its immutable local image ID.
+It never resolves a mutable Python tag and then promotes the newly observed
+digest to trusted input during the same run.
+
+The pinned value is the reviewed multi-platform image-index digest used by the
+Ubuntu 24.04 verifier runner. A platform-specific manifest selected under that
+index is Docker runtime resolution detail; it is not a substitute repository
+configuration value. Any future Python base-image refresh changes the committed
+index digest explicitly, receives ordinary review and exact-head CI/security
+checks, and must preserve the Python 3.13 runtime and offline least-privilege
+execution contract. Rollback likewise restores a previously reviewed digest by
+an explicit reviewed repository change rather than by moving or reusing a tag.
+A digest makes the selected image identity immutable; it does not by itself
+prove publisher provenance or absence of vulnerabilities.
 
 The trusted guard validates patch metadata before `git apply`, revalidates the
 materialized diff, and seals the patch identity in root-owned read-only files.
@@ -172,20 +188,23 @@ The scheduled product-development workflow requires:
 
 - `NVIDIA_NIM_API_KEY`, mapped only to OpenCode's `NVIDIA_API_KEY`
   environment variable for the NVIDIA NIM endpoint;
-- the standard Docker installation available on GitHub-hosted Ubuntu runners.
+- the standard Docker installation available on GitHub-hosted Ubuntu runners;
+- one explicitly reviewed Docker Official Image `python@sha256:<64-hex>` verifier
+  base committed in the workflow.
 
 The workflow fails closed when the model credential, protected base identity,
-immutable verifier image, container isolation, or patch identity is unavailable.
-It has no fallback repository-write identity and does not reuse review-agent,
-release, package, attestation, or ref credentials.
+reviewed verifier-base digest, immutable built verifier image, container
+isolation, or patch identity is unavailable. It has no fallback repository-write
+identity and does not reuse review-agent, release, package, attestation, or ref
+credentials.
 
 ## Manual operation
 
 Both workflows support `workflow_dispatch`. Manual product-development runs use
 the same read-only permissions, exact-base checks, patch boundary, container
-isolation, full REST pagination, and non-publication boundary as scheduled runs.
-A manual run cannot bypass the zero-open-PR condition or turn the verified
-handoff into a repository write.
+isolation, full REST pagination, digest-pinned verifier base, and non-publication
+boundary as scheduled runs. A manual run cannot bypass the zero-open-PR
+condition or turn the verified handoff into a repository write.
 
 ## Agent implementation references
 
@@ -194,6 +213,15 @@ https://opencode.ai/docs/cli/
 
 Anomaly. (2026). *OpenCode providers: NVIDIA*.
 https://opencode.ai/docs/providers/
+
+Docker, Inc. (n.d.). *Building best practices*. Docker Docs.
+https://docs.docker.com/build/building/best-practices/
+
+Docker, Inc. (n.d.). *Image digests*. Docker Docs.
+https://docs.docker.com/dhi/explore/security-concepts/digests/
+
+Docker, Inc. (n.d.). *Validating image inputs*. Docker Docs.
+https://docs.docker.com/build/policies/validate-images/
 
 NVIDIA Corporation. (2026). *NVIDIA Nemotron 3 Super 120B A12B model card*.
 https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard
