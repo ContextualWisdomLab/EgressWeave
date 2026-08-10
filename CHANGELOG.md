@@ -167,8 +167,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   before constructing a caller-visible HTTPX response. Repeated fields count
   independently, malformed downstream metadata fails closed, rejected source
   streams are released synchronously or asynchronously, cleanup failures remain
-  behind the generic non-leaking denial boundary, and both limits participate in
-  deterministic policy and decision fingerprints.
+  behind the generic non-leaking denial boundary, and both limits participate
+  in deterministic policy and decision fingerprints.
 
 ## [0.3.0] - 2026-08-04
 
