@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject non-exact string subclasses in HTTP method policy values during trusted
+  construction. Individual methods must be exact built-in strings before
+  whitespace removal or case normalization; the existing comma-separated
+  operator form, RFC 9110 token validation, uppercase canonicalization, and
+  unconditional `CONNECT` rejection remain unchanged.
 - Reject non-exact integer subclasses in shared policy integer fields during
   trusted construction. Allowed ports, DNS candidate counts, header-field
   counts, and request/response byte budgets retain only exact built-in integers;
