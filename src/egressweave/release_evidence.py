@@ -626,20 +626,54 @@ def _require_output_outside_verified_set(
         raise SystemExit("evidence manifest output must remain outside the verified set")
 
 
+def _require_canonical_forbidden_root(forbidden_root: Path) -> Path:
+    """Return one canonical excluded directory or raise one stable public error.
+
+    Every named lexical component is inspected before any ``..`` normalization,
+    so a symbolic link cannot be hidden by later parent traversal. Public callers
+    receive one dedicated non-leaking failure, then the existing canonical-root
+    contract supplies the single authority reused by the writer afterward.
+    """
+    try:
+        current = Path(forbidden_root.anchor)
+        for component in forbidden_root.parts[len(current.parts) :]:
+            current /= component
+            if component != ".." and current.is_symlink():
+                raise SystemExit(
+                    "release evidence directory path must not traverse symlinks"
+                )
+        return _require_canonical_evidence_root(forbidden_root)
+    except (SystemExit, OSError, RuntimeError):
+        raise SystemExit(
+            "evidence manifest forbidden root is missing or unsafe"
+        ) from None
+
+
 def write_evidence_manifest(
     manifest: dict[str, Any],
     output_path: Path,
     *,
     forbidden_root: Path | None = None,
 ) -> None:
-    """Create one private manifest and optionally exclude one verified directory."""
+    """Create one private manifest while optionally excluding one real directory.
+
+    When supplied, ``forbidden_root`` must name an existing real directory through
+    a lexical path with no symbolic-link component. The writer validates it before
+    creating the output parent, stores the canonical result once, and reuses that
+    same authority for every pre-write, descriptor-bound, and post-sync check.
+    """
     payload = _encode_evidence_manifest(manifest)
+    canonical_forbidden_root = (
+        _require_canonical_forbidden_root(forbidden_root)
+        if forbidden_root is not None
+        else None
+    )
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as error:
         raise SystemExit("evidence manifest parent directory is unavailable") from error
-    if forbidden_root is not None:
-        _require_output_outside_verified_set(output_path, forbidden_root)
+    if canonical_forbidden_root is not None:
+        _require_output_outside_verified_set(output_path, canonical_forbidden_root)
 
     try:
         with open(output_path, "xb", opener=_open_exclusive_manifest) as stream:
@@ -648,8 +682,11 @@ def write_evidence_manifest(
                 stream,
                 label="evidence manifest output",
             )
-            if forbidden_root is not None:
-                _require_output_outside_verified_set(output_path, forbidden_root)
+            if canonical_forbidden_root is not None:
+                _require_output_outside_verified_set(
+                    output_path,
+                    canonical_forbidden_root,
+                )
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
@@ -658,8 +695,11 @@ def write_evidence_manifest(
                 stream,
                 label="evidence manifest output",
             )
-            if forbidden_root is not None:
-                _require_output_outside_verified_set(output_path, forbidden_root)
+            if canonical_forbidden_root is not None:
+                _require_output_outside_verified_set(
+                    output_path,
+                    canonical_forbidden_root,
+                )
     except FileExistsError:
         raise SystemExit("evidence manifest output already exists") from None
     except OSError as error:
