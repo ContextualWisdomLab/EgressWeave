@@ -60,6 +60,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject non-exact integer subclasses in shared policy integer fields during
+  trusted construction. Allowed ports, DNS candidate counts, header-field
+  counts, and request/response byte budgets retain only exact built-in integers;
+  reviewed ASCII decimal strings are converted to built-in integers before
+  range checks, fingerprinting, validation, or transport delegation. This
+  supported-value boundary does not claim to sandbox arbitrary in-process
+  Python.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
