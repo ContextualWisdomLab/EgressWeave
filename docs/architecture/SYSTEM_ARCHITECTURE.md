@@ -1,6 +1,6 @@
 # EgressWeave System Architecture Views
 
-Status: Proposed supplementary views of **IMPLEMENTED-ON-PROTECTED-MAIN** behavior. Root [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) remains authoritative when this document and implementation disagree.
+Status: Proposed supplementary views of **IMPLEMENTED-ON-PROTECTED-MAIN** behavior plus explicitly labelled **ACTIVE-PR** automation architecture. Root [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) remains authoritative when this document and implementation disagree.
 
 ## 1. System context
 
@@ -115,6 +115,25 @@ Repository automation is intentionally separated from runtime product authority.
 
 Automation changes that exist only on an **ACTIVE-PR** are not part of this current system architecture until protected merge and operational acceptance.
 
+### ACTIVE-PR: bounded canonical prompt data flow
+
+```mermaid
+flowchart LR
+    checkout[Exact protected-main checkout] --> pr_gate[Paginated zero-open-PR gate]
+    pr_gate --> prompt[Canonical maintainer prompt]
+    prompt --> prompt_guard[Regular file + non-symlink + 12 KiB validation]
+    prompt_guard --> opencode[OpenCode with NVIDIA_NIM_API_KEY]
+    opencode --> untrusted_patch[Bounded untrusted patch + NDJSON result]
+    untrusted_patch --> handoff_guard[Exact-base and allowlist guard]
+    handoff_guard --> verifier[Credential-free verifier]
+    verifier --> sealed_patch[Digest-bound verified patch handoff]
+    sealed_patch -. external independent promotion only .-> protected_governance[Normal PR/review/check/merge governance]
+```
+
+The **Canonical maintainer prompt** is `.github/prompts/hourly-product-maintainer.md`; it is copied into a private runner path only after the **12 KiB** guard. The **OpenCode** model step remains credential-bearing but non-publishing and may not execute model-modified repository code. The **Credential-free verifier** is the only stage that executes the changed repository and it ends at a sealed handoff, not a branch, PR, merge or release.
+
+A generic scheduled-task failure is a resumable control-plane incident. The next invocation rebinds live repository and dependency identities, performs evidence-backed RCA, and resumes another safe EgressWeave lane. Prompt correction is not treated as product completion.
+
 ## 8. Persistence boundary
 
-EgressWeave core does not persist policies, requests, responses, credentials, decision evidence, or audit events. See [`ERD.md`](ERD.md) for the explicit no-owned-database decision and a NON-NORMATIVE host integration model.
+EgressWeave core does not persist policies, requests, responses, credentials, decision evidence, audit events, automation runs, or control-plane incidents. See [`ERD.md`](ERD.md) for the explicit no-owned-database decision and a NON-NORMATIVE host/platform integration model.
