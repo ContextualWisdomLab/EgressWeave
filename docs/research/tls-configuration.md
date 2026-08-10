@@ -50,6 +50,16 @@ trusted integration point for deferred secret retrieval. Every transport owns
 the fresh context that results, eliminating post-validation caller mutation as
 an authority channel.
 
+The helper accepts only the exact `TLSConfiguration` type before it invokes
+`create_ssl_context()`. Subclassing this security value object is not an
+extension mechanism: a subclass could otherwise replace `create_ssl_context()`
+with caller-controlled dispatch and return a context that disables hostname
+verification or certificate verification while still passing an `isinstance`
+check. Rejecting subclasses before that method is invoked keeps the reviewed
+configuration fields, not polymorphic code, authoritative for the TLS policy.
+This is a pre-1.0 secure-default tightening and does not claim to sandbox
+arbitrary trusted Python executing inside the embedding process.
+
 ## Trust-store semantics
 
 The default preserves EgressWeave's existing HTTPX trust behavior while
@@ -103,6 +113,11 @@ default. An existing endpoint that cannot yet negotiate TLS 1.3 can opt into
 `minimum_version=ssl.TLSVersion.TLSv1_2`; this is an explicit compatibility
 exception that should be inventoried and removed after the peer is upgraded.
 
+Applications that previously subclassed `TLSConfiguration` must migrate to an
+exact instance using the documented declarative fields. Private trust roots,
+mutual-TLS identities, deferred private-key passwords, and the explicit TLS 1.2
+compatibility floor remain supported without subclassing.
+
 The configuration is threaded through both public builders and both
 already-validated pinned-client builders. It changes only TLS trust and client
 identity; exact authority, DNS pinning, proxy isolation, request framing and
@@ -113,6 +128,9 @@ independently enforced.
 
 Aviram, N. (2026). *Deprecating obsolete key exchange methods in TLS 1.2 and
 DTLS 1.2* (RFC 10015). RFC Editor. https://www.rfc-editor.org/rfc/rfc10015.html
+
+MITRE Corporation. (2026). *CWE-295: Improper certificate validation* (CWE
+Version 4.20). https://cwe.mitre.org/data/definitions/295.html
 
 OpenSSL Project Authors. (2026). *openssl-ciphers*. OpenSSL 3.0 documentation.
 https://docs.openssl.org/3.0/man1/openssl-ciphers/
