@@ -14,28 +14,39 @@ and are converted to exact built-in integers before range checks, relational
 checks, policy fingerprinting, DNS validation, request validation, or transport
 delegation. Exact built-in integers continue to be accepted directly.
 
+HTTP method policy values use the same supported-value sealing principle. Each
+individual method token must be an exact built-in `str` before whitespace removal
+or uppercase normalization can run. The existing exact comma-separated
+`allowed_methods` string remains supported and is split only after its outer value
+has been proven to be an exact built-in string. The resulting method entries still
+follow the RFC 9110 token grammar, are canonicalized to uppercase, and always
+reject `CONNECT`.
+
 This restriction applies to the shared integer normalization paths for allowed
 ports, maximum resolved-address count, positive header-field counts, and positive
-request/response byte budgets. It does not change configured defaults, allowed
-ranges, authority pairing, DNS policy, TLS identity, proxy isolation, HTTP method
-policy, request/response framing, or the generic request-time denial boundary.
+request/response byte budgets, plus the reviewed HTTP method normalization paths.
+It does not change configured defaults, allowed ranges, authority pairing, DNS
+policy, TLS identity, proxy isolation, request/response framing, or the generic
+request-time denial boundary.
 
 ## Why exact type matters at this boundary
 
-Python deliberately supports subclassing immutable built-in types such as `int`,
-and `isinstance(value, int)` is true for instances of subclasses. Python's data
-model also permits subclasses of immutable built-ins to customize instance
-creation. A broad `isinstance` check is therefore a polymorphism contract, not
-proof that the stored object is the canonical built-in integer value expected by
-a closed immutable policy representation.
+Python deliberately supports subclassing immutable built-in types such as `int`
+and `str`. `isinstance(value, int)` or `isinstance(value, str)` therefore accepts
+subclass instances, while Python's data model permits immutable built-in
+subclasses to customize behavior. A broad `isinstance` check is consequently a
+polymorphism contract, not proof that the stored or parsed value is the canonical
+built-in primitive expected by a closed immutable policy representation.
 
 EgressWeave does not need that polymorphism for policy scalar fields. Supported
-customization is expressed through documented values, not user-defined numeric
-classes. Requiring `type(value) is int` on integer-form inputs prevents a subclass
-object from surviving normalization and later participating in policy hashing or
-equality, authority tuples, arithmetic or comparison boundaries, or provider
-delegation. Environment text still reaches the same canonical state through
-explicit decimal conversion.
+customization is expressed through documented values, not user-defined numeric or
+string classes. Requiring `type(value) is int` on integer-form inputs prevents a
+subclass object from surviving normalization and later participating in policy
+hashing or equality, authority tuples, arithmetic or comparison boundaries, or
+provider delegation. Requiring `type(value) is str` for HTTP methods prevents a
+subclass from controlling `strip()`, `upper()`, or the comma-separated `split()`
+step before trusted normalization. Environment text still reaches the same
+canonical state through explicit decimal conversion or ordinary built-in strings.
 
 This supported-value sealing does not make EgressWeave a Python sandbox. Code
 that is already executing inside the embedding process retains ordinary Python
@@ -51,26 +62,39 @@ integrations.
    ASCII decimal strings are converted before positivity checks.
 3. Shared positive field-count and byte-budget normalizers reject integer
    subclasses and preserve their existing positive-value constraints.
-4. Booleans remain invalid integer configuration even though Python defines
+4. HTTP method entries must be exact built-in strings before whitespace removal
+   or uppercase normalization; non-exact `str` subclasses are rejected.
+5. The exact built-in comma-separated `allowed_methods` form remains supported,
+   but a string subclass is rejected before `split()` can run. RFC 9110 token
+   validation, uppercase canonicalization, and unconditional `CONNECT` rejection
+   remain unchanged.
+6. Booleans remain invalid integer configuration even though Python defines
    `bool` as an `int` subclass.
-5. Existing decimal-string syntax, defaults, public builder signatures, and
+7. Existing decimal-string syntax, defaults, public builder signatures, and
    request-time generic denial behavior remain unchanged.
-6. Invalid trusted startup configuration continues to raise actionable
+8. Invalid trusted startup configuration continues to raise actionable
    field-specific `TypeError` or `ValueError` rather than becoming an opaque
    request-time policy denial.
-7. Regression tests exercise the public `EgressPolicy` constructors so the
+9. Regression tests exercise the public `EgressPolicy` constructors so the
    contract is proven at the API boundary rather than only against internal
    helpers.
 
 ## Operator migration
 
-Applications that supply plain integers or ASCII decimal environment values need
-no change. Applications that pass custom subclasses of `int` for ports or finite
-resource budgets should materialize an exact built-in integer before policy
-construction. This is a pre-1.0 tightening of an ambiguous configuration shape;
-it does not widen egress authority or change any finite default.
+Applications that supply plain integers, ASCII decimal environment values, or
+ordinary built-in HTTP method strings need no change. The existing exact
+comma-separated `allowed_methods` string is also unchanged. Applications that
+pass custom subclasses of `int` for ports or finite resource budgets should
+materialize an exact built-in integer before policy construction; applications
+that pass custom subclasses of `str` for HTTP methods should materialize an
+ordinary built-in string first. This is a pre-1.0 tightening of ambiguous
+configuration shapes; it does not widen egress authority or change any finite
+default.
 
-## Reference — APA 7th
+## References — APA 7th
+
+Fielding, R., Nottingham, M., & Reschke, J. (2022). *HTTP semantics* (RFC 9110;
+STD 97). RFC Editor. https://www.rfc-editor.org/rfc/rfc9110.html
 
 Python Software Foundation. (2026). *Data model — Python 3.14.6 documentation*.
 https://docs.python.org/3.14/reference/datamodel.html
