@@ -47,3 +47,24 @@ def test_live_archive_growth_never_reaches_the_parser_view(
         observed = archive_file.read()
 
     assert len(observed) <= accepted_limit
+
+
+def test_same_size_archive_mutation_is_rejected_after_snapshot(tmp_path: Path) -> None:
+    """Reject in-place same-size mutation after the immutable parser snapshot."""
+    verifier = _load_verifier()
+    archive_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    original = b"a" * 64
+    replacement = b"b" * 64
+    archive_path.write_bytes(original)
+
+    observed = b""
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        with verifier._open_stable_distribution(archive_path) as archive_file:
+            observed = archive_file.read()
+            with archive_path.open("r+b") as mutator:
+                mutator.seek(0)
+                mutator.write(replacement)
+                mutator.flush()
+
+    assert observed == original
+    assert archive_path.read_bytes() == replacement
