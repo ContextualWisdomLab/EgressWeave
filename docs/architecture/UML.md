@@ -314,3 +314,31 @@ sequenceDiagram
 ```
 
 A dependency wait, one successful mutation, prompt repair, documentation update, queued check, provider rate limit, or other **control-plane error** is not by itself run completion. A material dependency advancement is an EgressWeave handoff trigger, not a status-only event. The work-conserving rule never grants the model reviewer identity, signing/OIDC capability, or repository-write authority outside the existing writer lease and protected repository governance.
+
+## 10. ACTIVE-PR canonical prompt bootstrap and error recovery
+
+This sequence describes the bounded prompt work under ADR 0004. It is not shipped until the relevant workflow branch reaches protected main and passes operational acceptance.
+
+```mermaid
+sequenceDiagram
+    participant Workflow as Hourly workflow
+    participant Prompt as .github/prompts/hourly-product-maintainer.md
+    participant Model as OpenCode
+    participant Verify as Credential-free verifier
+    participant Next as Next invocation
+
+    Workflow->>Prompt: validate canonical prompt is regular, non-symlink and <= 12 KiB
+    Prompt-->>Workflow: reviewed bounded policy bytes
+    Workflow->>Model: execute with NVIDIA credential and deny-by-default tools
+    Model-->>Workflow: bounded patch + auditable NDJSON
+    Workflow->>Verify: exact-base patch handoff without model credential
+    Verify-->>Workflow: sealed digest-bound patch evidence
+    alt generic scheduled-task failure
+        Workflow--xModel: generic scheduled-task failure; exact hidden cause unavailable
+        Next->>Workflow: re-fetch live automation and repository state
+        Next->>Prompt: validate canonical prompt again
+        Next->>Next: resume repository work; prompt repair is not completion
+    end
+```
+
+The workflow must **validate canonical prompt** input before model execution. A **generic scheduled-task failure** is classified only as a control-plane incident until evidence supports a narrower cause. The next invocation must **resume repository work**, and **prompt repair is not completion**. Neither the prompt loader nor recovery sequence changes the model's repository-write, review, signing, publication, deployment, or release authority.
