@@ -130,6 +130,28 @@ def test_archive_selection_rejects_symlinked_distribution(
         verifier._select_archives(tmp_path, "egressweave", "0.3.0")
 
 
+def test_checksum_writer_rejects_archive_symlink_retarget_after_selection(
+    tmp_path: Path,
+) -> None:
+    """Reject a distribution path retargeted after the initial archive preflight."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    selected_archives = verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement.bin"
+    replacement.write_bytes(b"different-unreviewed-bytes")
+    wheel_path.unlink()
+    wheel_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._write_sha256sums(tmp_path, selected_archives)
+
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
 def test_distribution_digest_reads_only_bounded_chunks() -> None:
     """Hash a distribution without issuing an unbounded binary read."""
     verifier = _load_verifier()
