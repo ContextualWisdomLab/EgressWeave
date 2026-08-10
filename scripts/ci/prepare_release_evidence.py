@@ -86,7 +86,9 @@ def _require_handoff_outside_evidence(
     handoff_path: Path,
     evidence_root: Path,
 ) -> Path:
-    """Return one output path whose real parent remains outside sealed evidence."""
+    """Return one named output file whose real parent remains outside evidence."""
+    if handoff_path.name in {"", ".", ".."}:
+        raise SystemExit("handoff manifest path must name one regular file")
     parent = _require_canonical_directory(
         handoff_path.parent,
         label="handoff manifest parent",
@@ -370,8 +372,8 @@ def prepare_release_evidence(
     matching source distribution. Each accepted archive is copied from its
     no-follow identity-bound descriptor into a private parser-only snapshot
     before the generator loads. Every generated file is new, owner-only, and
-    deterministic. The returned mapping is rebuilt from the sealed six-file set
-    after the separately stored handoff has been durably published.
+    deterministic. The returned mapping is the exact manifest already rebuilt
+    and verified after the separately stored handoff has been durably published.
     """
     _require_source_identity(repository, source_sha)
     evidence_root = _require_canonical_directory(
@@ -453,24 +455,19 @@ def prepare_release_evidence(
         repository=repository,
         source_sha=source_sha,
     )
-    manifest_payload = _strict_pretty_json_bytes(prepared_manifest)
     release_evidence.write_evidence_manifest(
         prepared_manifest,
         resolved_handoff,
         forbidden_root=evidence_root,
     )
-    release_evidence._require_post_publication_state(
+    release_evidence.reverify_published_evidence_manifest(
         evidence_root,
         resolved_handoff,
         repository=repository,
         source_sha=source_sha,
-        expected_payload=manifest_payload,
+        expected_manifest=prepared_manifest,
     )
-    return release_evidence.build_evidence_manifest(
-        evidence_root,
-        repository=repository,
-        source_sha=source_sha,
-    )
+    return prepared_manifest
 
 
 def main() -> int:
