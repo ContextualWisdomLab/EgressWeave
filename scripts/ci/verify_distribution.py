@@ -15,6 +15,7 @@ import os
 import re
 import stat
 import tarfile
+import tempfile
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -97,7 +98,7 @@ def _same_distribution_state(expected: os.stat_result, observed: os.stat_result)
 
 @contextmanager
 def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
-    """Yield one bounded regular archive while binding path and descriptor identity."""
+    """Yield a bounded immutable parser snapshot while retaining source identity."""
     expected_state = _require_regular_distribution_state(archive_path)
     try:
         archive_file = archive_path.open("rb")
@@ -108,8 +109,32 @@ def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
         opened_state = os.fstat(archive_file.fileno())
         if not _same_distribution_state(expected_state, opened_state):
             raise SystemExit("distribution archive is missing or unsafe")
-        yield archive_file
-        final_open_state = os.fstat(archive_file.fileno())
+
+        with tempfile.TemporaryFile(mode="w+b") as snapshot_file:
+            remaining = expected_state.st_size
+            while remaining:
+                chunk = archive_file.read(min(HASH_CHUNK_SIZE, remaining))
+                if not chunk:
+                    raise SystemExit("distribution archive is missing or unsafe")
+                snapshot_file.write(chunk)
+                remaining -= len(chunk)
+            if archive_file.read(1):
+                raise SystemExit(
+                    "distribution archive exceeds the 256 MiB verification limit: "
+                    f"{archive_path.name}"
+                )
+
+            snapshot_open_state = os.fstat(archive_file.fileno())
+            snapshot_path_state = _require_regular_distribution_state(archive_path)
+            if not _same_distribution_state(
+                expected_state,
+                snapshot_open_state,
+            ) or not _same_distribution_state(expected_state, snapshot_path_state):
+                raise SystemExit("distribution archive is missing or unsafe")
+
+            snapshot_file.seek(0)
+            yield snapshot_file
+            final_open_state = os.fstat(archive_file.fileno())
     except SystemExit:
         raise
     except OSError:
