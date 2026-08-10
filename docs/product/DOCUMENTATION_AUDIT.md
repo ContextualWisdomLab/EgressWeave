@@ -47,9 +47,10 @@ Implementation maturity:
 | Compliance traceability | MISSING | Standards are cited per topic, but SOC 2/CSAP/shared-responsibility mapping is not centralized | Add [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md) |
 | System architecture views | PARTIAL | Root architecture is strong prose/text diagrams but lacks a dedicated current system-view pack | Add [`../architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md) |
 | UML | MISSING | No canonical class/sequence/state diagrams found | Add [`../architecture/UML.md`](../architecture/UML.md) |
-| ERD / persistence decision | NOT-APPLICABLE but undocumented | Core owns no durable database; absence alone was ambiguous | Add explicit [`../architecture/ERD.md`](../architecture/ERD.md) with NON-NORMATIVE host model only |
+| ERD / persistence decision | NOT-APPLICABLE but undocumented | Core owns no durable database; absence alone was ambiguous | Add explicit [`../architecture/ERD.md`](../architecture/ERD.md) with NON-NORMATIVE host/platform model only |
 | ADR index | PARTIAL | ADR 0001 exists and is Accepted, but no index/governance spine | Add [`../adr/README.md`](../adr/README.md) plus documentation/persistence and automation-governance ADRs |
 | Automation control-plane governance | PARTIAL | Workflow source and conversation/PR instructions described work-conserving execution, but dependency advancement, double-exit semantics, and control-plane error recovery were not captured as one durable architecture decision | Add **ADR 0003** plus UML review view; classify it as Proposed governance rather than shipped workflow behavior |
+| Canonical automation prompt | MISSING | The scheduler policy was embedded in a large inline YAML heredoc, had no explicit byte budget, and generic scheduled-task failures had no canonical recovery/runbook treatment | Add **ADR 0004**, PRD/TRD/Architecture/UML/Operability/Traceability/ERD updates, and machine contracts for one bounded canonical prompt and resumable control-plane incident handling |
 | Research/standards | PARTIAL | High-quality topic-specific research notes exist, but no central APA index | Add [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) |
 | Release/provenance docs | PARTIAL / ACTIVE-PR work exists | Protected main already has detailed sealed-evidence and SBOM/attestation implementation notes, but release acceptance, rollback/recovery, provenance claims, and active-PR maturity were not discoverable as one buyer/operator product view | Add [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md), classified **PRESENT-CURRENT** for its protected-main summary while preserving ACTIVE-PR labels for unmerged hardening |
 
@@ -65,7 +66,7 @@ The protected-main architecture includes normalized policy construction, URL val
 
 Multiple security, release-evidence, scheduler, and evidence-schema changes can exist concurrently. Their PR numbers and SHAs are deliberately not embedded as timeless architecture. Until each change reaches protected main, its implementation remains ACTIVE-PR and its prior review/check evidence must not be transferred to a different head or base.
 
-In particular, the repository-local publisher removal, **credentialed release handoff consumption**, **full release identity/digest revalidation**, and the matching buyer-facing handoff correction **remain ACTIVE-PR** on their dependency-aware stack. They must not replace protected-main automation truth before integration. The canonical main-based documentation therefore records their maturity and ownership boundary without rewriting accepted protected-main automation as if the later handoff-only design or credential-bearing consumer were already shipped.
+In particular, the repository-local publisher removal, **credentialed release handoff consumption**, **full release identity/digest revalidation**, the matching buyer-facing handoff correction, and the bounded **canonical prompt** implementation **remain ACTIVE-PR** on their dependency-aware stacks. They must not replace protected-main automation truth before integration. The prompt work proposes one `.github/prompts/hourly-product-maintainer.md` source, a 12 KiB guard, removal of the inline YAML heredoc, and resumable **control-plane incident** handling; none of those are shipped until protected merge and operational acceptance.
 
 ### ACCEPTED-TARGET
 
@@ -73,11 +74,11 @@ Commercial documentation should remain one cross-linked, machine-tested source-o
 
 ### PLANNED / PROPOSED GOVERNANCE
 
-Further buyer-visible product slices, host-owned integration adapters, operational evidence, and automation-governance refinements may be prioritized after current PR/issue work. [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md) is Proposed governance: it records work-conserving same-invocation handoffs, exact-identity read-only dependency advancement, control-plane incident recovery, and the double exit sweep without asserting that every protected-main workflow already implements those semantics.
+Further buyer-visible product slices, host-owned integration adapters, operational evidence, and automation-governance refinements may be prioritized after current PR/issue work. [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md) is Proposed governance for work-conserving handoffs and finite exit semantics. [`../adr/0004-bounded-canonical-automation-prompt.md`](../adr/0004-bounded-canonical-automation-prompt.md) is Proposed governance for prompt source/budget and generic control-plane recovery. Neither asserts that every protected-main workflow already implements those semantics.
 
 ### OUT-OF-SCOPE
 
-Durable application databases, tenant/user identity, business-object authorization, host integration-adapter implementation, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, external package/release administration, and blanket transformation of application PII are host/platform concerns unless a future accepted ADR changes the product boundary.
+Durable application databases, tenant/user identity, business-object authorization, host integration-adapter implementation, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, external package/release administration, blanket transformation of application PII, automation-run persistence, and scheduler incident storage are host/platform concerns unless a future accepted ADR changes the product boundary.
 
 ## 5. Documentation governance
 
@@ -87,13 +88,13 @@ Durable application databases, tenant/user identity, business-object authorizati
 4. [`../THREAT_MODEL.md`](../THREAT_MODEL.md) is the explicit threat-analysis view; [`../security-model.md`](../security-model.md) remains the normative runtime security-boundary description.
 5. [`TRACEABILITY.md`](TRACEABILITY.md) maps durable requirements to implementation/test/ADR/standard evidence and must distinguish protected-main evidence from ACTIVE-PR work.
 6. [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md) aggregates release acceptance, rollback/recovery and provenance claim boundaries while the detailed verifier and SBOM/attestation contracts remain authoritative in their implementation-specific documents.
-7. [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md) is the canonical Proposed record for automation execution/exit/dependency-handoff semantics; it does not override protected-main workflow source.
+7. ADR 0003 is the canonical Proposed record for automation execution/exit/dependency-handoff semantics; ADR 0004 is the canonical Proposed record for bounded prompt loading and generic control-plane incident recovery. Neither overrides protected-main workflow source.
 8. A material architecture/product/security/automation ownership change requires an ADR and corresponding documentation update.
 9. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
-10. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, release/provenance overclaims, missing automation-governance handoffs, and unresolved template markers.
+10. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, release/provenance overclaims, missing automation-governance handoffs, prompt-policy duplication, missing prompt bounds, and unresolved template markers.
 
 ## 6. Remaining audit obligations after this PR
 
-Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, release/provenance guide, runbooks, control mappings, automation-governance ADR, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
+Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, release/provenance guide, runbooks, control mappings, automation-governance ADRs, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
 
-The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, dependency handoff, and buyer workflows remain separate gates.
+The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, dependency handoff, and buyer workflows remain separate gates. A generic scheduled-task error or prompt repair is likewise not completion while safe EgressWeave work remains.
