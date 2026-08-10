@@ -68,6 +68,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Pin the credential-free autonomous verifier to one explicitly reviewed Docker
+  Official Image `python@sha256:<digest>` value committed in the workflow. The
+  reverifier now rejects malformed base-image configuration before Docker runs,
+  pulls that exact digest directly, and no longer resolves mutable
+  `python:3.13-slim` at run time and promotes the newly observed `RepoDigests`
+  value to trusted input. Digest refresh and rollback require ordinary reviewed
+  repository changes; the offline least-privilege test-container boundary and
+  Python 3.13 runtime remain unchanged.
 - End the hourly product-development scheduler at a credential-free,
   exact-base- and SHA-256-bound verified patch handoff. It no longer obtains
   repository-write or OIDC authority, reapplies model-generated changes under a
