@@ -233,6 +233,32 @@ def test_checksum_writer_never_uses_path_read_bytes(
     )
 
 
+def test_checksum_writer_pins_lf_newline_translation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Require explicit LF translation when creating deterministic SHA256SUMS."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"wheel-bytes")
+    sdist_path.write_bytes(b"sdist-bytes")
+    original_open = Path.open
+    observed_newlines: list[str | None] = []
+
+    def recording_open(self: Path, *args, **kwargs):
+        if self.name == "SHA256SUMS" and args and args[0] == "x":
+            observed_newlines.append(kwargs.get("newline"))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", recording_open)
+
+    checksum_path = verifier._write_sha256sums(tmp_path, (wheel_path, sdist_path))
+
+    assert observed_newlines == ["\n"]
+    assert b"\r\n" not in checksum_path.read_bytes()
+
+
 def test_checksum_writer_rejects_preexisting_symlink_output(tmp_path: Path) -> None:
     """Never follow a preexisting SHA256SUMS symlink during release verification."""
     verifier = _load_verifier()
