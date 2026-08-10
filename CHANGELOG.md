@@ -60,6 +60,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject non-exact integer subclasses in connection-pool count fields during
+  trusted construction. Exact built-in integers and ASCII decimal strings
+  preserve their existing configuration semantics, while accepted text is
+  canonicalized to built-in integers before relational checks or HTTPCore
+  delegation. This supported-value boundary does not claim to sandbox arbitrary
+  in-process Python.
 - Require the connection pool policy to be an exact `EgressConnectionPoolPolicy`
   at trusted policy construction. A subclass can no longer replace the reviewed
   finite capacity and keep-alive attributes before HTTPCore pool construction or
