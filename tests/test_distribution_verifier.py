@@ -103,6 +103,33 @@ def test_archive_selection_rejects_oversized_distribution_before_parser(
         verifier._select_archives(tmp_path, "egressweave", "0.3.0")
 
 
+@pytest.mark.parametrize(
+    "linked_name",
+    [
+        "egressweave-0.3.0-py3-none-any.whl",
+        "egressweave-0.3.0.tar.gz",
+    ],
+)
+def test_archive_selection_rejects_symlinked_distribution(
+    tmp_path: Path,
+    linked_name: str,
+) -> None:
+    """Reject a canonical archive path that can retarget after pre-parser checks."""
+    verifier = _load_verifier()
+    canonical_wheel = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    canonical_sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    payload = tmp_path / "distribution-payload.bin"
+    payload.write_bytes(b"archive")
+    canonical_wheel.write_bytes(b"wheel")
+    canonical_sdist.write_bytes(b"sdist")
+    linked_path = tmp_path / linked_name
+    linked_path.unlink()
+    linked_path.symlink_to(payload)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
 def test_distribution_digest_reads_only_bounded_chunks() -> None:
     """Hash a distribution without issuing an unbounded binary read."""
     verifier = _load_verifier()
