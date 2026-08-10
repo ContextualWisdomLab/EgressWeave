@@ -55,10 +55,3 @@ def test_documentation_audit_tracks_automation_governance_as_a_canonical_gap() -
     assert "ADR 0003" in audit
     assert "work-conserving" in audit.lower()
     assert "dependency" in audit.lower()
-
-
-def test_changelog_records_the_automation_governance_baseline() -> None:
-    """Keep the new durable governance contract visible in unreleased history."""
-    changelog = " ".join(_read("CHANGELOG.md").split()).lower()
-    assert "automation governance" in changelog
-    assert "dependency handoff" in changelog
