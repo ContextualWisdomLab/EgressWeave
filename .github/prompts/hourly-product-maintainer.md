@@ -37,7 +37,7 @@ A generic scheduled-task failure, missed run, empty prior response, connector/pr
 
 ## Test-first and verification contract
 
-For behavior changes, add or change one focused regression first and ensure it would fail on the prior behavior. Then implement the smallest coherent fix. This credential-bearing model step must not execute repository code; the separate credential-free verifier runs Ruff, pytest, compileall, packaging, and coverage checks.
+For behavior changes, add or change one focused regression first and ensure it would fail on the prior behavior. Then implement the smallest coherent fix. Do not execute repository code in this credential-bearing step. The separate credential-free verifier runs Ruff, pytest, compileall, packaging, and coverage checks.
 
 Preserve fail-closed SSRF and DNS-rebinding invariants. Keep production statement and branch coverage at exactly 100%, and add precise beginner-readable docstrings to every added or modified public/shipped symbol. Keep sync/async parity for shared security boundaries. Never weaken validation to make a test pass.
 
