@@ -17,21 +17,47 @@ def test_protected_main_does_not_claim_handoff_consuming_publisher() -> None:
     """Keep credentialed handoff consumption out of protected-main release truth."""
     document = _read_release_provenance()
 
-    protected_main = document.split("## Release acceptance gate", 1)[1].split(
-        "## Rollback and recovery",
+    protected_main = document.split("## Protected-main release truth", 1)[1].split(
+        "## Active-PR maturity boundary",
         1,
     )[0]
-    assert "credential-bearing attestation or publisher consumes" not in protected_main
-    assert "protected-main release workflow does not consume" in protected_main
+    assert "credential-bearing handoff consumer is an" not in protected_main
+    assert (
+        "protected-main release workflow does not consume the credential-bearing handoff"
+        in protected_main
+    )
+    assert "The repository-level verifier is deliberately credential free" in protected_main
 
 
 def test_credentialed_handoff_revalidation_is_explicitly_active_pr() -> None:
-    """Require future handoff consumption to retain an ACTIVE-PR maturity label."""
+    """Require future handoff consumption to retain the full ACTIVE-PR trust contract."""
     document = _read_release_provenance()
 
     active_pr = document.split("## Active-PR maturity boundary", 1)[1].split(
         "## Ownership boundary",
         1,
     )[0]
-    assert "credential-bearing handoff consumer" in active_pr
-    assert "recheck the exact repository/source identity and every payload digest" in active_pr
+    assert (
+        "credential-bearing handoff consumer is an **ACTIVE-PR target**, "
+        "not protected-main behavior"
+    ) in active_pr
+    required_handoff_claims = (
+        "sealed handoff",
+        "source commit",
+        "source-identity digest",
+        "checksum digest",
+        "payload cardinality",
+        "every payload digest",
+        "must not rebuild",
+        "resolve dependencies",
+        "import distributions",
+        "execute caller-controlled source",
+        "`id-token: write`",
+        "`attestations: write`",
+        "package-publication",
+        "release",
+        "tag",
+        "repository-write",
+    )
+    for claim in required_handoff_claims:
+        assert claim in active_pr
