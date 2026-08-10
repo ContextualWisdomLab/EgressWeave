@@ -10,11 +10,11 @@ from egressweave.policy import EgressPolicy
 class _NonExactMethod(str):
     """Keep subclass identity if trusted normalization invokes polymorphic methods."""
 
-    def strip(self, chars: str | None = None) -> "_NonExactMethod":
+    def strip(self, chars: str | None = None) -> _NonExactMethod:
         """Return this subclass instead of a canonical built-in string."""
         return self
 
-    def upper(self) -> "_NonExactMethod":
+    def upper(self) -> _NonExactMethod:
         """Return this subclass instead of a canonical built-in string."""
         return self
 
