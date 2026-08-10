@@ -222,13 +222,17 @@ def _sha256_file(archive_path: Path) -> str:
 
 
 def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
-    """Write deterministic SHA-256 checksums for the reviewed distributions."""
+    """Create deterministic checksums without replacing any preexisting output."""
     checksum_path = dist_dir / "SHA256SUMS"
     lines: list[str] = []
     for archive_path in sorted(archives, key=lambda path: path.name):
         digest = _sha256_file(archive_path)
         lines.append(f"{digest}  {archive_path.name}\n")
-    checksum_path.write_text("".join(lines), encoding="ascii")
+    try:
+        with checksum_path.open("x", encoding="ascii") as checksum_file:
+            checksum_file.write("".join(lines))
+    except OSError:
+        raise SystemExit("checksum output path already exists or is unsafe") from None
     return checksum_path
 
 
