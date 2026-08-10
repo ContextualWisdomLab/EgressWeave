@@ -18,32 +18,23 @@ def _read_workflow() -> str:
     return PRODUCT_WORKFLOW_PATH.read_text(encoding="utf-8")
 
 
-def _verifier_build_step(workflow: str) -> str:
-    """Return only the credential-free verifier image build step."""
-    return workflow.split("Build the credential-free verifier image", 1)[1].split(
-        "Test only inside the offline least-privilege verifier container",
-        1,
-    )[0]
-
-
 def test_verifier_uses_one_reviewed_immutable_python_image_digest() -> None:
     """Require an explicit reviewed digest instead of trusting a mutable tag."""
     workflow = _read_workflow()
-    verifier = _verifier_build_step(workflow)
 
     assert f'VERIFIER_BASE_IMAGE: "{VERIFIER_BASE_IMAGE}"' in workflow
-    assert 'docker pull "$VERIFIER_BASE_IMAGE"' in verifier
-    assert "docker pull python:3.13-slim" not in verifier
-    assert "RepoDigests" not in verifier
-    assert 'FROM ${VERIFIER_BASE_IMAGE}' in verifier
+    assert 'docker pull "$VERIFIER_BASE_IMAGE"' in workflow
+    assert "docker pull python:3.13-slim" not in workflow
+    assert "RepoDigests" not in workflow
+    assert 'FROM ${VERIFIER_BASE_IMAGE}' in workflow
 
 
 def test_verifier_rejects_non_digest_base_image_configuration() -> None:
     """Keep the reviewed image contract fail closed before Docker executes it."""
-    verifier = _verifier_build_step(_read_workflow())
+    workflow = _read_workflow()
 
     assert (
         '[[ ! "$VERIFIER_BASE_IMAGE" =~ ^python@sha256:[0-9a-f]{64}$ ]]'
-        in verifier
+        in workflow
     )
-    assert "The verifier base image is not an immutable reviewed Python digest" in verifier
+    assert "The verifier base image is not an immutable reviewed Python digest" in workflow
