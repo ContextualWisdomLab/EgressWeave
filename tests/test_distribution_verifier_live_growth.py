@@ -58,13 +58,15 @@ def test_same_size_archive_mutation_is_rejected_after_snapshot(tmp_path: Path) -
     archive_path.write_bytes(original)
 
     observed = b""
-    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
-        with verifier._open_stable_distribution(archive_path) as archive_file:
-            observed = archive_file.read()
-            with archive_path.open("r+b") as mutator:
-                mutator.seek(0)
-                mutator.write(replacement)
-                mutator.flush()
+    with (
+        pytest.raises(SystemExit, match="distribution archive is missing or unsafe"),
+        verifier._open_stable_distribution(archive_path) as archive_file,
+        archive_path.open("r+b") as mutator,
+    ):
+        observed = archive_file.read()
+        mutator.seek(0)
+        mutator.write(replacement)
+        mutator.flush()
 
     assert observed == original
     assert archive_path.read_bytes() == replacement
