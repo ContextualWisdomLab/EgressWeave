@@ -27,8 +27,7 @@ relational capacity check. `keepalive_expiry_seconds` must be a finite
 non-negative real number and may be zero for immediate expiry. Booleans,
 fractional counts, signed or non-ASCII count text, negative values, non-finite
 expiry values, unrelated objects, and contradictory capacities fail during
-trusted policy construction. This primitive-value check does not make
-EgressWeave a Python sandbox.
+trusted policy construction. This primitive-value check does not make EgressWeave a Python sandbox.
 
 ## Standards basis
 
