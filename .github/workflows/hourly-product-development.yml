@@ -285,6 +285,8 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
+    env:
+      VERIFIER_BASE_IMAGE: "python@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91"
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
@@ -352,14 +354,13 @@ jobs:
           mkdir -p "$context"
           cp requirements-ci.txt "$context/"
 
-          docker pull python:3.13-slim
-          base_image="$(docker image inspect --format '{{index .RepoDigests 0}}' python:3.13-slim)"
-          if [[ ! "$base_image" =~ ^python@sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::The trusted Python base image did not resolve to an immutable repository digest."
+          if [[ ! "$VERIFIER_BASE_IMAGE" =~ ^python@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::The verifier base image is not an immutable reviewed Python digest."
             exit 1
           fi
+          docker pull "$VERIFIER_BASE_IMAGE"
           cat >"$context/Dockerfile" <<DOCKERFILE
-          FROM ${base_image}
+          FROM ${VERIFIER_BASE_IMAGE}
           ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
               PIP_NO_CACHE_DIR=1 \
               PYTHONUNBUFFERED=1
