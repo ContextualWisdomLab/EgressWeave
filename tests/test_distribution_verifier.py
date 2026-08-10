@@ -180,3 +180,20 @@ def test_checksum_writer_never_uses_path_read_bytes(
         f"{hashlib.sha256(wheel_payload).hexdigest()}  {wheel_path.name}\n"
         f"{hashlib.sha256(sdist_payload).hexdigest()}  {sdist_path.name}\n"
     )
+
+
+def test_checksum_writer_rejects_preexisting_symlink_output(tmp_path: Path) -> None:
+    """Never follow a preexisting SHA256SUMS symlink during release verification."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"wheel")
+    sdist_path.write_bytes(b"sdist")
+    victim_path = tmp_path / "victim.txt"
+    victim_path.write_text("unchanged\n", encoding="ascii")
+    (tmp_path / "SHA256SUMS").symlink_to(victim_path)
+
+    with pytest.raises(SystemExit, match="checksum output path already exists or is unsafe"):
+        verifier._write_sha256sums(tmp_path, (wheel_path, sdist_path))
+
+    assert victim_path.read_text(encoding="ascii") == "unchanged\n"
