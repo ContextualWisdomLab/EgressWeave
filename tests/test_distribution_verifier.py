@@ -87,6 +87,22 @@ def test_archive_selection_rejects_additional_publishable_files(tmp_path: Path) 
         verifier._select_archives(tmp_path, "egressweave", "0.3.0")
 
 
+def test_archive_selection_rejects_oversized_distribution_before_parser(
+    tmp_path: Path,
+) -> None:
+    """Reject an oversized canonical archive before ZIP or tar parsing can start."""
+    verifier = _load_verifier()
+    canonical_wheel = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    canonical_sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    canonical_wheel.write_bytes(b"wheel")
+    with canonical_sdist.open("wb") as sdist_file:
+        sdist_file.truncate(256 * 1024 * 1024 + 1)
+
+    assert verifier.MAX_DISTRIBUTION_BYTES == 256 * 1024 * 1024
+    with pytest.raises(SystemExit, match="distribution archive exceeds"):
+        verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
 def test_distribution_digest_reads_only_bounded_chunks() -> None:
     """Hash a distribution without issuing an unbounded binary read."""
     verifier = _load_verifier()
