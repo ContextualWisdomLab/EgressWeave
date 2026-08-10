@@ -60,6 +60,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require the request timeout policy to be an exact `EgressTimeoutPolicy` at
+  trusted policy construction. A subclass can no longer replace the reviewed
+  `as_httpcore_timeout()` export path before transport dispatch, while exact
+  immutable request timeout policy values retain their documented configuration.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
