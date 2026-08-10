@@ -35,13 +35,15 @@ def test_live_archive_growth_never_reaches_the_parser_view(
     archive_path.write_bytes(b"a" * accepted_limit)
 
     observed = b""
-    with pytest.raises(SystemExit, match="distribution archive exceeds"):
-        with verifier._open_stable_distribution(archive_path) as archive_file:
-            with archive_path.open("ab") as mutator:
-                mutator.write(b"b" * accepted_limit)
-                mutator.flush()
+    with (
+        pytest.raises(SystemExit, match="distribution archive exceeds"),
+        verifier._open_stable_distribution(archive_path) as archive_file,
+        archive_path.open("ab") as mutator,
+    ):
+        mutator.write(b"b" * accepted_limit)
+        mutator.flush()
 
-            archive_file.seek(0)
-            observed = archive_file.read()
+        archive_file.seek(0)
+        observed = archive_file.read()
 
     assert len(observed) <= accepted_limit
