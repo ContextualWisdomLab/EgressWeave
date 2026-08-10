@@ -152,6 +152,42 @@ def test_checksum_writer_rejects_archive_symlink_retarget_after_selection(
     assert not (tmp_path / "SHA256SUMS").exists()
 
 
+def test_wheel_parser_rejects_archive_symlink_retarget_after_selection(tmp_path: Path) -> None:
+    """Never follow a wheel path retargeted after the canonical pre-parser check."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement-wheel.bin"
+    replacement.write_bytes(b"unreviewed-wheel")
+    wheel_path.unlink()
+    wheel_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._verify_wheel(wheel_path, {"version": "0.3.0"})
+
+
+def test_sdist_parser_rejects_archive_symlink_retarget_after_selection(tmp_path: Path) -> None:
+    """Never follow an sdist path retargeted after the canonical pre-parser check."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement-sdist.bin"
+    replacement.write_bytes(b"unreviewed-sdist")
+    sdist_path.unlink()
+    sdist_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._verify_sdist(sdist_path, {"version": "0.3.0"})
+
+
 def test_distribution_digest_reads_only_bounded_chunks() -> None:
     """Hash a distribution stream without issuing an unbounded binary read."""
     verifier = _load_verifier()
