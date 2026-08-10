@@ -25,6 +25,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 
 DISTRIBUTION_NAME = "egressweave"
 HASH_CHUNK_SIZE = 1024 * 1024
+MAX_DISTRIBUTION_BYTES = 256 * 1024 * 1024
 CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
     flags=re.MULTILINE,
@@ -64,7 +65,7 @@ def _normalized_distribution_stem(name: str) -> str:
 
 
 def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Path]:
-    """Select only the canonical wheel and source distribution for publication."""
+    """Select only finite canonical wheel and source distributions for publication."""
     normalized_name = _normalized_distribution_stem(name)
     wheel_path = dist_dir / f"{normalized_name}-{version}-py3-none-any.whl"
     sdist_path = dist_dir / f"{name}-{version}.tar.gz"
@@ -79,6 +80,16 @@ def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Pat
             f"{sorted(path.name for path in expected_archives)}, observed "
             f"{[path.name for path in publishable_archives]}"
         )
+    for archive_path in publishable_archives:
+        try:
+            archive_size = archive_path.stat().st_size
+        except OSError:
+            raise SystemExit("distribution archive is unreadable") from None
+        if archive_size > MAX_DISTRIBUTION_BYTES:
+            raise SystemExit(
+                "distribution archive exceeds the 256 MiB verification limit: "
+                f"{archive_path.name}"
+            )
     return wheel_path, sdist_path
 
 
