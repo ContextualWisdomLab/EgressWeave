@@ -24,6 +24,14 @@ This TRD turns the product requirements in [`PRD.md`](PRD.md) into verifiable te
 
 **IMPLEMENTED-ON-PROTECTED-MAIN.** Guarded clients disable or reject redirect, ambient proxy, Unix-socket, caller-target, and caller-selected destination mechanisms that could create an authority not covered by policy.
 
+### TRD-AR-005 — Bounded canonical automation prompt
+
+**ACTIVE-PR.** Repository-local product development loads one canonical prompt from `.github/prompts/hourly-product-maintainer.md`. The workflow validates that it is a regular non-symlink file and no larger than **12 KiB**, then copies it into a private runner location before OpenCode execution. The policy must not be duplicated in an inline YAML heredoc.
+
+Moving the policy out of YAML must not broaden repository-write authority, reviewer identity, tool permissions, model egress, signing, publication, release, or credential scope. The model remains denied `.github/**` edits, repository execution, `.git` mutation, branch/PR creation, merge, signing, package publication, and release operations. Modified code executes only in the later credential-free verifier.
+
+A generic scheduled-task failure is treated as a resumable control-plane incident. The next successful invocation revalidates live repository state and may repair the same bounded prompt when evidence supports that action, but prompt repair alone is not completion and an unclassified transient error does not disable the recurring loop.
+
 ## 3. Validation pipeline
 
 The required logical pipeline is:
@@ -112,9 +120,24 @@ The public API contract is documented in [`API_CONTRACT.md`](API_CONTRACT.md). H
 
 ## 10. Data and persistence
 
-**OUT-OF-SCOPE.** The core package owns no durable database. Runtime objects are in-memory security/configuration/evidence objects. If a host persists audit information, that schema is host-owned and must apply independent access, retention, encryption, and privacy controls. See [`../architecture/ERD.md`](../architecture/ERD.md).
+**OUT-OF-SCOPE.** The core package owns no durable database. Runtime objects are in-memory security/configuration/evidence objects. If a host persists audit information, that schema is host-owned and must apply independent access, retention, encryption, and privacy controls. Automation run state and control-plane incident records are likewise platform-owned, not EgressWeave core persistence. See [`../architecture/ERD.md`](../architecture/ERD.md).
 
-## 11. Verification requirements
+## 11. Automation execution and recovery requirements
+
+The **ACTIVE-PR** repository-local scheduler must satisfy all of the following:
+
+1. Check out the exact protected branch and reject product development while any open PR exists.
+2. Install one SHA-256-verified OpenCode release and use the existing `NVIDIA_NIM_API_KEY` through the documented `NVIDIA_API_KEY` mapping.
+3. Validate and copy `.github/prompts/hourly-product-maintainer.md` under the 12 KiB limit before the credential-bearing model step.
+4. Keep model tools deny-by-default and prohibit repository-code execution in that credential-bearing step.
+5. Package only an allowlisted, bounded patch tied to the exact base SHA.
+6. Recheck zero-open-PR and unchanged-base conditions before applying the patch in a fresh checkout.
+7. Execute all modified code only in the offline, non-root, capability-free, credential-free verifier.
+8. End at a digest-bound verified patch handoff without branch push, PR creation, merge, OIDC publication, signing, package publication, or release.
+9. Treat generic control-plane failures as resumable incident evidence, use exact observable evidence for RCA, and continue another safe EgressWeave action when available.
+10. Preserve the work-conserving dependency-advancement handoff and double-exit-sweep semantics defined by ADR 0003 and ADR 0004.
+
+## 12. Verification requirements
 
 - Test-first regressions for new security acceptance/rejection behavior.
 - Exact 100% owned production statement and branch coverage.
@@ -125,11 +148,14 @@ The public API contract is documented in [`API_CONTRACT.md`](API_CONTRACT.md). H
 - Property/adversarial tests for URL, DNS, HTTP fields, framing, streams, filesystem/release evidence where applicable.
 - Ruff, compileall, package build/archive verification, and installed-wheel smoke tests.
 - Exact-head security scans and independent review according to repository policy.
+- Machine-checkable canonical prompt path, byte budget, non-symlink validation, loader, no-inline-heredoc, credentialed-execution prohibition, incident recovery, dependency handoff and maturity classification.
 
 See [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
 
-## 12. Operations, compliance, and release
+## 13. Operations, compliance, and release
 
 Host operational ownership is defined in [`OPERABILITY.md`](OPERABILITY.md). Security/compliance contributions and limitations are mapped in [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md). Standards are centralized in [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md).
 
 A release is **ACCEPTED-TARGET** only after the exact protected release source passes all repository-required quality, security, package, provenance/SBOM where applicable, independent review, and operational-acceptance gates. Release automation changes under an **ACTIVE-PR** remain unshipped until protected merge evidence exists.
+
+The bounded canonical prompt decision is recorded in [`../adr/0004-bounded-canonical-automation-prompt.md`](../adr/0004-bounded-canonical-automation-prompt.md); work conservation and dependency handoff are governed by [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md).
