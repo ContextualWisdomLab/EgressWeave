@@ -19,6 +19,14 @@ immediate, stricter timeout. The sanitized mapping is detached from caller-owned
 state and preserves unrelated safe extensions, including the validated TLS
 server name and tracing callbacks.
 
+The trusted configuration boundary accepts only the exact `EgressTimeoutPolicy` type.
+A subclass is rejected during trusted policy construction, before it can be retained
+for later transport use. This prevents subclass polymorphism from replacing the
+reviewed `as_httpcore_timeout()` export path while preserving all documented finite
+field configuration on the exact immutable value object. This restriction is a
+supported-API integrity boundary, not a claim that EgressWeave sandboxes arbitrary
+Python code already executing inside the embedding process.
+
 ## Why client defaults are insufficient
 
 HTTPX provides finite defaults, but its documented request extension lets a
@@ -51,6 +59,8 @@ response data.
 
 - **No timeout disablement:** missing and `None` phase values become finite.
 - **No weaker override:** a request cannot exceed the immutable policy cap.
+- **Exact trusted value type:** only the exact `EgressTimeoutPolicy` type crosses
+  trusted policy construction; subclass overrides cannot become a transport policy.
 - **Stricter caller control:** non-negative values below the cap are retained.
 - **Fail-closed metadata:** malformed extension shapes never reach HTTPCore.
 - **Sync/async parity:** both transports call the same sanitizer immediately
