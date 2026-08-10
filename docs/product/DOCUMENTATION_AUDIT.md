@@ -48,7 +48,8 @@ Implementation maturity:
 | System architecture views | PARTIAL | Root architecture is strong prose/text diagrams but lacks a dedicated current system-view pack | Add [`../architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md) |
 | UML | MISSING | No canonical class/sequence/state diagrams found | Add [`../architecture/UML.md`](../architecture/UML.md) |
 | ERD / persistence decision | NOT-APPLICABLE but undocumented | Core owns no durable database; absence alone was ambiguous | Add explicit [`../architecture/ERD.md`](../architecture/ERD.md) with NON-NORMATIVE host model only |
-| ADR index | PARTIAL | ADR 0001 exists and is Accepted, but no index/governance spine | Add [`../adr/README.md`](../adr/README.md) and ADR 0002 |
+| ADR index | PARTIAL | ADR 0001 exists and is Accepted, but no index/governance spine | Add [`../adr/README.md`](../adr/README.md) plus documentation/persistence and automation-governance ADRs |
+| Automation control-plane governance | PARTIAL | Workflow source and conversation/PR instructions described work-conserving execution, but dependency advancement, double-exit semantics, and control-plane error recovery were not captured as one durable architecture decision | Add **ADR 0003** plus UML review view; classify it as Proposed governance rather than shipped workflow behavior |
 | Research/standards | PARTIAL | High-quality topic-specific research notes exist, but no central APA index | Add [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) |
 | Release/provenance docs | PARTIAL / ACTIVE-PR work exists | Protected main already has detailed sealed-evidence and SBOM/attestation implementation notes, but release acceptance, rollback/recovery, provenance claims, and active-PR maturity were not discoverable as one buyer/operator product view | Add [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md), classified **PRESENT-CURRENT** for its protected-main summary while preserving ACTIVE-PR labels for unmerged hardening |
 
@@ -70,9 +71,9 @@ In particular, the repository-local publisher removal and its matching buyer-fac
 
 Commercial documentation should remain one cross-linked, machine-tested source-of-truth graph, and hourly maintenance should remain work-conserving rather than stopping at the first blocked action. Target contracts are not shipped merely because they appear in this audit.
 
-### PLANNED
+### PLANNED / PROPOSED GOVERNANCE
 
-Further buyer-visible product slices, host-owned integration adapters, and operational evidence may be prioritized after current PR/issue work. Planned content requires its own test and review evidence before migration to protected-main status.
+Further buyer-visible product slices, host-owned integration adapters, operational evidence, and automation-governance refinements may be prioritized after current PR/issue work. [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md) is Proposed governance: it records work-conserving same-invocation handoffs, exact-identity read-only dependency advancement, control-plane incident recovery, and the double exit sweep without asserting that every protected-main workflow already implements those semantics.
 
 ### OUT-OF-SCOPE
 
@@ -86,12 +87,13 @@ Durable application databases, tenant/user identity, business-object authorizati
 4. [`../THREAT_MODEL.md`](../THREAT_MODEL.md) is the explicit threat-analysis view; [`../security-model.md`](../security-model.md) remains the normative runtime security-boundary description.
 5. [`TRACEABILITY.md`](TRACEABILITY.md) maps durable requirements to implementation/test/ADR/standard evidence and must distinguish protected-main evidence from ACTIVE-PR work.
 6. [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md) aggregates release acceptance, rollback/recovery and provenance claim boundaries while the detailed verifier and SBOM/attestation contracts remain authoritative in their implementation-specific documents.
-7. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
-8. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
-9. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, release/provenance overclaims, and unresolved template markers.
+7. [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md) is the canonical Proposed record for automation execution/exit/dependency-handoff semantics; it does not override protected-main workflow source.
+8. A material architecture/product/security/automation ownership change requires an ADR and corresponding documentation update.
+9. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
+10. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, release/provenance overclaims, missing automation-governance handoffs, and unresolved template markers.
 
 ## 6. Remaining audit obligations after this PR
 
-Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, release/provenance guide, runbooks, control mappings, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
+Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, release/provenance guide, runbooks, control mappings, automation-governance ADR, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
 
-The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, and buyer workflows remain separate gates.
+The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, dependency handoff, and buyer workflows remain separate gates.
