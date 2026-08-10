@@ -230,7 +230,10 @@ def test_public_writer_normalizes_forbidden_root_inspection_failure(
 
     monkeypatch.setattr(Path, "is_symlink", fail_forbidden_root)
 
-    with pytest.raises(SystemExit, match="missing or unsafe"):
+    with pytest.raises(
+        SystemExit,
+        match=r"^evidence manifest forbidden root is missing or unsafe$",
+    ):
         release_evidence.write_evidence_manifest(
             MANIFEST,
             output_path,
@@ -259,7 +262,10 @@ def test_public_writer_normalizes_forbidden_root_directory_inspection_failure(
 
     monkeypatch.setattr(Path, "is_dir", fail_forbidden_root)
 
-    with pytest.raises(SystemExit, match="missing or unsafe"):
+    with pytest.raises(
+        SystemExit,
+        match=r"^evidence manifest forbidden root is missing or unsafe$",
+    ):
         release_evidence.write_evidence_manifest(
             MANIFEST,
             output_path,
