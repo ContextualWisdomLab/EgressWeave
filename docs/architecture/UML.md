@@ -290,7 +290,13 @@ sequenceDiagram
         else dependency advancement is observed
             Run->>Dep: bind new exact dependency identity read-only
             Dep-->>Run: current prerequisite evidence
-            Run->>Work: advance dependent EgressWeave handoff in same invocation
+            Run->>Live: revalidate dependent head/base, gates and writer lease
+            Live-->>Run: dependent exact identity + eligibility snapshot
+            alt handoff only when dependent lane still matches
+                Run->>Work: advance dependent EgressWeave handoff in same invocation
+            else dependent identity, gates or lease changed
+                Run->>Run: freeze affected action and continue to next executable lane
+            end
         else control-plane error is observed
             Control-->>Run: bounded observable error evidence
             Run->>Live: refetch before relying on remembered state
