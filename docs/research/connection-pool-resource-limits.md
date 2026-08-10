@@ -9,6 +9,15 @@ idle connections, and a five-second idle keep-alive lifetime. Operators can set
 smaller or larger finite values for a specific integration without importing
 HTTPX private configuration or constructing an HTTPCore-specific object.
 
+At trusted policy construction, `connection_pool_policy` must be the exact
+`EgressConnectionPoolPolicy` type. Subclass polymorphism is not a supported
+configuration extension mechanism: retaining a subclass would allow later
+attribute dispatch to diverge from the finite capacities that were reviewed and
+fingerprinted. Integrations that need different limits construct an exact
+`EgressConnectionPoolPolicy` with different documented field values instead.
+This boundary does not claim that EgressWeave sandboxes arbitrary Python code
+already executing inside the embedding process.
+
 `max_connections` must be a positive integer or ASCII decimal string.
 `max_keepalive_connections` may be zero to retain no idle connections but must
 not exceed total capacity. `keepalive_expiry_seconds` must be a finite
@@ -43,18 +52,22 @@ and portable across standalone and modular integrations.
 ## Enforcement invariants
 
 1. Both public `EgressPolicy` constructors accept the same immutable pool policy.
-2. Total connection capacity is always positive and finite.
-3. Idle capacity is finite, may be zero, and cannot exceed total capacity.
-4. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
-5. Synchronous and asynchronous HTTPCore pools receive the exact normalized
+2. Trusted `EgressPolicy` construction accepts only the exact
+   `EgressConnectionPoolPolicy` type; subclasses are rejected before their
+   attributes can reach transport construction or decision-evidence
+   fingerprinting.
+3. Total connection capacity is always positive and finite.
+4. Idle capacity is finite, may be zero, and cannot exceed total capacity.
+5. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
+6. Synchronous and asynchronous HTTPCore pools receive the exact normalized
    values from the policy.
-6. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
-7. The normalized pool policy participates in deterministic policy and decision
+7. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
+8. The normalized pool policy participates in deterministic policy and decision
    fingerprints without recording live connection state.
-8. Defaults, valid environment-style count text, invalid configuration,
-   relational invariants, sync/async delegation, public API exposure, and
-   fingerprint drift are covered by offline regression tests with complete
-   production statement and branch coverage.
+9. Defaults, valid environment-style count text, invalid configuration,
+   relational invariants, exact policy-type enforcement, sync/async delegation,
+   public API exposure, and fingerprint drift are covered by offline regression
+   tests with complete production statement and branch coverage.
 
 ## Operational guidance
 
@@ -66,6 +79,11 @@ backpressure, observability, and service-level evidence. Setting idle capacity
 and expiry to zero disables reuse and is stricter for retention, but it can
 increase connection and TLS-handshake cost; measure that trade-off rather than
 assuming it is universally safer.
+
+Applications that previously subclassed `EgressConnectionPoolPolicy` should
+migrate to an exact instance and express supported customization through its
+three documented finite fields. The exact-type check occurs during trusted
+startup, before any connection pool is constructed or any request can dispatch.
 
 ## References
 
