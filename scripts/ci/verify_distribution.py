@@ -16,9 +16,11 @@ import re
 import stat
 import tarfile
 import zipfile
+from contextlib import contextmanager
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO, Iterator
 
 try:
     import tomllib
@@ -92,6 +94,36 @@ def _same_distribution_state(expected: os.stat_result, observed: os.stat_result)
     )
 
 
+@contextmanager
+def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
+    """Yield one bounded regular archive while binding path and descriptor identity."""
+    expected_state = _require_regular_distribution_state(archive_path)
+    try:
+        archive_file = archive_path.open("rb")
+    except OSError:
+        raise SystemExit("distribution archive is missing or unsafe") from None
+
+    try:
+        opened_state = os.fstat(archive_file.fileno())
+        if not _same_distribution_state(expected_state, opened_state):
+            raise SystemExit("distribution archive is missing or unsafe")
+        yield archive_file
+        final_open_state = os.fstat(archive_file.fileno())
+    except SystemExit:
+        raise
+    except OSError:
+        raise SystemExit("distribution archive is missing or unsafe") from None
+    finally:
+        archive_file.close()
+
+    final_path_state = _require_regular_distribution_state(archive_path)
+    if not _same_distribution_state(
+        expected_state,
+        final_open_state,
+    ) or not _same_distribution_state(expected_state, final_path_state):
+        raise SystemExit("distribution archive is missing or unsafe")
+
+
 def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Path]:
     """Select only finite canonical wheel and source distributions for publication."""
     normalized_name = _normalized_distribution_stem(name)
@@ -143,14 +175,15 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> None:
         f"{dist_info}/licenses/LICENSE",
     }
 
-    with zipfile.ZipFile(wheel_path) as wheel_archive:
-        names = _safe_archive_names(wheel_archive.namelist())
-        missing = required_paths - names
-        if missing:
-            raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
-        metadata = BytesParser(policy=default).parsebytes(
-            wheel_archive.read(f"{dist_info}/METADATA")
-        )
+    with _open_stable_distribution(wheel_path) as wheel_file:
+        with zipfile.ZipFile(wheel_file) as wheel_archive:
+            names = _safe_archive_names(wheel_archive.namelist())
+            missing = required_paths - names
+            if missing:
+                raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
+            metadata = BytesParser(policy=default).parsebytes(
+                wheel_archive.read(f"{dist_info}/METADATA")
+            )
 
     expected_metadata = {
         "Name": str(project["name"]),
@@ -183,11 +216,15 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> None:
         f"{prefix}/docs/release.md",
     }
 
-    with tarfile.open(sdist_path, mode="r:gz") as sdist_archive:
-        members = sdist_archive.getmembers()
-        names = _safe_archive_names([member.name for member in members])
-        if any(member.issym() or member.islnk() or member.isdev() for member in members):
-            raise SystemExit("source distribution contains a link or device entry")
+    with _open_stable_distribution(sdist_path) as sdist_file:
+        with tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive:
+            members = sdist_archive.getmembers()
+            names = _safe_archive_names([member.name for member in members])
+            if any(
+                member.issym() or member.islnk() or member.isdev()
+                for member in members
+            ):
+                raise SystemExit("source distribution contains a link or device entry")
 
     missing = required_paths - names
     if missing:
@@ -229,7 +266,7 @@ def _verify_release_ref(
         )
 
 
-def _sha256_stream(archive_file: object) -> str:
+def _sha256_stream(archive_file: BinaryIO) -> str:
     """Return a digest while keeping each binary read bounded to 1 MiB."""
     digest = hashlib.sha256()
     while chunk := archive_file.read(HASH_CHUNK_SIZE):
@@ -239,26 +276,8 @@ def _sha256_stream(archive_file: object) -> str:
 
 def _sha256_file(archive_path: Path) -> str:
     """Hash one stable bounded regular distribution without following retargets."""
-    expected_state = _require_regular_distribution_state(archive_path)
-    try:
-        with archive_path.open("rb") as archive_file:
-            opened_state = os.fstat(archive_file.fileno())
-            if not _same_distribution_state(expected_state, opened_state):
-                raise SystemExit("distribution archive is missing or unsafe")
-            digest = _sha256_stream(archive_file)
-            final_open_state = os.fstat(archive_file.fileno())
-    except SystemExit:
-        raise
-    except OSError:
-        raise SystemExit("distribution archive is missing or unsafe") from None
-
-    final_path_state = _require_regular_distribution_state(archive_path)
-    if not _same_distribution_state(expected_state, final_open_state) or not _same_distribution_state(
-        expected_state,
-        final_path_state,
-    ):
-        raise SystemExit("distribution archive is missing or unsafe")
-    return digest
+    with _open_stable_distribution(archive_path) as archive_file:
+        return _sha256_stream(archive_file)
 
 
 def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
