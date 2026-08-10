@@ -16,11 +16,12 @@ import re
 import stat
 import tarfile
 import zipfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
 
 try:
     import tomllib
@@ -175,15 +176,17 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> None:
         f"{dist_info}/licenses/LICENSE",
     }
 
-    with _open_stable_distribution(wheel_path) as wheel_file:
-        with zipfile.ZipFile(wheel_file) as wheel_archive:
-            names = _safe_archive_names(wheel_archive.namelist())
-            missing = required_paths - names
-            if missing:
-                raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
-            metadata = BytesParser(policy=default).parsebytes(
-                wheel_archive.read(f"{dist_info}/METADATA")
-            )
+    with (
+        _open_stable_distribution(wheel_path) as wheel_file,
+        zipfile.ZipFile(wheel_file) as wheel_archive,
+    ):
+        names = _safe_archive_names(wheel_archive.namelist())
+        missing = required_paths - names
+        if missing:
+            raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
+        metadata = BytesParser(policy=default).parsebytes(
+            wheel_archive.read(f"{dist_info}/METADATA")
+        )
 
     expected_metadata = {
         "Name": str(project["name"]),
@@ -216,15 +219,14 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> None:
         f"{prefix}/docs/release.md",
     }
 
-    with _open_stable_distribution(sdist_path) as sdist_file:
-        with tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive:
-            members = sdist_archive.getmembers()
-            names = _safe_archive_names([member.name for member in members])
-            if any(
-                member.issym() or member.islnk() or member.isdev()
-                for member in members
-            ):
-                raise SystemExit("source distribution contains a link or device entry")
+    with (
+        _open_stable_distribution(sdist_path) as sdist_file,
+        tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive,
+    ):
+        members = sdist_archive.getmembers()
+        names = _safe_archive_names([member.name for member in members])
+        if any(member.issym() or member.islnk() or member.isdev() for member in members):
+            raise SystemExit("source distribution contains a link or device entry")
 
     missing = required_paths - names
     if missing:
