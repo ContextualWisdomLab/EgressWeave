@@ -72,12 +72,19 @@ def test_bounded_snapshot_masks_open_failure(
         )
 
 
-def test_deeply_nested_json_is_masked_by_the_strict_evidence_boundary(
+def test_json_parser_recursion_failure_is_masked_by_the_strict_evidence_boundary(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Normalize parser recursion failure instead of leaking an exception."""
-    sbom = tmp_path / "deep.cdx.json"
-    sbom.write_text("[" * 10_000 + "0" + "]" * 10_000, encoding="utf-8")
+    sbom = tmp_path / "recursive.cdx.json"
+    sbom.write_text("{}", encoding="utf-8")
+
+    def fail_with_recursion_error(*args: object, **kwargs: object) -> object:
+        """Model a parser recursion failure independent of interpreter depth."""
+        raise RecursionError("synthetic parser recursion failure")
+
+    monkeypatch.setattr(release_evidence.json, "loads", fail_with_recursion_error)
 
     with pytest.raises(SystemExit, match="not strict JSON"):
         release_evidence._load_strict_json(sbom)
