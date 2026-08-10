@@ -244,6 +244,8 @@ class EgressPolicy:
 
         method_values: Iterable[object]
         if isinstance(self.allowed_methods, str):
+            if type(self.allowed_methods) is not str:
+                raise TypeError("allowed_methods entries must be HTTP method strings")
             method_values = self.allowed_methods.split(",")
         else:
             method_values = self.allowed_methods
@@ -371,6 +373,8 @@ class EgressPolicy:
 
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
+            if type(allowed_methods) is not str:
+                raise TypeError("allowed_methods entries must be HTTP method strings")
             method_items = allowed_methods.split(",")
         else:
             method_items = allowed_methods
@@ -434,6 +438,8 @@ class EgressPolicy:
         )
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
+            if type(allowed_methods) is not str:
+                raise TypeError("allowed_methods entries must be HTTP method strings")
             method_items = allowed_methods.split(",")
         else:
             method_items = allowed_methods
