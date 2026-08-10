@@ -39,6 +39,13 @@ and body controls. The synchronous and asynchronous pinned transports therefore
 apply a positive caller-visible response-extension allowlist before constructing
 an `httpx.Response`.
 
+The extension container must be an exact built-in `dict`. Each
+**dependency-controlled key** is validated before lookup or comparison can expose
+caller-visible metadata; malformed or hostile keys fail closed with the generic
+`EgressNotAllowedError`, and the underlying source stream is closed before that
+denial crosses the public response boundary. This prevents dependency-provided
+mapping behavior from becoming an implicit extension mechanism.
+
 Only inert metadata currently required for ordinary HTTPX inspection is exposed:
 
 - `http_version` when HTTPCore supplied it;
