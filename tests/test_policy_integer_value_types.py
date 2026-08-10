@@ -22,12 +22,25 @@ def test_policy_rejects_integer_subclass_for_allowed_port() -> None:
         )
 
 
+def test_policy_rejects_integer_subclass_for_exact_authority_port() -> None:
+    """Reject a non-exact port in the exact-authority constructor as well."""
+    with pytest.raises(TypeError, match="allowed_ports"):
+        EgressPolicy.from_authorities(
+            [("api.example.com", _PolicyIntegerSubclass(443))],
+        )
+
+
 @pytest.mark.parametrize(
     "field_name",
     [
         "max_resolved_addresses",
         "max_request_header_fields",
+        "max_response_header_fields",
         "max_request_bytes",
+        "max_response_bytes",
+        "max_response_header_bytes",
+        "max_request_header_bytes",
+        "max_request_target_bytes",
     ],
 )
 def test_policy_rejects_integer_subclass_for_resource_limits(field_name: str) -> None:
@@ -46,21 +59,51 @@ def test_policy_keeps_exact_integer_and_decimal_string_configuration() -> None:
         allowed_ports=[8443],
         max_resolved_addresses=8,
         max_request_header_fields=32,
+        max_response_header_fields=32,
         max_request_bytes=4096,
+        max_response_bytes=4096,
+        max_response_header_bytes=4096,
+        max_request_header_bytes=4096,
+        max_request_target_bytes=8192,
     )
     decimal_string = EgressPolicy.from_hosts(
         "api.example.com",
         allowed_ports=["8443"],
         max_resolved_addresses="8",
         max_request_header_fields="32",
+        max_response_header_fields="32",
         max_request_bytes="4096",
+        max_response_bytes="4096",
+        max_response_header_bytes="4096",
+        max_request_header_bytes="4096",
+        max_request_target_bytes="8192",
     )
 
     assert decimal_string == exact_integer
     assert all(type(port) is int for port in decimal_string.allowed_ports)
     assert type(decimal_string.max_resolved_addresses) is int
     assert type(decimal_string.max_request_header_fields) is int
+    assert type(decimal_string.max_response_header_fields) is int
     assert type(decimal_string.max_request_bytes) is int
+    assert type(decimal_string.max_response_bytes) is int
+    assert type(decimal_string.max_response_header_bytes) is int
+    assert type(decimal_string.max_request_header_bytes) is int
+    assert type(decimal_string.max_request_target_bytes) is int
+
+
+def test_exact_authority_keeps_integer_and_decimal_string_port_equivalent() -> None:
+    """Preserve exact-authority ergonomics while storing canonical integer ports."""
+    exact_integer = EgressPolicy.from_authorities([("api.example.com", 8443)])
+    decimal_string = EgressPolicy.from_authorities([("api.example.com", "8443")])
+
+    assert decimal_string == exact_integer
+    assert decimal_string.allowed_authorities == frozenset(
+        {("api.example.com", 8443)}
+    )
+    assert all(type(port) is int for port in decimal_string.allowed_ports)
+    assert all(
+        type(port) is int for _, port in decimal_string.allowed_authorities
+    )
 
 
 def test_policy_configuration_integrity_guide_is_discoverable_and_current() -> None:
