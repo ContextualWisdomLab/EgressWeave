@@ -32,6 +32,31 @@ def test_public_writer_rejects_symlinked_forbidden_root(tmp_path: Path) -> None:
     assert not output_path.exists()
 
 
+def test_public_writer_rejects_relative_symlinked_forbidden_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inspect the first named relative component and reject a symlink alias."""
+    monkeypatch.chdir(tmp_path)
+    real_evidence_root = Path("real-evidence")
+    real_evidence_root.mkdir()
+    alias = Path("alias")
+    try:
+        alias.symlink_to(real_evidence_root, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symbolic links are unavailable on this platform")
+    output_path = Path("new-parent") / "manifest.json"
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        release_evidence.write_evidence_manifest(
+            MANIFEST,
+            output_path,
+            forbidden_root=alias,
+        )
+
+    assert not output_path.parent.exists()
+
+
 def test_public_writer_rejects_intermediate_symlink_erased_by_parent_traversal(
     tmp_path: Path,
 ) -> None:
@@ -96,6 +121,25 @@ def test_public_writer_accepts_real_parent_traversal_without_symlinks(
     child = forbidden_root / "child"
     child.mkdir(parents=True)
     output_path = tmp_path / "manifest-parent" / "manifest.json"
+
+    release_evidence.write_evidence_manifest(
+        MANIFEST,
+        output_path,
+        forbidden_root=child / "..",
+    )
+
+    assert json.loads(output_path.read_text(encoding="utf-8")) == MANIFEST
+
+
+def test_public_writer_accepts_relative_real_parent_traversal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Preserve relative real-component parent traversal outside the output path."""
+    monkeypatch.chdir(tmp_path)
+    child = Path("real-evidence") / "child"
+    child.mkdir(parents=True)
+    output_path = Path("manifest-parent") / "manifest.json"
 
     release_evidence.write_evidence_manifest(
         MANIFEST,
