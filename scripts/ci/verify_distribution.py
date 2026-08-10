@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 import re
 import stat
 import tarfile
@@ -65,6 +66,32 @@ def _normalized_distribution_stem(name: str) -> str:
     return re.sub(r"[-_.]+", "_", name).lower()
 
 
+def _require_regular_distribution_state(archive_path: Path) -> os.stat_result:
+    """Return bounded lexical state for one canonical distribution archive."""
+    try:
+        archive_state = archive_path.lstat()
+    except OSError:
+        raise SystemExit("distribution archive is missing or unsafe") from None
+    if not stat.S_ISREG(archive_state.st_mode):
+        raise SystemExit("distribution archive is missing or unsafe")
+    if archive_state.st_size > MAX_DISTRIBUTION_BYTES:
+        raise SystemExit(
+            "distribution archive exceeds the 256 MiB verification limit: "
+            f"{archive_path.name}"
+        )
+    return archive_state
+
+
+def _same_distribution_state(expected: os.stat_result, observed: os.stat_result) -> bool:
+    """Return whether two snapshots identify the same unchanged regular file."""
+    return (
+        stat.S_ISREG(observed.st_mode)
+        and expected.st_dev == observed.st_dev
+        and expected.st_ino == observed.st_ino
+        and expected.st_size == observed.st_size
+    )
+
+
 def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Path]:
     """Select only finite canonical wheel and source distributions for publication."""
     normalized_name = _normalized_distribution_stem(name)
@@ -82,17 +109,7 @@ def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Pat
             f"{[path.name for path in publishable_archives]}"
         )
     for archive_path in publishable_archives:
-        try:
-            archive_state = archive_path.lstat()
-        except OSError:
-            raise SystemExit("distribution archive is missing or unsafe") from None
-        if not stat.S_ISREG(archive_state.st_mode):
-            raise SystemExit("distribution archive is missing or unsafe")
-        if archive_state.st_size > MAX_DISTRIBUTION_BYTES:
-            raise SystemExit(
-                "distribution archive exceeds the 256 MiB verification limit: "
-                f"{archive_path.name}"
-            )
+        _require_regular_distribution_state(archive_path)
     return wheel_path, sdist_path
 
 
@@ -212,13 +229,36 @@ def _verify_release_ref(
         )
 
 
-def _sha256_file(archive_path: Path) -> str:
-    """Return a file digest while keeping each binary read bounded to 1 MiB."""
+def _sha256_stream(archive_file: object) -> str:
+    """Return a digest while keeping each binary read bounded to 1 MiB."""
     digest = hashlib.sha256()
-    with archive_path.open("rb") as archive_file:
-        while chunk := archive_file.read(HASH_CHUNK_SIZE):
-            digest.update(chunk)
+    while chunk := archive_file.read(HASH_CHUNK_SIZE):
+        digest.update(chunk)
     return digest.hexdigest()
+
+
+def _sha256_file(archive_path: Path) -> str:
+    """Hash one stable bounded regular distribution without following retargets."""
+    expected_state = _require_regular_distribution_state(archive_path)
+    try:
+        with archive_path.open("rb") as archive_file:
+            opened_state = os.fstat(archive_file.fileno())
+            if not _same_distribution_state(expected_state, opened_state):
+                raise SystemExit("distribution archive is missing or unsafe")
+            digest = _sha256_stream(archive_file)
+            final_open_state = os.fstat(archive_file.fileno())
+    except SystemExit:
+        raise
+    except OSError:
+        raise SystemExit("distribution archive is missing or unsafe") from None
+
+    final_path_state = _require_regular_distribution_state(archive_path)
+    if not _same_distribution_state(expected_state, final_open_state) or not _same_distribution_state(
+        expected_state,
+        final_path_state,
+    ):
+        raise SystemExit("distribution archive is missing or unsafe")
+    return digest
 
 
 def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
