@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+import stat
 import tarfile
 import zipfile
 from email.parser import BytesParser
@@ -82,10 +83,12 @@ def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Pat
         )
     for archive_path in publishable_archives:
         try:
-            archive_size = archive_path.stat().st_size
+            archive_state = archive_path.lstat()
         except OSError:
-            raise SystemExit("distribution archive is unreadable") from None
-        if archive_size > MAX_DISTRIBUTION_BYTES:
+            raise SystemExit("distribution archive is missing or unsafe") from None
+        if not stat.S_ISREG(archive_state.st_mode):
+            raise SystemExit("distribution archive is missing or unsafe")
+        if archive_state.st_size > MAX_DISTRIBUTION_BYTES:
             raise SystemExit(
                 "distribution archive exceeds the 256 MiB verification limit: "
                 f"{archive_path.name}"
