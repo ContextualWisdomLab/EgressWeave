@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_PROVENANCE_PATH = REPOSITORY_ROOT / "docs" / "product" / "RELEASE_PROVENANCE.md"
+DOCUMENTATION_AUDIT_PATH = REPOSITORY_ROOT / "docs" / "product" / "DOCUMENTATION_AUDIT.md"
 
 HANDOFF_REVALIDATION_CLAIMS = (
     "sealed handoff",
@@ -69,3 +70,14 @@ def test_credentialed_handoff_revalidation_is_explicitly_active_pr() -> None:
         "not protected-main behavior"
     ) in active_pr
     _assert_complete_handoff_contract(active_pr)
+
+
+def test_documentation_audit_keeps_release_handoff_consumption_unshipped() -> None:
+    """Keep credentialed release handoff and full identity proof in ACTIVE-PR truth."""
+    audit = DOCUMENTATION_AUDIT_PATH.read_text(encoding="utf-8")
+    active_pr = audit.split("### ACTIVE-PR", 1)[1].split("### ACCEPTED-TARGET", 1)[0]
+
+    assert "credentialed release handoff consumption" in active_pr
+    assert "full release identity/digest revalidation" in active_pr
+    assert "remain ACTIVE-PR" in active_pr
+    assert "must not replace protected-main automation truth" in active_pr
