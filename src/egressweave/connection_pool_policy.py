@@ -22,7 +22,7 @@ def _normalize_connection_count(
     """Return one exact ASCII-compatible connection-count limit."""
     if isinstance(value, bool):
         raise TypeError(f"{field_name} must be an integer or ASCII decimal string")
-    if isinstance(value, int):
+    if type(value) is int:
         normalized = value
     elif isinstance(value, str):
         if not value or not value.isascii() or not value.isdecimal():
