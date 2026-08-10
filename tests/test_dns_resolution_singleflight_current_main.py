@@ -6,9 +6,13 @@ import queue
 import threading
 import time
 
-from egressweave import EGRESS_NOT_ALLOWED, EgressNotAllowedError, EgressPolicy
-from egressweave import validate_egress_url_details
-from egressweave import validation
+from egressweave import (
+    EGRESS_NOT_ALLOWED,
+    EgressNotAllowedError,
+    EgressPolicy,
+    validate_egress_url_details,
+    validation,
+)
 
 AUTHORITY = ("api.example.com", 443)
 PUBLIC_ADDRESS = "93.184.216.34"
