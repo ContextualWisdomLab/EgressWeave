@@ -22,9 +22,7 @@ Count fields accept only exact built-in integers or ASCII decimal strings for
 environment-derived configuration; integer subclasses are rejected during
 trusted construction instead of being retained inside the immutable policy.
 Accepted decimal strings are converted to built-in integers before relational
-checks and transport delegation. This primitive-value boundary does not make
-EgressWeave a Python sandbox for code already executing in the embedding
-process.
+checks and transport delegation. This primitive-value boundary does not make EgressWeave a Python sandbox for code already executing in the embedding process.
 
 `max_connections` must be positive. `max_keepalive_connections` may be zero to
 retain no idle connections but must not exceed total capacity.
