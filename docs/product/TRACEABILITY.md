@@ -29,6 +29,7 @@ This document maps durable product requirements to implementation and verificati
 | PRD-FR-009 Sync/async parity | synchronous and asynchronous builder/transport implementations | paired sync/async validation, timeout, framing, request/response and cleanup suites | ADR 0001; repository test strategy | IMPLEMENTED-ON-PROTECTED-MAIN |
 | PRD-FR-010 Decision evidence | `src/egressweave/decision_evidence.py` | decision-evidence API, determinism, minimization and documentation/runtime-field contract tests | ADR 0001; privacy/minimization boundary in security model | IMPLEMENTED-ON-PROTECTED-MAIN |
 | PRD-FR-011 Standalone and host-owned integration | public exports in `src/egressweave/__init__.py`; host creates adapters against public policy/builders | package-installed smoke tests plus documentation contract that forbids claiming a packaged naruon adapter | ADR 0001; ADR 0002 | IMPLEMENTED-ON-PROTECTED-MAIN for reusable core; OUT-OF-SCOPE for host adapter implementation |
+| PRD-FR-012 Canonical automation prompt integrity | **ACTIVE-PR** `.github/prompts/hourly-product-maintainer.md` plus workflow loader and 12 KiB guard; protected-main workflow remains implementation truth until merge | `tests/test_hourly_rca_feasibility_contract.py`, `tests/test_hourly_opencode_nvidia_contract.py`, documentation prompt-governance contracts | **ADR 0004** | ACTIVE-PR / PROPOSED-GOVERNANCE |
 
 Representative filenames are anchors, not an exhaustive test manifest. The complete exact-head test inventory and coverage report remain authoritative for merge/release evidence.
 
@@ -40,11 +41,12 @@ Representative filenames are anchors, not an exhaustive test manifest. The compl
 | Beginner-readable shipped-symbol documentation | public code docstrings and contributor rules | documentation/docstring coverage contracts in CI | AGENTS/CLAUDE; NIST SSDF | IMPLEMENTED-ON-PROTECTED-MAIN |
 | Wheel and source-distribution acceptance | package metadata, build configuration and CI package-acceptance job | archive metadata/content/checksum verification and installed-wheel smoke test | SLSA-informed supply-chain evidence; release docs | IMPLEMENTED-ON-PROTECTED-MAIN for package acceptance |
 | Exact-head integration evidence | checkout/source-SHA binding in repository CI and governance rules | workflow source checkout assertions and current-head review/check inspection | ADR 0001; ADR 0002 | IMPLEMENTED-ON-PROTECTED-MAIN |
-| Automation governance: work-conserving execution, dependency handoff, control-plane incident recovery and double exit sweep | Proposed repository-governance contract in `docs/adr/0003-work-conserving-automation-and-dependency-handoff.md` plus the corresponding UML control-loop view; protected-main workflow source remains the implementation truth | `tests/test_documentation_automation_governance.py` | ADR 0003 | PROPOSED-GOVERNANCE |
+| Automation governance: work-conserving execution, dependency handoff and double exit sweep | Proposed contract in `docs/adr/0003-work-conserving-automation-and-dependency-handoff.md` plus UML control-loop view | `tests/test_documentation_automation_governance.py` | ADR 0003 | PROPOSED-GOVERNANCE |
+| Bounded canonical prompt and resumable control-plane incident handling | Proposed `docs/adr/0004-bounded-canonical-automation-prompt.md`; **ACTIVE-PR** canonical prompt, workflow loader, byte guard and incident runbook | `tests/test_hourly_rca_feasibility_contract.py`, `tests/test_hourly_opencode_nvidia_contract.py`, `tests/test_documentation_prompt_budget_governance.py` | **ADR 0004** | ACTIVE-PR / PROPOSED-GOVERNANCE |
 | Stronger sealed release/SBOM/provenance work | release-evidence implementation only where already merged; additional hardening may be reviewed separately | exact-head release-evidence tests only count for the head that contains them | SLSA v1.2; CycloneDX/SPDX references in doctoring | IMPLEMENTED-ON-PROTECTED-MAIN only for merged capabilities; otherwise ACTIVE-PR |
 | Independent review and branch governance | repository/CWL governance rather than runtime package code | formal review and branch-protection evidence on exact head | ADR 0001; repository governance | GOVERNANCE-GATE |
 
-The Automation governance row is intentionally `PROPOSED-GOVERNANCE`: the work-conserving rule, exact-identity read-only dependency handoff, control-plane incident handling and double exit sweep are durable reviewable decisions, but they are not evidence that every protected-main scheduler or workflow already implements those semantics.
+A generic scheduler error is a **control-plane incident**, not product state. The canonical prompt change is not accepted by documentation alone: exact integrated workflow evidence must demonstrate that prompt loading, model authority separation, offline verification and same-run recovery operate as specified. Prompt repair alone never closes the repository work queue.
 
 ## 4. Threat and control traceability
 
@@ -59,22 +61,24 @@ The explicit threat analysis is [`../THREAT_MODEL.md`](../THREAT_MODEL.md). The 
 | TLS identity | `tls.py` + pinned transport | TLS configuration and SNI/hostname tests | ADR 0001; TLS references in doctoring |
 | Error/evidence disclosure | generic denial and decision-evidence paths | cleanup/error/evidence minimization tests | Security model; privacy section of PRD/compliance mapping |
 | Supply-chain / stale evidence | exact source binding, package acceptance, release evidence where merged | workflow/package/release contracts | NIST SSDF; NIST SP 1326; SLSA |
+| Prompt/control-plane integrity | canonical prompt path, finite byte guard, deny-by-default model tools, non-publishing handoff and exact-identity recovery | scheduler and documentation prompt-governance contracts | ADR 0003; **ADR 0004** |
 
 ## 5. Documentation traceability
 
 | Product concern | Canonical document | Machine-checkable evidence |
 |---|---|---|
-| Buyer requirements and acceptance | [`PRD.md`](PRD.md) | `tests/test_documentation_architecture_pack.py` |
+| Buyer requirements and acceptance | [`PRD.md`](PRD.md) | `tests/test_documentation_architecture_pack.py`, prompt-governance documentation contract |
 | Verifiable technical constraints | [`TRD.md`](TRD.md) | documentation architecture/maturity tests plus full product suite |
 | Protected-main implementation architecture | [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) | code/tests remain primary truth |
-| Supplementary system views | [`../architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md), [`../architecture/UML.md`](../architecture/UML.md) | Mermaid/content/runtime-field documentation contracts |
-| Persistence ownership | [`../architecture/ERD.md`](../architecture/ERD.md) | no-owned-persistence contract |
+| Supplementary system views | [`../architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md), [`../architecture/UML.md`](../architecture/UML.md) | Mermaid/content/runtime-field/prompt-flow documentation contracts |
+| Persistence ownership | [`../architecture/ERD.md`](../architecture/ERD.md) | no-owned-persistence and platform-owned automation-record contract |
 | API ownership/compatibility | [`API_CONTRACT.md`](API_CONTRACT.md) | public export, package and documentation integration tests |
 | Threat/security boundary | [`../THREAT_MODEL.md`](../THREAT_MODEL.md), [`../security-model.md`](../security-model.md) | security-model resource-bound and governance-document tests |
 | Verification strategy | [`TEST_STRATEGY.md`](TEST_STRATEGY.md) | exact-head CI/package/security evidence |
-| Operations/shared responsibility | [`OPERABILITY.md`](OPERABILITY.md) | documentation links + host runbook validation by integrators |
+| Operations/shared responsibility | [`OPERABILITY.md`](OPERABILITY.md) | generic scheduler incident and host runbook contracts |
 | Compliance/acquisition evidence | [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md) | documentation contracts + exact artifacts available for the release |
 | Automation execution/exit/dependency governance | [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md), [`../architecture/UML.md`](../architecture/UML.md) | `tests/test_documentation_automation_governance.py` |
+| Bounded prompt source/budget and recovery | [`../adr/0004-bounded-canonical-automation-prompt.md`](../adr/0004-bounded-canonical-automation-prompt.md), [`OPERABILITY.md`](OPERABILITY.md) | `tests/test_documentation_prompt_budget_governance.py` |
 | Decisions | [`../adr/README.md`](../adr/README.md) | ADR index/status documentation contract |
 | Standards/APA 7 doctoring | [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) | standards-presence and non-certification tests |
 
@@ -85,6 +89,7 @@ The following do not have EgressWeave-core implementation evidence because they 
 - tenant/user identity and authorization;
 - API credential lifecycle and OAuth scopes;
 - durable database/audit retention/deletion;
+- automation-run and control-plane-incident persistence;
 - service SLOs, queues, retries/idempotency and process-wide concurrency;
 - firewall/service-mesh/cloud egress policy;
 - host-specific naruon/CWL adapter implementation;
