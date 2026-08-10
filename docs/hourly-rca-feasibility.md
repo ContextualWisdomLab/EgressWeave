@@ -18,7 +18,7 @@ scheduler can actually perform:
 - model edits are limited to `src/egressweave/**`, `tests/**`, `docs/**`,
   `README.md`, and `CHANGELOG.md`;
 - `.github/**`, `scripts/**`, dependencies, build configuration, credentials,
-  protected refs, and branch-protection settings are outside the editable
+  protected refs, and branch-protection settings are outside the model-editable
   boundary;
 - executable verification occurs later in a fresh, credential-free, offline
   container and can only produce a digest-bound patch handoff.
@@ -28,6 +28,29 @@ central `ContextualWisdomLab/.github` dependency, change a ruleset, manufacture
 an approval, or publish a verified patch. Those activities remain owned by the
 hourly PR-maintenance path, the relevant repository writer lease, and protected
 human or organization controls.
+
+## Canonical prompt and control-plane budget
+
+The executable maintainer policy is stored once in the repository-owned canonical
+prompt at `.github/prompts/hourly-product-maintainer.md`. The workflow copies that
+regular, non-symlink file into its private runner directory and rejects it before
+model execution when it exceeds the explicit **12 KiB** control-plane budget.
+The workflow no longer embeds the full policy in a YAML heredoc, reducing both
+prompt duplication and the risk that prompt growth or escape/newline damage
+breaks workflow parsing.
+
+The 12 KiB limit is an engineering control for the repository-local OpenCode
+handoff, not evidence about an unobservable external scheduler limit. A generic
+scheduled-task error has no trustworthy hidden error code in repository state.
+It is therefore classified as a **control-plane incident** until exact evidence
+identifies a narrower scheduler, connector, provider, permission, prompt, or
+repository cause.
+
+On the next executable invocation, the maintainer re-fetches live repository
+state, revalidates any dependency advancement, and continues repository work in
+the same invocation. Prompt repair alone earns zero completion credit. A
+transient tool, provider, rate-limit, or connector failure does not disable the
+recurring loop.
 
 ## Decision procedure
 
@@ -75,6 +98,15 @@ leave unrelated findings for later governed work. It may leave the working tree
 unchanged only when no safe material improvement remains inside the allowed edit
 boundary for the selected slice, or when every remaining action would require
 forbidden authority or exceed the bounded validation contract.
+
+## Read-only dependency handoff
+
+A material change in `.github`, naruon, contextual-orchestrator, or another
+independently owned dependency is not a status-only event. The maintainer binds
+the new exact protected/default or PR head, revalidates the affected interface or
+claim, and advances any permitted EgressWeave-side handoff in the same invocation.
+A dependency wait never terminates the run while a safe local caller-side test,
+documentation correction, or exact-evidence update remains executable.
 
 ## Protected-branch failure
 
