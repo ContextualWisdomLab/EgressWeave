@@ -14,7 +14,7 @@ def _read(relative_path: str) -> str:
 
 def test_adr_records_bounded_canonical_prompt_without_claiming_shipped_behavior() -> None:
     """Keep prompt source, size, incident recovery, and maturity in one decision."""
-    adr = _read("docs/adr/0003-work-conserving-automation-and-dependency-handoff.md")
+    adr = _read("docs/adr/0004-bounded-canonical-automation-prompt.md")
 
     for required_phrase in (
         ".github/prompts/hourly-product-maintainer.md",
@@ -74,7 +74,7 @@ def test_operability_audit_and_traceability_cover_generic_scheduler_errors() -> 
     assert "12 KiB" in operability
     assert "exact hidden error code is unavailable" in operability
     assert "ACTIVE-PR" in audit
-    assert "ADR 0003" in traceability
+    assert "ADR 0004" in traceability
 
 
 def test_erd_keeps_automation_run_state_outside_the_library_database_boundary() -> None:
