@@ -61,6 +61,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Require the hourly product-development maintainer to perform exact-evidence
   root-cause analysis and operational feasibility validation before selecting,
   abandoning, or escalating a remediation.
+- Load the hourly product-development maintainer from one canonical prompt file
+  with a 12 KiB control-plane budget instead of an inline YAML heredoc. Generic
+  scheduler failures are treated as resumable control-plane incidents; prompt
+  repair alone is not completion, and transient connector/provider errors do not
+  disable the recurring loop.
 
 ### Security
 - End the hourly product-development scheduler at a credential-free,
