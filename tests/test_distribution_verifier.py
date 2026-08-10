@@ -153,7 +153,7 @@ def test_checksum_writer_rejects_archive_symlink_retarget_after_selection(
 
 
 def test_distribution_digest_reads_only_bounded_chunks() -> None:
-    """Hash a distribution without issuing an unbounded binary read."""
+    """Hash a distribution stream without issuing an unbounded binary read."""
     verifier = _load_verifier()
     payload = b"a" * (1_048_576 + 17)
 
@@ -164,15 +164,8 @@ def test_distribution_digest_reads_only_bounded_chunks() -> None:
             assert 0 < size <= 1_048_576
             return super().read(size)
 
-    class GuardedPath:
-        """Provide only the binary-open surface required by the digest helper."""
-
-        def open(self, mode: str) -> GuardedReader:
-            assert mode == "rb"
-            return GuardedReader(payload)
-
     assert verifier.HASH_CHUNK_SIZE == 1_048_576
-    assert verifier._sha256_file(GuardedPath()) == hashlib.sha256(payload).hexdigest()
+    assert verifier._sha256_stream(GuardedReader(payload)) == hashlib.sha256(payload).hexdigest()
 
 
 def test_checksum_writer_never_uses_path_read_bytes(
