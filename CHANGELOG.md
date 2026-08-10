@@ -60,6 +60,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject non-exact string subclasses in HTTP method policy values before
+  normalization or comma-separated parsing, preserving ordinary built-in method
+  strings, RFC 9110 token validation, uppercase canonicalization, and `CONNECT` denial.
 - Reject non-exact integer subclasses in shared policy integer fields before
   retaining trusted configuration state. Exact built-in integers and existing
   ASCII decimal strings remain supported, preserving defaults and ranges while
@@ -358,11 +361,3 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Initial release, extracted behaviour-preserving from the naruon control plane.
 - `EgressPolicy` — injected egress host allowlist with an `allow_local` escape
   hatch and configurable DNS-resolution timeout.
-- `validate_egress_url` / `validate_egress_url_details` and async variants —
-  SSRF-safe URL validation (CWE-918) that resolves and checks **every** address.
-- `build_egress_http_client` / `build_pinned_https_async_client` — DNS-pinned
-  `httpx.AsyncClient` closing the validate-then-connect TOCTOU / DNS-rebinding
-  gap (CWE-350), with redirects and environment proxies disabled.
-- `EgressNotAllowedError` (a `ValueError` subclass) and `ValidatedEgressURL`.
-- 35 tests covering URL rejection, address classification, the `allow_local`
-  container case, DNS-to-private rejection, and transport pinning.
