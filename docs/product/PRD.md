@@ -156,7 +156,7 @@ The following are **OUT-OF-SCOPE** for EgressWeave core unless a future accepted
 
 A buyer-facing release is acceptable only when the exact protected release source satisfies the repository's required CI, security, coverage/docstring, packaging, dependency/supply-chain, provenance/SBOM where applicable, independent review, release and operational-acceptance gates. A green feature branch, model review comment, or stale predecessor check is not release evidence.
 
-Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, host-owned adapters, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md) and [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md).
+Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, host-owned adapters, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and [Release, rollback, and provenance](RELEASE_PROVENANCE.md).
 
 ## 10. Documentation spine
 
@@ -168,6 +168,7 @@ Host organizations remain responsible for service-level objectives, incident ope
 - Test strategy: [`TEST_STRATEGY.md`](TEST_STRATEGY.md)
 - Operability: [`OPERABILITY.md`](OPERABILITY.md)
 - Compliance traceability: [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md)
+- Release, rollback, and provenance: [Release, rollback, and provenance](RELEASE_PROVENANCE.md)
 - Product/engineering traceability: [`TRACEABILITY.md`](TRACEABILITY.md)
 - Documentation audit: [`DOCUMENTATION_AUDIT.md`](DOCUMENTATION_AUDIT.md)
 - ADR index: [`../adr/README.md`](../adr/README.md)
