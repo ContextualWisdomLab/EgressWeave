@@ -96,6 +96,21 @@ def _same_distribution_state(expected: os.stat_result, observed: os.stat_result)
     )
 
 
+def _sha256_exact_size(archive_file: BinaryIO, expected_size: int) -> str | None:
+    """Digest exactly one accepted file size, returning None on byte-count drift."""
+    digest = hashlib.sha256()
+    remaining = expected_size
+    while remaining:
+        chunk = archive_file.read(min(HASH_CHUNK_SIZE, remaining))
+        if not chunk:
+            return None
+        digest.update(chunk)
+        remaining -= len(chunk)
+    if archive_file.read(1):
+        return None
+    return digest.hexdigest()
+
+
 @contextmanager
 def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
     """Yield a bounded immutable parser snapshot while retaining source identity."""
@@ -111,12 +126,14 @@ def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
             raise SystemExit("distribution archive is missing or unsafe")
 
         with tempfile.TemporaryFile(mode="w+b") as snapshot_file:
+            snapshot_digest = hashlib.sha256()
             remaining = expected_state.st_size
             while remaining:
                 chunk = archive_file.read(min(HASH_CHUNK_SIZE, remaining))
                 if not chunk:
                     raise SystemExit("distribution archive is missing or unsafe")
                 snapshot_file.write(chunk)
+                snapshot_digest.update(chunk)
                 remaining -= len(chunk)
             if archive_file.read(1):
                 raise SystemExit(
@@ -132,9 +149,17 @@ def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
             ) or not _same_distribution_state(expected_state, snapshot_path_state):
                 raise SystemExit("distribution archive is missing or unsafe")
 
+            accepted_digest = snapshot_digest.hexdigest()
             snapshot_file.seek(0)
             yield snapshot_file
             final_open_state = os.fstat(archive_file.fileno())
+            final_source_digest = None
+            if _same_distribution_state(expected_state, final_open_state):
+                archive_file.seek(0)
+                final_source_digest = _sha256_exact_size(
+                    archive_file,
+                    expected_state.st_size,
+                )
     except SystemExit:
         raise
     except OSError:
@@ -147,6 +172,8 @@ def _open_stable_distribution(archive_path: Path) -> Iterator[BinaryIO]:
         expected_state,
         final_open_state,
     ) or not _same_distribution_state(expected_state, final_path_state):
+        raise SystemExit("distribution archive is missing or unsafe")
+    if final_source_digest != accepted_digest:
         raise SystemExit("distribution archive is missing or unsafe")
 
 
@@ -188,8 +215,8 @@ def _safe_archive_names(names: list[str]) -> set[str]:
     return seen
 
 
-def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> None:
-    """Verify wheel contents and core metadata without importing the package."""
+def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
+    """Verify wheel contents and return the digest of the exact parsed snapshot."""
     version = str(project["version"])
     dist_info = f"{DISTRIBUTION_NAME}-{version}.dist-info"
     required_paths = {
@@ -201,17 +228,17 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> None:
         f"{dist_info}/licenses/LICENSE",
     }
 
-    with (
-        _open_stable_distribution(wheel_path) as wheel_file,
-        zipfile.ZipFile(wheel_file) as wheel_archive,
-    ):
-        names = _safe_archive_names(wheel_archive.namelist())
-        missing = required_paths - names
-        if missing:
-            raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
-        metadata = BytesParser(policy=default).parsebytes(
-            wheel_archive.read(f"{dist_info}/METADATA")
-        )
+    with _open_stable_distribution(wheel_path) as wheel_file:
+        wheel_digest = _sha256_stream(wheel_file)
+        wheel_file.seek(0)
+        with zipfile.ZipFile(wheel_file) as wheel_archive:
+            names = _safe_archive_names(wheel_archive.namelist())
+            missing = required_paths - names
+            if missing:
+                raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
+            metadata = BytesParser(policy=default).parsebytes(
+                wheel_archive.read(f"{dist_info}/METADATA")
+            )
 
     expected_metadata = {
         "Name": str(project["name"]),
@@ -227,10 +254,11 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> None:
             )
     if "LICENSE" not in metadata.get_all("License-File", []):
         raise SystemExit("wheel metadata does not declare LICENSE as a license file")
+    return wheel_digest
 
 
-def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> None:
-    """Verify source-distribution paths and required release evidence."""
+def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> str:
+    """Verify source-distribution paths and return its parsed snapshot digest."""
     version = str(project["version"])
     prefix = f"{DISTRIBUTION_NAME}-{version}"
     required_paths = {
@@ -244,14 +272,14 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> None:
         f"{prefix}/docs/release.md",
     }
 
-    with (
-        _open_stable_distribution(sdist_path) as sdist_file,
-        tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive,
-    ):
-        members = sdist_archive.getmembers()
-        names = _safe_archive_names([member.name for member in members])
-        if any(member.issym() or member.islnk() or member.isdev() for member in members):
-            raise SystemExit("source distribution contains a link or device entry")
+    with _open_stable_distribution(sdist_path) as sdist_file:
+        sdist_digest = _sha256_stream(sdist_file)
+        sdist_file.seek(0)
+        with tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive:
+            members = sdist_archive.getmembers()
+            names = _safe_archive_names([member.name for member in members])
+            if any(member.issym() or member.islnk() or member.isdev() for member in members):
+                raise SystemExit("source distribution contains a link or device entry")
 
     missing = required_paths - names
     if missing:
@@ -260,6 +288,7 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> None:
         )
     if any(not name.startswith(f"{prefix}/") for name in names):
         raise SystemExit("source distribution contains a path outside its versioned root")
+    return sdist_digest
 
 
 def _verify_release_ref(
@@ -307,12 +336,19 @@ def _sha256_file(archive_path: Path) -> str:
         return _sha256_stream(archive_file)
 
 
-def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
-    """Create deterministic checksums without replacing any preexisting output."""
+def _write_sha256sums(
+    dist_dir: Path,
+    archives: tuple[Path, Path],
+    *,
+    expected_digests: dict[Path, str] | None = None,
+) -> Path:
+    """Create checksums only for bytes matching any parsed snapshot digests."""
     checksum_path = dist_dir / "SHA256SUMS"
     lines: list[str] = []
     for archive_path in sorted(archives, key=lambda path: path.name):
         digest = _sha256_file(archive_path)
+        if expected_digests is not None and digest != expected_digests.get(archive_path):
+            raise SystemExit("distribution archive is missing or unsafe")
         lines.append(f"{digest}  {archive_path.name}\n")
     try:
         with checksum_path.open("x", encoding="ascii", newline="\n") as checksum_file:
@@ -339,14 +375,18 @@ def main() -> int:
         str(project["name"]),
         str(project["version"]),
     )
-    _verify_wheel(wheel_path, project)
-    _verify_sdist(sdist_path, project)
+    wheel_digest = _verify_wheel(wheel_path, project)
+    sdist_digest = _verify_sdist(sdist_path, project)
     _verify_release_ref(
         arguments.release_ref,
         str(project["version"]),
         repository_root / "CHANGELOG.md",
     )
-    checksum_path = _write_sha256sums(dist_dir, (wheel_path, sdist_path))
+    checksum_path = _write_sha256sums(
+        dist_dir,
+        (wheel_path, sdist_path),
+        expected_digests={wheel_path: wheel_digest, sdist_path: sdist_digest},
+    )
     print(f"verified {wheel_path.name}, {sdist_path.name}, and {checksum_path.name}")
     return 0
 
