@@ -8,6 +8,7 @@ This document maps durable product requirements to implementation and verificati
 
 - `IMPLEMENTED-ON-PROTECTED-MAIN` means the cited production path and representative verification exist on the current protected branch.
 - `ACTIVE-PR` means the capability may be implemented on an unmerged branch and is not shipped.
+- `PROPOSED-GOVERNANCE` means a durable repository-governance decision is under review and does not imply the corresponding workflow behavior is already shipped on protected main.
 - Review, CI, SAST, security and release acceptance must describe the exact current head; predecessor evidence does not transfer after a source/head/base change.
 - A green aggregate workflow is evidence only for the steps that actually executed.
 - Documentation and tests do not promote a target design to protected-main implementation.
@@ -31,7 +32,7 @@ This document maps durable product requirements to implementation and verificati
 
 Representative filenames are anchors, not an exhaustive test manifest. The complete exact-head test inventory and coverage report remain authoritative for merge/release evidence.
 
-## 3. Quality and release traceability
+## 3. Quality, governance and release traceability
 
 | Requirement | Implementation evidence | Test evidence | ADR / standard | Maturity |
 |---|---|---|---|---|
@@ -39,8 +40,11 @@ Representative filenames are anchors, not an exhaustive test manifest. The compl
 | Beginner-readable shipped-symbol documentation | public code docstrings and contributor rules | documentation/docstring coverage contracts in CI | AGENTS/CLAUDE; NIST SSDF | IMPLEMENTED-ON-PROTECTED-MAIN |
 | Wheel and source-distribution acceptance | package metadata, build configuration and CI package-acceptance job | archive metadata/content/checksum verification and installed-wheel smoke test | SLSA-informed supply-chain evidence; release docs | IMPLEMENTED-ON-PROTECTED-MAIN for package acceptance |
 | Exact-head integration evidence | checkout/source-SHA binding in repository CI and governance rules | workflow source checkout assertions and current-head review/check inspection | ADR 0001; ADR 0002 | IMPLEMENTED-ON-PROTECTED-MAIN |
+| Automation governance: work-conserving execution, dependency handoff, control-plane incident recovery and double exit sweep | Proposed repository-governance contract in `docs/adr/0003-work-conserving-automation-and-dependency-handoff.md` plus the corresponding UML control-loop view; protected-main workflow source remains the implementation truth | `tests/test_documentation_automation_governance.py` | ADR 0003 | PROPOSED-GOVERNANCE |
 | Stronger sealed release/SBOM/provenance work | release-evidence implementation only where already merged; additional hardening may be reviewed separately | exact-head release-evidence tests only count for the head that contains them | SLSA v1.2; CycloneDX/SPDX references in doctoring | IMPLEMENTED-ON-PROTECTED-MAIN only for merged capabilities; otherwise ACTIVE-PR |
 | Independent review and branch governance | repository/CWL governance rather than runtime package code | formal review and branch-protection evidence on exact head | ADR 0001; repository governance | GOVERNANCE-GATE |
+
+The Automation governance row is intentionally `PROPOSED-GOVERNANCE`: the work-conserving rule, exact-identity read-only dependency handoff, control-plane incident handling and double exit sweep are durable reviewable decisions, but they are not evidence that every protected-main scheduler or workflow already implements those semantics.
 
 ## 4. Threat and control traceability
 
@@ -70,6 +74,7 @@ The explicit threat analysis is [`../THREAT_MODEL.md`](../THREAT_MODEL.md). The 
 | Verification strategy | [`TEST_STRATEGY.md`](TEST_STRATEGY.md) | exact-head CI/package/security evidence |
 | Operations/shared responsibility | [`OPERABILITY.md`](OPERABILITY.md) | documentation links + host runbook validation by integrators |
 | Compliance/acquisition evidence | [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md) | documentation contracts + exact artifacts available for the release |
+| Automation execution/exit/dependency governance | [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md), [`../architecture/UML.md`](../architecture/UML.md) | `tests/test_documentation_automation_governance.py` |
 | Decisions | [`../adr/README.md`](../adr/README.md) | ADR index/status documentation contract |
 | Standards/APA 7 doctoring | [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) | standards-presence and non-certification tests |
 
@@ -90,4 +95,4 @@ This distinction prevents an acquisition or compliance matrix from converting a 
 
 ## 7. Change-control rule
 
-A material product/security/ownership change must update the affected PRD/TRD/API/architecture/threat/test/operability/compliance/ADR/doctoring rows or explicitly prove why no traceability change is required. When implementation maturity changes from `ACTIVE-PR` to `IMPLEMENTED-ON-PROTECTED-MAIN`, documentation must be updated only after the protected merge and exact acceptance evidence exist.
+A material product/security/ownership/automation-governance change must update the affected PRD/TRD/API/architecture/threat/test/operability/compliance/ADR/doctoring/traceability rows or explicitly prove why no traceability change is required. When implementation maturity changes from `ACTIVE-PR` or `PROPOSED-GOVERNANCE` to `IMPLEMENTED-ON-PROTECTED-MAIN`, documentation must be updated only after the protected merge and exact acceptance evidence exist.
