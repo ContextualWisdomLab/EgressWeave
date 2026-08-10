@@ -12,11 +12,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   set. Handoff manifests now use format version 2 and include both source-identity
   and checksum-file digests for independent credential-bound revalidation.
 - Add a shipped, credential-free sealed release-evidence verifier that accepts
-  only the exact wheel, source distribution, paired CycloneDX 1.7 SBOMs, and
-  canonical `SHA256SUMS`; independently recomputes content-bound UUIDv5 and
-  root-artifact bindings; applies finite evidence-size limits; and emits a
-  deterministic repository-and-source-bound manifest for a credential-separated
-  organization attestation workflow.
+  only the exact wheel, source distribution, paired deterministic CycloneDX 1.7 SBOMs, canonical `SOURCE_IDENTITY.json`, and sorted `SHA256SUMS`. It independently recomputes content-bound UUIDv5 and root-artifact bindings, applies finite evidence-size limits, and emits a deterministic repository-and-source-bound manifest for a credential-separated organization attestation workflow.
 - Add a deterministic, content-bound RFC 4122 UUID version 5 `serialNumber`
   adapter for CycloneDX 1.7 release evidence, satisfying the reviewed
   `actions/attest` CycloneDX parser without timestamps, random identifiers, or
