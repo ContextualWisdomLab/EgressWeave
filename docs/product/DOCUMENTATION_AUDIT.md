@@ -27,6 +27,7 @@ Implementation maturity:
 - **PLANNED**
 - **RESEARCH-ONLY**
 - **OUT-OF-SCOPE**
+- **PROPOSED-GOVERNANCE**
 
 ## 3. Pre-change audit matrix
 
@@ -49,7 +50,7 @@ Implementation maturity:
 | UML | MISSING | No canonical class/sequence/state diagrams found | Add [`../architecture/UML.md`](../architecture/UML.md) |
 | ERD / persistence decision | NOT-APPLICABLE but undocumented | Core owns no durable database; absence alone was ambiguous | Add explicit [`../architecture/ERD.md`](../architecture/ERD.md) with NON-NORMATIVE host/platform model only |
 | ADR index | PARTIAL | ADR 0001 exists and is Accepted, but no index/governance spine | Add [`../adr/README.md`](../adr/README.md) plus documentation/persistence and automation-governance ADRs |
-| Automation control-plane governance | PARTIAL | Workflow source and conversation/PR instructions described work-conserving execution, but dependency advancement, double-exit semantics, and control-plane error recovery were not captured as one durable architecture decision | Add **ADR 0003** plus UML review view; classify it as Proposed governance rather than shipped workflow behavior |
+| Automation control-plane governance | PARTIAL | Workflow source and conversation/PR instructions described work-conserving execution, but dependency advancement, double-exit semantics, and control-plane error recovery were not captured as one durable architecture decision | Add **ADR 0003** plus UML review view; Proposed governance selects one bounded change by deterministic queue and does not override protected-main workflow source |
 | Canonical automation prompt | MISSING | The scheduler policy was embedded in a large inline YAML heredoc, had no explicit byte budget, and generic scheduled-task failures had no canonical recovery/runbook treatment | Add **ADR 0004**, PRD/TRD/Architecture/UML/Operability/Traceability/ERD updates, and machine contracts for one bounded canonical prompt and resumable control-plane incident handling |
 | Research/standards | PARTIAL | High-quality topic-specific research notes exist, but no central APA index | Add [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) |
 | Release/provenance docs | PARTIAL / ACTIVE-PR work exists | Protected main already has detailed sealed-evidence and SBOM/attestation implementation notes, but release acceptance, rollback/recovery, provenance claims, and active-PR maturity were not discoverable as one buyer/operator product view | Add [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md), classified **PRESENT-CURRENT** for its protected-main summary while preserving ACTIVE-PR labels for unmerged hardening |
