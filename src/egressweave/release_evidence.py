@@ -643,7 +643,7 @@ def _require_canonical_forbidden_root(forbidden_root: Path) -> Path:
                     "release evidence directory path must not traverse symlinks"
                 )
         return _require_canonical_evidence_root(forbidden_root)
-    except SystemExit:
+    except (SystemExit, OSError, RuntimeError):
         raise SystemExit(
             "evidence manifest forbidden root is missing or unsafe"
         ) from None
