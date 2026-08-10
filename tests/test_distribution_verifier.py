@@ -152,6 +152,33 @@ def test_checksum_writer_rejects_archive_symlink_retarget_after_selection(
     assert not (tmp_path / "SHA256SUMS").exists()
 
 
+def test_checksum_writer_rejects_bytes_changed_after_parser_snapshot(tmp_path: Path) -> None:
+    """Never checksum bytes that differ from the snapshots accepted by parsers."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_payload = b"reviewed-wheel"
+    sdist_payload = b"reviewed-sdist"
+    wheel_path.write_bytes(wheel_payload)
+    sdist_path.write_bytes(sdist_payload)
+    selected_archives = verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+    expected_digests = {
+        wheel_path: hashlib.sha256(wheel_payload).hexdigest(),
+        sdist_path: hashlib.sha256(sdist_payload).hexdigest(),
+    }
+
+    wheel_path.write_bytes(b"x" * len(wheel_payload))
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._write_sha256sums(
+            tmp_path,
+            selected_archives,
+            expected_digests=expected_digests,
+        )
+
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
 def test_wheel_parser_rejects_archive_symlink_retarget_after_selection(tmp_path: Path) -> None:
     """Never follow a wheel path retargeted after the canonical pre-parser check."""
     verifier = _load_verifier()
