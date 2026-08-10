@@ -1,6 +1,6 @@
 # EgressWeave Documentation Fitness Audit
 
-Audit date: 2026-08-09
+Audit date: 2026-08-10
 
 Baseline inspected: protected `main` at `10d0c51daf2ad278d66f43be479df8cf6b08ba6d` before this documentation PR.
 
@@ -50,13 +50,15 @@ Implementation maturity:
 | ERD / persistence decision | NOT-APPLICABLE but undocumented | Core owns no durable database; absence alone was ambiguous | Add explicit [`../architecture/ERD.md`](../architecture/ERD.md) with NON-NORMATIVE host model only |
 | ADR index | PARTIAL | ADR 0001 exists and is Accepted, but no index/governance spine | Add [`../adr/README.md`](../adr/README.md) and ADR 0002 |
 | Research/standards | PARTIAL | High-quality topic-specific research notes exist, but no central APA index | Add [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md) |
-| Release/provenance docs | PARTIAL / ACTIVE-PR work exists | Protected main has packaging/release foundations while additional evidence hardening is still under review | Keep maturity labels; do not present active PR behavior as shipped |
+| Release/provenance docs | PARTIAL / ACTIVE-PR work exists | Protected main already has detailed sealed-evidence and SBOM/attestation implementation notes, but release acceptance, rollback/recovery, provenance claims, and active-PR maturity were not discoverable as one buyer/operator product view | Add [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md), classified **PRESENT-CURRENT** for its protected-main summary while preserving ACTIVE-PR labels for unmerged hardening |
 
 ## 4. Current versus target truth
 
 ### IMPLEMENTED-ON-PROTECTED-MAIN
 
-The protected-main architecture includes normalized policy construction, URL validation, DNS address validation, integrity-bound validated state, pinned synchronous/asynchronous transports, TLS configuration, finite timeout/pool and request/response resource controls, decision evidence, packaging quality gates, and host-owned adapter compatibility through provider-neutral public contracts. Exact details remain sourced from root `ARCHITECTURE.md`, code, and tests. No naruon-specific adapter is packaged or exported by EgressWeave protected main.
+The protected-main architecture includes normalized policy construction, URL validation, DNS address validation, integrity-bound validated state, pinned synchronous/asynchronous transports, TLS configuration, finite timeout/pool and request/response resource controls, decision evidence, packaging quality gates, deterministic local release-evidence verification, and host-owned adapter compatibility through provider-neutral public contracts. Exact details remain sourced from root `ARCHITECTURE.md`, code, tests, [`../sealed-release-evidence.md`](../sealed-release-evidence.md), and [`../sbom-attestation-compatibility.md`](../sbom-attestation-compatibility.md). No naruon-specific adapter is packaged or exported by EgressWeave protected main.
+
+[`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md) is the canonical product-level release/recovery/provenance view. It summarizes protected-main evidence without upgrading local source-identity claims into proof of an honest build, a SLSA level, publication, or certification.
 
 ### ACTIVE-PR
 
@@ -74,21 +76,22 @@ Further buyer-visible product slices, host-owned integration adapters, and opera
 
 ### OUT-OF-SCOPE
 
-Durable application databases, tenant/user identity, business-object authorization, host integration-adapter implementation, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, and blanket transformation of application PII are host/platform concerns unless a future accepted ADR changes the product boundary.
+Durable application databases, tenant/user identity, business-object authorization, host integration-adapter implementation, host audit stores/retention, service-mesh/firewall enforcement, service SLOs, external package/release administration, and blanket transformation of application PII are host/platform concerns unless a future accepted ADR changes the product boundary.
 
 ## 5. Documentation governance
 
 1. Protected-main code/tests and root `ARCHITECTURE.md` are the primary implementation truth.
 2. PRD defines buyer problems and product acceptance; TRD defines verifiable technical constraints.
-3. API, threat, traceability, test, operability, compliance, UML/ERD, ADR, and doctoring documents refine specific views without overriding implementation truth.
+3. API, threat, traceability, test, operability, compliance, release/provenance, UML/ERD, ADR, and doctoring documents refine specific views without overriding implementation truth.
 4. [`../THREAT_MODEL.md`](../THREAT_MODEL.md) is the explicit threat-analysis view; [`../security-model.md`](../security-model.md) remains the normative runtime security-boundary description.
 5. [`TRACEABILITY.md`](TRACEABILITY.md) maps durable requirements to implementation/test/ADR/standard evidence and must distinguish protected-main evidence from ACTIVE-PR work.
-6. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
-7. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
-8. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, and unresolved template markers.
+6. [`RELEASE_PROVENANCE.md`](RELEASE_PROVENANCE.md) aggregates release acceptance, rollback/recovery and provenance claim boundaries while the detailed verifier and SBOM/attestation contracts remain authoritative in their implementation-specific documents.
+7. A material architecture/product/security ownership change requires an ADR and corresponding documentation update.
+8. Active-PR details use maturity labels and must not be rewritten as already shipped behavior.
+9. Machine-checkable documentation contracts should catch missing files, stale security claims, broken cross-links, false persistence or integration ownership, release/provenance overclaims, and unresolved template markers.
 
 ## 6. Remaining audit obligations after this PR
 
-Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, runbooks, control mappings, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
+Documentation completeness is continuous. After each material protected-main merge, compare changed behavior against this spine, root architecture, security model, threat model, traceability matrix, API contract, release/provenance guide, runbooks, control mappings, and standards references. A future artifact can still become PRESENT-STALE even when this baseline PR was green.
 
 The product is not commercially complete merely because the documentation pack exists; implementation, review, checks, operational acceptance, release evidence, and buyer workflows remain separate gates.
