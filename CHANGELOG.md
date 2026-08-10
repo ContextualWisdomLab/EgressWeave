@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require the connection pool policy to be an exact `EgressConnectionPoolPolicy`
+  at trusted policy construction. A subclass can no longer replace the reviewed
+  finite capacity and keep-alive attributes before HTTPCore pool construction or
+  decision-evidence fingerprinting, while exact immutable pool policy values
+  retain their documented configurable fields.
 - Require the request timeout policy to be an exact `EgressTimeoutPolicy` at
   trusted policy construction. A subclass can no longer replace the reviewed
   `as_httpcore_timeout()` export path before transport dispatch, while exact
