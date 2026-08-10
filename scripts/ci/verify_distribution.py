@@ -24,6 +24,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
 DISTRIBUTION_NAME = "egressweave"
+HASH_CHUNK_SIZE = 1024 * 1024
 CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
     flags=re.MULTILINE,
@@ -197,12 +198,21 @@ def _verify_release_ref(
         )
 
 
+def _sha256_file(archive_path: Path) -> str:
+    """Return a file digest while keeping each binary read bounded to 1 MiB."""
+    digest = hashlib.sha256()
+    with archive_path.open("rb") as archive_file:
+        while chunk := archive_file.read(HASH_CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _write_sha256sums(dist_dir: Path, archives: tuple[Path, Path]) -> Path:
     """Write deterministic SHA-256 checksums for the reviewed distributions."""
     checksum_path = dist_dir / "SHA256SUMS"
     lines: list[str] = []
     for archive_path in sorted(archives, key=lambda path: path.name):
-        digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+        digest = _sha256_file(archive_path)
         lines.append(f"{digest}  {archive_path.name}\n")
     checksum_path.write_text("".join(lines), encoding="ascii")
     return checksum_path
