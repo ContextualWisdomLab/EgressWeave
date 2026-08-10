@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from egressweave import EgressPolicy
@@ -59,3 +61,15 @@ def test_policy_keeps_exact_integer_and_decimal_string_configuration() -> None:
     assert type(decimal_string.max_resolved_addresses) is int
     assert type(decimal_string.max_request_header_fields) is int
     assert type(decimal_string.max_request_bytes) is int
+
+
+def test_policy_configuration_integrity_guide_is_discoverable_and_current() -> None:
+    """Document the supported primitive-value boundary without sandbox claims."""
+    guide_path = Path("docs/research/policy-configuration-integrity.md")
+
+    assert guide_path.is_file()
+    guide = guide_path.read_text(encoding="utf-8")
+    assert "exact built-in `int`" in guide
+    assert "ASCII decimal strings" in guide
+    assert "does not make EgressWeave a Python sandbox" in guide
+    assert "https://docs.python.org/3.14/reference/datamodel.html" in guide
