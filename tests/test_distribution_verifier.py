@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import io
 from pathlib import Path
 
 import pytest
@@ -83,3 +85,55 @@ def test_archive_selection_rejects_additional_publishable_files(tmp_path: Path) 
 
     with pytest.raises(SystemExit, match="unexpected distribution archives"):
         verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
+def test_distribution_digest_reads_only_bounded_chunks() -> None:
+    """Hash a distribution without issuing an unbounded binary read."""
+    verifier = _load_verifier()
+    payload = b"a" * (1_048_576 + 17)
+
+    class GuardedReader(io.BytesIO):
+        """Reject any read that is unbounded or larger than the release budget."""
+
+        def read(self, size: int = -1) -> bytes:
+            assert 0 < size <= 1_048_576
+            return super().read(size)
+
+    class GuardedPath:
+        """Provide only the binary-open surface required by the digest helper."""
+
+        def open(self, mode: str) -> GuardedReader:
+            assert mode == "rb"
+            return GuardedReader(payload)
+
+    assert verifier.HASH_CHUNK_SIZE == 1_048_576
+    assert verifier._sha256_file(GuardedPath()) == hashlib.sha256(payload).hexdigest()
+
+
+def test_checksum_writer_never_uses_path_read_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep checksum generation streaming even for large distribution artifacts."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_payload = b"wheel-bytes"
+    sdist_payload = b"sdist-bytes"
+    wheel_path.write_bytes(wheel_payload)
+    sdist_path.write_bytes(sdist_payload)
+
+    def reject_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"unbounded read_bytes() used for {self.name}")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+
+    checksum_path = verifier._write_sha256sums(
+        tmp_path,
+        (wheel_path, sdist_path),
+    )
+
+    assert checksum_path.read_text(encoding="ascii") == (
+        f"{hashlib.sha256(wheel_payload).hexdigest()}  {wheel_path.name}\n"
+        f"{hashlib.sha256(sdist_payload).hexdigest()}  {sdist_path.name}\n"
+    )
