@@ -98,6 +98,8 @@ def test_documentation_audit_tracks_automation_governance_as_a_canonical_gap() -
     assert "ADR 0003" in row
     assert "Proposed" in row
     assert "IMPLEMENTED-ON-PROTECTED-MAIN" not in row
+    assert "selects one bounded change" in row
+    assert "does not override protected-main workflow source" in row
     assert "work-conserving" in audit.lower()
     assert "dependency" in audit.lower()
     assert "not shipped" in audit.lower() or "not protected-main" in audit.lower()
