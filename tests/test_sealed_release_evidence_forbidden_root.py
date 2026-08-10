@@ -209,3 +209,32 @@ def test_public_writer_normalizes_forbidden_root_resolution_failure(
         )
 
     assert not output_path.parent.exists()
+
+
+@pytest.mark.parametrize("failure_type", [OSError, RuntimeError])
+def test_public_writer_normalizes_forbidden_root_inspection_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_type: type[Exception],
+) -> None:
+    """Normalize filesystem inspection failures before creating output storage."""
+    forbidden_root = tmp_path / "evidence"
+    forbidden_root.mkdir()
+    output_path = tmp_path / "new-parent" / "manifest.json"
+    original_is_symlink = Path.is_symlink
+
+    def fail_forbidden_root(path: Path) -> bool:
+        if path == forbidden_root:
+            raise failure_type("private filesystem inspection detail")
+        return original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", fail_forbidden_root)
+
+    with pytest.raises(SystemExit, match="missing or unsafe"):
+        release_evidence.write_evidence_manifest(
+            MANIFEST,
+            output_path,
+            forbidden_root=forbidden_root,
+        )
+
+    assert not output_path.parent.exists()
