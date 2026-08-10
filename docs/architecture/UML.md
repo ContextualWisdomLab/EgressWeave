@@ -266,3 +266,45 @@ flowchart LR
 ```
 
 EgressWeave is an in-process library, not an independently deployed proxy service on protected main.
+
+## 9. Work-conserving automation control loop
+
+Maturity: **Proposed governance** under ADR 0003. This diagram records the intended maintenance/control-plane decision and does not claim that every protected-main workflow already implements it.
+
+```mermaid
+sequenceDiagram
+    participant Run as EgressWeave maintenance invocation
+    participant Live as Live EgressWeave state
+    participant Dep as Read-only dependency
+    participant Work as Executable EgressWeave lane
+    participant Control as Automation control plane
+
+    Run->>Live: refetch protected main, PRs, issues, exact heads/bases and gates
+    Live-->>Run: fresh executable queue
+    loop while a safe action exists
+        Run->>Work: execute highest-value safe action
+        Work-->>Run: exact result / blocker / merge / proof
+        Run->>Live: refetch affected exact identity
+        alt read-only dependency is waiting
+            Run->>Run: freeze only dependent action and rotate
+        else dependency advancement is observed
+            Run->>Dep: bind new exact dependency identity read-only
+            Dep-->>Run: current prerequisite evidence
+            Run->>Work: advance dependent EgressWeave handoff in same invocation
+        else control-plane error is observed
+            Control-->>Run: bounded observable error evidence
+            Run->>Live: refetch before relying on remembered state
+            Run->>Run: repair same automation only when evidence warrants; keep working
+        end
+    end
+    Run->>Live: first double exit sweep
+    Live-->>Run: remaining actionable lanes?
+    alt safe action found
+        Run->>Work: continue execution
+    else no safe action found
+        Run->>Live: second fresh double exit sweep
+        Live-->>Run: terminate only if still non-actionable or budget exhausted
+    end
+```
+
+A dependency wait, one successful mutation, prompt repair, documentation update, queued check, provider rate limit, or other **control-plane error** is not by itself run completion. A material dependency advancement is an EgressWeave handoff trigger, not a status-only event. The work-conserving rule never grants the model reviewer identity, signing/OIDC capability, or repository-write authority outside the existing writer lease and protected repository governance.
