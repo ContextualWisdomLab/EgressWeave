@@ -65,6 +65,10 @@ They need documented control contributions, reproducible package and release evi
 
 **IMPLEMENTED-ON-PROTECTED-MAIN** for exact 100% owned production statement/branch coverage, public docstring contracts, package acceptance, and multiple security checks. Supply-chain/release hardening beyond the protected-main baseline may exist as **ACTIVE-PR** work and must not be described as shipped until merged.
 
+### PRD-G-007 — Bounded and resumable automation control plane
+
+**ACTIVE-PR.** Repository-local autonomous product development SHALL use one bounded canonical maintainer prompt, keep model execution separate from repository-write/publication authority, and treat a generic scheduled-task failure as a resumable **control-plane incident** rather than product completion. Prompt repair is an intermediate control-plane action and does not replace subsequent repository progress.
+
 ## 6. Functional requirements
 
 ### PRD-FR-001 — Policy construction
@@ -111,6 +115,10 @@ The package SHALL provide deterministic, bounded decision evidence for accepted 
 
 EgressWeave public policy and builder contracts SHALL remain suitable for host-owned naruon and CWL adapters. Host-specific configuration translation SHALL remain outside core and SHALL reuse the public EgressWeave security path rather than introduce a second transport implementation.
 
+### PRD-FR-012 — Canonical automation prompt integrity
+
+The repository-local product-development workflow SHALL load `.github/prompts/hourly-product-maintainer.md` as the single bounded canonical maintainer prompt, reject missing/symlink/over-budget prompt input before model execution, and avoid duplicating the policy in an inline YAML heredoc. This requirement must not broaden repository-write authority, reviewer identity, model egress, signing, publication or release authority.
+
 ## 7. Non-functional requirements
 
 ### Security
@@ -119,12 +127,14 @@ EgressWeave public policy and builder contracts SHALL remain suitable for host-o
 - Never enable redirects or ambient proxy inheritance in guarded clients.
 - Keep secrets and payload contents outside routine library evidence.
 - Preserve exact authority across DNS, TCP, TLS, and HTTP layers.
+- Keep model execution, credential-free verification, repository mutation and publication in separate trust domains.
 
 ### Reliability
 
 - Bound waits and resource consumption.
 - Cancel and clean up loser tasks and rejected streams deterministically.
 - Preserve outer coordinator cancellation where cancellation is part of caller control flow.
+- Resume from generic control-plane failures using fresh exact evidence instead of disabling the recurring loop on an unclassified transient error.
 
 ### Compatibility
 
@@ -139,6 +149,7 @@ EgressWeave public policy and builder contracts SHALL remain suitable for host-o
 - Public/shipped symbol docstrings: 100% under the repository contract.
 - Deterministic offline regressions for security boundaries.
 - Wheel and source-distribution acceptance before release.
+- Machine-checkable prompt path, byte budget, workflow loading and incident-recovery contracts for repository-local autonomous development.
 
 ## 8. Explicit non-goals
 
@@ -150,11 +161,14 @@ The following are **OUT-OF-SCOPE** for EgressWeave core unless a future accepted
 - host-specific integration-adapter implementation and lifecycle, including naruon configuration translation;
 - replacing a firewall, service mesh, cloud egress control, sandbox, or operating-system isolation;
 - arbitrary proxy support, Unix sockets, redirects across authorities, or caller-selected destination IPs;
-- blanket PII masking that would change legitimate application payload behavior.
+- blanket PII masking that would change legitimate application payload behavior;
+- treating automation run records or scheduler incidents as product-owned durable database entities.
 
 ## 9. Commercial acceptance criteria
 
 A buyer-facing release is acceptable only when the exact protected release source satisfies the repository's required CI, security, coverage/docstring, packaging, dependency/supply-chain, provenance/SBOM where applicable, independent review, release and operational-acceptance gates. A green feature branch, model review comment, or stale predecessor check is not release evidence.
+
+Repository-local automation acceptance additionally requires the exact integrated workflow to load the reviewed bounded canonical prompt, keep the model non-publishing, verify model changes in the credential-free stage, and demonstrate that generic control-plane errors resume through fresh-state recovery. The current canonical-prompt implementation remains **ACTIVE-PR** until protected-main integration and operational acceptance.
 
 Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, host-owned adapters, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and [Release, rollback, and provenance](RELEASE_PROVENANCE.md).
 
@@ -172,4 +186,5 @@ Host organizations remain responsible for service-level objectives, incident ope
 - Product/engineering traceability: [`TRACEABILITY.md`](TRACEABILITY.md)
 - Documentation audit: [`DOCUMENTATION_AUDIT.md`](DOCUMENTATION_AUDIT.md)
 - ADR index: [`../adr/README.md`](../adr/README.md)
+- Bounded canonical prompt decision: [`../adr/0004-bounded-canonical-automation-prompt.md`](../adr/0004-bounded-canonical-automation-prompt.md)
 - Standards and research: [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md)
