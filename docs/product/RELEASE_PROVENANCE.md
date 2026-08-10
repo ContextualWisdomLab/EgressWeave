@@ -23,7 +23,7 @@ A buyer-facing EgressWeave release is acceptable only from an exact integrated p
 3. required SAST, dependency/supply-chain and repository security gates genuinely execute rather than being skipped or replaced by a green wrapper;
 4. the final wheel, source distribution, SBOMs, source identity, checksums, and release-evidence handoff are digest-bound and independently revalidated according to `docs/sealed-release-evidence.md`;
 5. qualifying independent review and protected-branch/ruleset requirements are satisfied;
-6. any credential-bearing attestation or publisher consumes only the already verified immutable handoff and does not rebuild or execute caller-controlled source under elevated credentials; and
+6. any elevated signing, attestation, or publication stage used for the release has its own separately accepted organization-owned implementation and exact-tree verification evidence; and
 7. post-publication verification confirms the intended package/release artifacts and provenance evidence rather than treating a workflow completion status as sufficient proof.
 
 Queued, pending, skipped-required, cancelled, absent, stale-head, predecessor-head, synthetic-only, comment-only, author-only, fail-open, or failed evidence is not release acceptance.
@@ -51,6 +51,8 @@ The detailed compatibility boundary for CycloneDX and attestation consumption re
 ## Active-PR maturity boundary
 
 **ACTIVE-PR.** Release-evidence, publisher-removal, scheduler, attestation, SBOM, compatibility, or verification hardening may exist on dependency-aware pull-request stacks beyond protected main. Those changes are not shipped behavior until they reach the protected branch through their actual gates.
+
+The current credential-bearing handoff consumer is an **ACTIVE-PR target**, not protected-main behavior. If that target is accepted, it must consume only an already credential-free reverified immutable handoff, independently bind exact repository/source and payload digests, and must not rebuild or execute caller-controlled source under signing, attestation, publication, or other elevated credentials.
 
 Documentation may describe an ACTIVE-PR target to make ownership and migration visible, but it must not replace the protected-main release truth or transfer a predecessor PR's checks, review, approval, scanner result, or artifact identity. If an active stack changes the release trust boundary, the integrated tree must be re-audited against this document, the root architecture, threat model, operability guidance, traceability matrix, and relevant ADRs before the maturity label is promoted.
 
