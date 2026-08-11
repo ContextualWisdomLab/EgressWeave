@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -13,6 +15,10 @@ from egressweave.validation import (
     EgressNotAllowedError,
     _make_validated_egress_url,
 )
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+_REQUEST_METHOD_GUIDE = _REPOSITORY_ROOT / "docs" / "research" / "canonical-request-methods.md"
+_CHANGELOG = _REPOSITORY_ROOT / "CHANGELOG.md"
 
 
 def _validated_example_url():
@@ -30,6 +36,11 @@ def _assert_generic_denial_has_no_private_provenance(error: EgressNotAllowedErro
     assert str(error) == EGRESS_NOT_ALLOWED
     assert error.__cause__ is None
     assert error.__context__ is None
+
+
+def _normalized_document(path: Path) -> str:
+    """Return documentation text with insignificant whitespace collapsed."""
+    return " ".join(path.read_text(encoding="utf-8").split())
 
 
 def test_sync_invalid_method_denial_erases_normalization_provenance() -> None:
@@ -57,3 +68,24 @@ async def test_async_invalid_method_denial_erases_normalization_provenance() -> 
         _assert_generic_denial_has_no_private_provenance(captured.value)
     finally:
         await transport.aclose()
+
+
+def test_request_method_guide_records_non_leaking_denial_provenance() -> None:
+    """Keep the operator-facing request-method denial boundary explicit."""
+    guide = _normalized_document(_REQUEST_METHOD_GUIDE)
+
+    assert (
+        "Malformed method denials are raised only after method normalization has "
+        "left its exception context, so the caller-visible `EgressNotAllowedError` "
+        "has neither a private cause nor a private context."
+    ) in guide
+
+
+def test_changelog_records_request_method_provenance_hardening() -> None:
+    """Record the pre-release request-method diagnostic hardening."""
+    changelog = _normalized_document(_CHANGELOG)
+
+    assert (
+        "Erase private request-method normalization exception provenance from "
+        "caller-visible policy denials."
+    ) in changelog
