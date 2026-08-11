@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import zipfile
@@ -53,11 +54,11 @@ def _wheel_bytes(version: str) -> bytes:
     return output.getvalue()
 
 
-def test_transient_same_size_wheel_bytes_cannot_escape_digest_binding(
+def test_transient_same_size_wheel_bytes_cannot_enter_snapshot_digest_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fail closed if parser-visible bytes differ from the digest-bound artifact."""
+    """Bind parsed metadata and the SBOM digest to one immutable artifact snapshot."""
     generator = _load_generator()
     wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
     accepted_bytes = _wheel_bytes("0.3.0")
@@ -80,10 +81,10 @@ def test_transient_same_size_wheel_bytes_cannot_escape_digest_binding(
         stream.seek(0)
         swapped = True
 
-    def restore_after_transient_parse(payload: bytes, source: str):
+    def restore_after_snapshot_parse(payload: bytes, source: str):
         nonlocal restored
         parsed = original_parse_metadata(payload, source)
-        assert parsed["Version"] == "9.9.9"
+        assert parsed["Version"] == "0.3.0"
         wheel_path.write_bytes(accepted_bytes)
         assert active_stream is not None
         active_stream.seek(0, 2)
@@ -92,11 +93,14 @@ def test_transient_same_size_wheel_bytes_cannot_escape_digest_binding(
         return parsed
 
     monkeypatch.setattr(generator, "_preflight_wheel_members", swap_after_preflight)
-    monkeypatch.setattr(generator, "_parse_metadata", restore_after_transient_parse)
+    monkeypatch.setattr(generator, "_parse_metadata", restore_after_snapshot_parse)
 
-    with pytest.raises(SystemExit, match="changed during verification"):
-        generator.build_sbom(wheel_path, MANIFEST_PATH)
+    sbom = generator.build_sbom(wheel_path, MANIFEST_PATH)
 
+    assert sbom["metadata"]["component"]["version"] == "0.3.0"
+    assert sbom["metadata"]["component"]["hashes"] == [
+        {"alg": "SHA-256", "content": hashlib.sha256(accepted_bytes).hexdigest()}
+    ]
     assert swapped is True
     assert restored is True
     assert wheel_path.read_bytes() == accepted_bytes
