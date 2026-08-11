@@ -53,9 +53,9 @@ candidate fail at a later digest or identity check; the control does not claim
 immutable local storage and never converts such a race into trusted evidence.
 
 The handoff-manifest parent must already exist as a real canonical directory. The
-handoff path must remain outside the evidence directory. The preparer never
-creates convenience directory aliases and never follows an output-path symbolic
-link.
+handoff path must name one regular file and remain outside the evidence directory.
+The preparer never creates convenience directory aliases and never follows an
+output-path symbolic link.
 
 ## Credential-free command
 
@@ -68,8 +68,8 @@ PYTHONPATH=src python scripts/ci/prepare_release_evidence.py \
   --handoff-manifest "$RUNNER_TEMP/release-evidence-manifest.json" \
   --repository ContextualWisdomLab/EgressWeave \
   --source-sha "$GITHUB_SHA" \
-  --dependency-manifest scripts/ci/runtime-dependency-manifest.json \
-  --runtime-lock requirements-runtime.txt
+  --dependency-manifest scripts/ci/release_runtime_dependencies.json \
+  --runtime-lock requirements-ci.txt
 ```
 
 The command must run in a job whose token has no write permission and whose
