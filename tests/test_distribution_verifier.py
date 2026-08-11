@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import io
 from pathlib import Path
 
 import pytest
@@ -83,3 +85,219 @@ def test_archive_selection_rejects_additional_publishable_files(tmp_path: Path) 
 
     with pytest.raises(SystemExit, match="unexpected distribution archives"):
         verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
+def test_archive_selection_rejects_oversized_distribution_before_parser(
+    tmp_path: Path,
+) -> None:
+    """Reject an oversized canonical archive before ZIP or tar parsing can start."""
+    verifier = _load_verifier()
+    canonical_wheel = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    canonical_sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    canonical_wheel.write_bytes(b"wheel")
+    with canonical_sdist.open("wb") as sdist_file:
+        sdist_file.truncate(256 * 1024 * 1024 + 1)
+
+    assert verifier.MAX_DISTRIBUTION_BYTES == 256 * 1024 * 1024
+    with pytest.raises(SystemExit, match="distribution archive exceeds"):
+        verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
+@pytest.mark.parametrize(
+    "linked_name",
+    [
+        "egressweave-0.3.0-py3-none-any.whl",
+        "egressweave-0.3.0.tar.gz",
+    ],
+)
+def test_archive_selection_rejects_symlinked_distribution(
+    tmp_path: Path,
+    linked_name: str,
+) -> None:
+    """Reject a canonical archive path that can retarget after pre-parser checks."""
+    verifier = _load_verifier()
+    canonical_wheel = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    canonical_sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    payload = tmp_path / "distribution-payload.bin"
+    payload.write_bytes(b"archive")
+    canonical_wheel.write_bytes(b"wheel")
+    canonical_sdist.write_bytes(b"sdist")
+    linked_path = tmp_path / linked_name
+    linked_path.unlink()
+    linked_path.symlink_to(payload)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+
+def test_checksum_writer_rejects_archive_symlink_retarget_after_selection(
+    tmp_path: Path,
+) -> None:
+    """Reject a distribution path retargeted after the initial archive preflight."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    selected_archives = verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement.bin"
+    replacement.write_bytes(b"different-unreviewed-bytes")
+    wheel_path.unlink()
+    wheel_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._write_sha256sums(tmp_path, selected_archives)
+
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
+def test_checksum_writer_rejects_bytes_changed_after_parser_snapshot(tmp_path: Path) -> None:
+    """Never checksum bytes that differ from the snapshots accepted by parsers."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_payload = b"reviewed-wheel"
+    sdist_payload = b"reviewed-sdist"
+    wheel_path.write_bytes(wheel_payload)
+    sdist_path.write_bytes(sdist_payload)
+    selected_archives = verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+    expected_digests = {
+        wheel_path: hashlib.sha256(wheel_payload).hexdigest(),
+        sdist_path: hashlib.sha256(sdist_payload).hexdigest(),
+    }
+
+    wheel_path.write_bytes(b"x" * len(wheel_payload))
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._write_sha256sums(
+            tmp_path,
+            selected_archives,
+            expected_digests=expected_digests,
+        )
+
+    assert not (tmp_path / "SHA256SUMS").exists()
+
+
+def test_wheel_parser_rejects_archive_symlink_retarget_after_selection(tmp_path: Path) -> None:
+    """Never follow a wheel path retargeted after the canonical pre-parser check."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement-wheel.bin"
+    replacement.write_bytes(b"unreviewed-wheel")
+    wheel_path.unlink()
+    wheel_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._verify_wheel(wheel_path, {"version": "0.3.0"})
+
+
+def test_sdist_parser_rejects_archive_symlink_retarget_after_selection(tmp_path: Path) -> None:
+    """Never follow an sdist path retargeted after the canonical pre-parser check."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"reviewed-wheel")
+    sdist_path.write_bytes(b"reviewed-sdist")
+    verifier._select_archives(tmp_path, "egressweave", "0.3.0")
+
+    replacement = tmp_path / "replacement-sdist.bin"
+    replacement.write_bytes(b"unreviewed-sdist")
+    sdist_path.unlink()
+    sdist_path.symlink_to(replacement)
+
+    with pytest.raises(SystemExit, match="distribution archive is missing or unsafe"):
+        verifier._verify_sdist(sdist_path, {"version": "0.3.0"})
+
+
+def test_distribution_digest_reads_only_bounded_chunks() -> None:
+    """Hash a distribution stream without issuing an unbounded binary read."""
+    verifier = _load_verifier()
+    payload = b"a" * (1_048_576 + 17)
+
+    class GuardedReader(io.BytesIO):
+        """Reject any read that is unbounded or larger than the release budget."""
+
+        def read(self, size: int = -1) -> bytes:
+            assert 0 < size <= 1_048_576
+            return super().read(size)
+
+    assert verifier.HASH_CHUNK_SIZE == 1_048_576
+    assert verifier._sha256_stream(GuardedReader(payload)) == hashlib.sha256(payload).hexdigest()
+
+
+def test_checksum_writer_never_uses_path_read_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep checksum generation streaming even for large distribution artifacts."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_payload = b"wheel-bytes"
+    sdist_payload = b"sdist-bytes"
+    wheel_path.write_bytes(wheel_payload)
+    sdist_path.write_bytes(sdist_payload)
+
+    def reject_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"unbounded read_bytes() used for {self.name}")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+
+    checksum_path = verifier._write_sha256sums(
+        tmp_path,
+        (wheel_path, sdist_path),
+    )
+
+    assert checksum_path.read_text(encoding="ascii") == (
+        f"{hashlib.sha256(wheel_payload).hexdigest()}  {wheel_path.name}\n"
+        f"{hashlib.sha256(sdist_payload).hexdigest()}  {sdist_path.name}\n"
+    )
+
+
+def test_checksum_writer_pins_lf_newline_translation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Require explicit LF translation when creating deterministic SHA256SUMS."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"wheel-bytes")
+    sdist_path.write_bytes(b"sdist-bytes")
+    original_open = Path.open
+    observed_newlines: list[str | None] = []
+
+    def recording_open(self: Path, *args, **kwargs):
+        if self.name == "SHA256SUMS" and args and args[0] == "x":
+            observed_newlines.append(kwargs.get("newline"))
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", recording_open)
+
+    checksum_path = verifier._write_sha256sums(tmp_path, (wheel_path, sdist_path))
+
+    assert observed_newlines == ["\n"]
+    assert b"\r\n" not in checksum_path.read_bytes()
+
+
+def test_checksum_writer_rejects_preexisting_symlink_output(tmp_path: Path) -> None:
+    """Never follow a preexisting SHA256SUMS symlink during release verification."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / "egressweave-0.3.0-py3-none-any.whl"
+    sdist_path = tmp_path / "egressweave-0.3.0.tar.gz"
+    wheel_path.write_bytes(b"wheel")
+    sdist_path.write_bytes(b"sdist")
+    victim_path = tmp_path / "victim.txt"
+    victim_path.write_text("unchanged\n", encoding="ascii")
+    (tmp_path / "SHA256SUMS").symlink_to(victim_path)
+
+    with pytest.raises(SystemExit, match="checksum output path already exists or is unsafe"):
+        verifier._write_sha256sums(tmp_path, (wheel_path, sdist_path))
+
+    assert victim_path.read_text(encoding="ascii") == "unchanged\n"
