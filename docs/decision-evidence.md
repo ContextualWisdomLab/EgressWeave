@@ -11,6 +11,23 @@ current `EgressPolicy`, and returns an immutable `EgressDecisionEvidence`.
 Tampered or stale validation state fails with the same generic
 `EgressNotAllowedError` as transport construction.
 
+## Versioned schema and artifact contract
+
+`get_decision_evidence_json_schema()` loads a detached copy of
+`egressweave/schemas/decision-evidence-v1.schema.json`, a JSON Schema Draft 2020-12
+resource. The schema is included in both the wheel and the source distribution,
+and the release verifier rejects either artifact when the
+resource is missing. Callers can validate `evidence.as_dict()` without adding a
+JSON Schema runtime dependency to EgressWeave.
+
+The v1 contract requires every emitted field, including the non-empty
+`address_count` total and its IPv4/IPv6 family counts. `allowed_methods` may be
+an intentionally empty deny-all set, but any method token must already be an
+uppercase normalized token and `CONNECT` is never accepted. These checks
+describe evidence for a decision that was already authorized; the artifact is
+subject to purpose limitation and does not authorize a request, path,
+credential, tenant, or destination by itself.
+
 ## Data minimization
 
 The evidence includes:
