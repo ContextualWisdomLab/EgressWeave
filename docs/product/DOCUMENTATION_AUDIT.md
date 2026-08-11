@@ -2,7 +2,7 @@
 
 Audit date: 2026-08-10
 
-Baseline inspected: protected `main` at `10d0c51daf2ad278d66f43be479df8cf6b08ba6d` before this documentation PR.
+Baseline inspected: protected `main` at `52a5c6a0862e0d035b0698b79a0e8556269e0b00` before this documentation PR.
 
 ## 1. Purpose
 

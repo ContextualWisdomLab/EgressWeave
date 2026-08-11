@@ -108,14 +108,15 @@ def test_documentation_audit_tracks_automation_governance_as_a_canonical_gap() -
 def test_traceability_maps_automation_governance_to_decision_and_evidence() -> None:
     """Connect the durable automation decision to machine-testable evidence and maturity."""
     traceability = _read("docs/product/TRACEABILITY.md")
-    assert "Automation governance" in traceability
-    assert "ADR 0003" in traceability
-    assert "tests/test_documentation_automation_governance.py" in traceability
-    assert "PROPOSED-GOVERNANCE" in traceability
+    row = _line_containing(traceability, "Automation governance:")
+    assert "ADR 0003" in row
+    assert "PROPOSED-GOVERNANCE" in row
+    assert "IMPLEMENTED-ON-PROTECTED-MAIN" not in row
+    assert "tests/test_documentation_automation_governance.py" in row
     for required_phrase in (
         "work-conserving",
         "dependency handoff",
         "control-plane incident",
         "double exit sweep",
     ):
-        assert required_phrase in traceability.lower()
+        assert required_phrase in row.lower()
