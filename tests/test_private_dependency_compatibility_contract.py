@@ -12,6 +12,9 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only on Python 3.10
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _PYPROJECT = _REPOSITORY_ROOT / "pyproject.toml"
 _CI_REQUIREMENTS = _REPOSITORY_ROOT / "requirements-ci.txt"
+_COMPATIBILITY_GUIDE = (
+    _REPOSITORY_ROOT / "docs" / "research" / "private-http-dependency-compatibility.md"
+)
 _PRIVATE_DEPENDENCY_VERSIONS = {
     "httpx": "0.28.1",
     "httpcore": "1.0.9",
@@ -43,3 +46,16 @@ def test_private_http_dependency_identity_matches_the_hash_locked_ci_pair() -> N
 
     for package_name, version in _PRIVATE_DEPENDENCY_VERSIONS.items():
         assert f"{package_name}=={version} \\\n" in requirements
+
+
+def test_private_http_compatibility_guide_preserves_upgrade_and_host_impact_rules() -> None:
+    """Keep the exact-pin trade-off and widening procedure explicit and reviewable."""
+    guide = _COMPATIBILITY_GUIDE.read_text(encoding="utf-8")
+
+    for package_name, version in _PRIVATE_DEPENDENCY_VERSIONS.items():
+        assert f"`{package_name}=={version}`" in guide
+    assert "conflict with a host application" in guide
+    assert "explicit compatibility matrix" in guide
+    assert "before changing the advertised pair" in guide
+    assert "private surface and behavior" in guide
+    assert "fail dependency resolution" in guide
