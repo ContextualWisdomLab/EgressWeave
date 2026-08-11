@@ -83,6 +83,45 @@ async def test_connection_attempts_are_staggered(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_connection_stagger_waits_when_scheduler_runs_early(monkeypatch) -> None:
+    """Keep the real-start backoff when a scheduler wake-up is premature."""
+    monkeypatch.setattr(
+        transport_module,
+        "_CONNECTION_ATTEMPT_DELAY_SECONDS",
+        0.01,
+    )
+    backend = _backend_with_three_addresses()
+    stream = object()
+    first_started = asyncio.Event()
+    attempted: list[str] = []
+
+    async def connect(address, port, timeout, local_address, socket_options):
+        attempted.append(address)
+        if address == "93.184.216.34":
+            first_started.set()
+            await asyncio.sleep(0.02)
+            raise OSError("first pinned address failed")
+        return stream
+
+    monkeypatch.setattr(backend, "_connect_validated_ip_address", connect)
+    real_wait = asyncio.wait
+    wait_calls = 0
+
+    async def early_wait(tasks, **kwargs):
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            await first_started.wait()
+            return set(), set(tasks)
+        return await real_wait(tasks, **kwargs)
+
+    monkeypatch.setattr(transport_module.asyncio, "wait", early_wait)
+
+    assert await backend.connect_tcp("api.example.com", 443, timeout=0.2) is stream
+    assert attempted == ["93.184.216.34", "1.1.1.1"]
+
+
+@pytest.mark.asyncio
 async def test_first_success_prevents_unnecessary_connection_attempts(monkeypatch) -> None:
     monkeypatch.setattr(
         transport_module,
