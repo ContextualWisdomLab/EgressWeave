@@ -138,6 +138,23 @@ def test_release_tag_creation_rechecks_the_current_main_head() -> None:
     assert "Protected main moved after artifact verification" in tag_job
 
 
+def test_pypi_staging_rechecks_verified_distribution_digests_before_upload() -> None:
+    """Bind copied PyPI staging bytes to the verifier-issued SHA256SUMS manifest."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    build_job = workflow.split("  build-distributions:", maxsplit=1)[1].split(
+        "  create-release-tag:", maxsplit=1
+    )[0]
+    prepare_step = build_job.split(
+        "      - name: Prepare the canonical PyPI-only artifact set",
+        maxsplit=1,
+    )[1].split("      - name: Upload complete checksummed release evidence", maxsplit=1)[0]
+
+    assert "set -euo pipefail" in prepare_step
+    assert "cp dist/*.whl dist/*.tar.gz publish-dist/" in prepare_step
+    assert "cd publish-dist" in prepare_step
+    assert "sha256sum --check --strict ../dist/SHA256SUMS" in prepare_step
+
+
 def test_pypi_job_receives_only_canonical_distribution_artifacts() -> None:
     """Limit the OIDC-enabled job to immutable artifact retrieval and publication."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
