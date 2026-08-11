@@ -69,6 +69,13 @@ from egressweave.timeout_policy import (
 )
 
 
+def _require_exact_method_string(value: object) -> str:
+    """Return a built-in HTTP method string without subclass dispatch."""
+    if type(value) is not str:
+        raise TypeError("allowed_methods must use exact built-in strings")
+    return value
+
+
 @dataclass(frozen=True)
 class EgressPolicy:
     """Immutable outbound-egress allowlist and resource policy.
@@ -244,11 +251,12 @@ class EgressPolicy:
 
         method_values: Iterable[object]
         if isinstance(self.allowed_methods, str):
-            method_values = self.allowed_methods.split(",")
+            method_values = _require_exact_method_string(self.allowed_methods).split(",")
         else:
             method_values = self.allowed_methods
         normalized_methods = frozenset(
-            _normalize_allowed_method(method) for method in method_values
+            _normalize_allowed_method(_require_exact_method_string(method))
+            for method in method_values
         )
         normalized_max_resolved_addresses = _normalize_max_resolved_addresses(
             self.max_resolved_addresses
@@ -371,7 +379,7 @@ class EgressPolicy:
 
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
-            method_items = allowed_methods.split(",")
+            method_items = _require_exact_method_string(allowed_methods).split(",")
         else:
             method_items = allowed_methods
 
@@ -434,7 +442,7 @@ class EgressPolicy:
         )
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
-            method_items = allowed_methods.split(",")
+            method_items = _require_exact_method_string(allowed_methods).split(",")
         else:
             method_items = allowed_methods
 
