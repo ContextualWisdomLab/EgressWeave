@@ -319,7 +319,7 @@ def _resolve_all_global_addresses(
         worker_start_failed = False
         try:
             worker.start()
-        except BaseException as exc:
+        except Exception as exc:  # noqa: BLE001
             _DNS_RESOLUTION_SLOTS.release()
             flight.error = exc
             _complete_dns_resolution_flight(key, flight)
