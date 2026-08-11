@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import re
 from importlib import resources
+from pathlib import Path
 
 import egressweave
 from egressweave.validation import _make_validated_egress_url
 
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _METHOD_ITEM_SCHEMA = {
     "type": "string",
     "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
@@ -148,3 +150,17 @@ def test_schema_is_a_packaged_utf8_json_resource() -> None:
         packaged_schema = json.load(schema_file)
 
     assert packaged_schema == _load_schema()
+
+
+def test_distribution_verifier_requires_schema_in_wheel_and_sdist() -> None:
+    """Keep the versioned schema inside both independently verified artifacts."""
+    verifier = (_REPOSITORY_ROOT / "scripts/ci/verify_distribution.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        'f"{DISTRIBUTION_NAME}/schemas/decision-evidence-v1.schema.json"'
+        in verifier
+    )
+    assert "decision-evidence-v1.schema.json" in verifier
+    assert "src/{DISTRIBUTION_NAME}/schemas/" in verifier
