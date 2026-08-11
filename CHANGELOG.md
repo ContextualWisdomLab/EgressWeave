@@ -64,6 +64,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   during trusted construction. Timeout-policy subclasses are rejected before
   transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
   preserving the reviewed finite ceilings as the authoritative configuration.
+- Require the connection pool policy to use the exact `EgressConnectionPoolPolicy`
+  type during trusted construction. Connection-pool policy subclasses are
+  rejected before subclass-controlled attributes can diverge from reviewed
+  finite pool capacity and fingerprinting.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
