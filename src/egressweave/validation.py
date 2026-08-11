@@ -303,6 +303,7 @@ def _resolve_all_global_addresses(
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
         def resolve_on_worker() -> None:
+            """Publish one shared resolver address flight and release its worker slot."""
             try:
                 flight.raw_addresses = _resolve_raw_addresses_blocking(hostname, port)
             except Exception as exc:  # noqa: BLE001
