@@ -7,6 +7,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Add the packaged JSON Schema Draft 2020-12 resource
+  `decision-evidence-v1.schema.json` and public detached loader
+  `get_decision_evidence_json_schema()` for provider-neutral validation and
+  interchange of `EgressDecisionEvidence`. The schema accepts an empty
+  `allowed_methods` array when the runtime policy intentionally denies every
+  request method; present entries are unique uppercase EgressWeave-normalized
+  RFC 9110 token strings and reject `CONNECT`. It publishes family-specific IPv4
+  and IPv6 family counts; consumers sum them when a total is needed rather
+  than trusting a redundant field that could contradict them. The schema is not an
+  authorization decision or cryptographic signature, and consumers remain
+  responsible for purpose limitation, tenant authorization, retention, and
+  disclosure policy.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
