@@ -39,7 +39,11 @@ class _SyntheticThreadStartFailure(Exception):
     """Model a non-RuntimeError ordinary failure before the resolver worker starts."""
 
 
-def _install_failing_resolver_thread(monkeypatch, failure: Exception) -> None:
+class _SyntheticThreadStartInterrupt(BaseException):
+    """Model a process-control interruption before the resolver worker starts."""
+
+
+def _install_failing_resolver_thread(monkeypatch, failure: BaseException) -> None:
     """Fail only EgressWeave's resolver thread while preserving other threads."""
     original_thread = validation.threading.Thread
 
@@ -96,3 +100,24 @@ def test_dns_worker_start_non_runtime_failure_fails_closed(monkeypatch) -> None:
         monkeypatch,
         _SyntheticThreadStartFailure("private thread-start detail"),
     )
+
+
+def test_dns_worker_start_base_exception_cleans_before_propagating(monkeypatch) -> None:
+    """Release owned resolver state before propagating process-control failures."""
+    slots = _CountingResolutionSlots()
+    failure = _SyntheticThreadStartInterrupt("synthetic process-control interruption")
+    monkeypatch.setattr(validation, "_DNS_RESOLUTION_SLOTS", slots)
+    _install_failing_resolver_thread(monkeypatch, failure)
+
+    try:
+        with pytest.raises(_SyntheticThreadStartInterrupt) as exc_info:
+            validation._resolve_all_global_addresses(_HOSTNAME, _PORT, _POLICY)
+
+        assert exc_info.value is failure
+        assert slots.acquire_count == 1
+        assert slots.release_count == slots.acquire_count
+        with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
+            assert _AUTHORITY_KEY not in validation._DNS_RESOLUTION_FLIGHTS
+    finally:
+        with validation._DNS_RESOLUTION_FLIGHTS_LOCK:
+            validation._DNS_RESOLUTION_FLIGHTS.pop(_AUTHORITY_KEY, None)
