@@ -10,8 +10,11 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType
+from typing import TypeVar
 
 import pytest
+
+_SemanticArchiveSelf = TypeVar("_SemanticArchiveSelf")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
@@ -151,7 +154,7 @@ class _SemanticArchive:
         self._members = members
         self._extracted = extracted
 
-    def __enter__(self) -> _SemanticArchive:
+    def __enter__(self: _SemanticArchiveSelf) -> _SemanticArchiveSelf:
         """Return this archive double from the context manager."""
         return self
 
