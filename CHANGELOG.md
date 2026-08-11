@@ -71,6 +71,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Pin the credential-free verifier to a reviewed Python 3.13
+  `python@sha256:<64-hex>` digest, validate it before Docker execution, and
+  remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
 - Enforce one hard connection deadline across every staggered asynchronous
   attempt and coordinator wait, and make the synchronous pinned transport refuse
   a TCP attempt when the zero remaining connection budget is already exhausted.

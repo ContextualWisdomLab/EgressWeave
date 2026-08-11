@@ -28,6 +28,13 @@ def test_verifier_uses_one_reviewed_immutable_python_image_digest() -> None:
     assert "RepoDigests" not in workflow
     assert 'FROM ${VERIFIER_BASE_IMAGE}' in workflow
 
+    validation = workflow.index(
+        '[[ ! "$VERIFIER_BASE_IMAGE" =~ ^python@sha256:[0-9a-f]{64}$ ]]'
+    )
+    pull = workflow.index('docker pull "$VERIFIER_BASE_IMAGE"')
+    from_reference = workflow.index("FROM ${VERIFIER_BASE_IMAGE}")
+    assert validation < pull < from_reference
+
 
 def test_verifier_rejects_non_digest_base_image_configuration() -> None:
     """Keep the reviewed image contract fail closed before Docker executes it."""
