@@ -17,6 +17,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
 MANIFEST_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "release_runtime_dependencies.json"
 EXPECTED_MAX_ARCHIVE_MEMBERS = 10_000
+GENERIC_REJECTION = "release artifact failed verification"
 
 
 def _load_generator() -> ModuleType:
@@ -79,7 +80,7 @@ def test_sdist_member_bound_does_not_materialize_getmembers(
 
     monkeypatch.setattr(generator.tarfile.TarFile, "getmembers", unexpected_getmembers)
 
-    with pytest.raises(SystemExit, match="archive-member safety bound"):
+    with pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator.build_sbom(sdist_path, MANIFEST_PATH)
 
 
@@ -197,18 +198,17 @@ def test_sdist_preflight_spools_one_validated_expanded_stream(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    ("member_type", "payload", "message"),
+    ("member_type", "payload"),
     [
-        (tarfile.SYMTYPE, b"", "link or special file"),
-        (b"X", b"", "unsupported tar form"),
-        (tarfile.XHDTYPE, b"GNU.sparse.map=0,1\n", "sparse archive form"),
+        (tarfile.SYMTYPE, b""),
+        (b"X", b""),
+        (tarfile.XHDTYPE, b"GNU.sparse.map=0,1\n"),
     ],
 )
 def test_sdist_preflight_rejects_physical_member_forms(
     tmp_path: Path,
     member_type: bytes,
     payload: bytes,
-    message: str,
 ) -> None:
     """Reject links, unknown records, and sparse extension metadata in preflight."""
     generator = _load_generator()
@@ -217,7 +217,7 @@ def test_sdist_preflight_rejects_physical_member_forms(
     member.type = member_type
     _write_raw_sdist(sdist, [(member, payload)])
 
-    with sdist.open("rb") as stream, pytest.raises(SystemExit, match=message):
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
 
@@ -230,7 +230,7 @@ def test_sdist_preflight_rejects_oversized_extension_header(tmp_path: Path) -> N
     payload = b"x" * (generator.MAX_TAR_EXTENSION_BYTES + 1)
     _write_raw_sdist(sdist, [(member, payload)])
 
-    with sdist.open("rb") as stream, pytest.raises(SystemExit, match="extension header"):
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
 
@@ -240,7 +240,7 @@ def test_sdist_preflight_rejects_nonzero_trailing_expanded_bytes(tmp_path: Path)
     sdist = tmp_path / "trailing-bytes.tar.gz"
     _write_raw_sdist(sdist, [], trailing=b"unexpected")
 
-    with sdist.open("rb") as stream, pytest.raises(SystemExit, match="valid gzip tar"):
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
 
@@ -370,29 +370,29 @@ def test_tar_preflight_bounds_and_special_forms(
     member.type = b"x"
     _write_raw_sdist(extension, [(member, b"x")])
     monkeypatch.setattr(generator, "MAX_TAR_EXTENSION_BYTES", 0)
-    with extension.open("rb") as stream, pytest.raises(SystemExit, match="extension"):
+    with extension.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
     ordinary = tmp_path / "ordinary.tar.gz"
     _write_valid_sdist(ordinary)
     monkeypatch.setattr(generator, "MAX_TAR_EXTENSION_BYTES", 1_048_576)
     monkeypatch.setattr(generator, "MAX_EXPANDED_TAR_BYTES", 511)
-    with ordinary.open("rb") as stream, pytest.raises(SystemExit, match="expanded-tar"):
+    with ordinary.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
     monkeypatch.setattr(generator, "MAX_EXPANDED_TAR_BYTES", 512 * 1024 * 1024)
-    for index, (type_flag, payload, message) in enumerate(
+    for index, (type_flag, payload) in enumerate(
         [
-            (b"2", b"", "link or special"),
-            (b"Z", b"", "unsupported tar form"),
-            (b"x", b"20 GNU.sparse.name=x\n", "sparse archive form"),
+            (b"2", b""),
+            (b"Z", b""),
+            (b"x", b"20 GNU.sparse.name=x\n"),
         ]
     ):
         path = tmp_path / f"special-{index}.tar.gz"
         member = tarfile.TarInfo("entry")
         member.type = type_flag
         _write_raw_sdist(path, [(member, payload)])
-        with path.open("rb") as stream, pytest.raises(SystemExit, match=message):
+        with path.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
             generator._preflight_sdist_members(stream)
 
 
@@ -403,7 +403,7 @@ def test_tar_preflight_normalizes_corruption_and_rewinds(tmp_path: Path) -> None
     corrupt = tmp_path / "corrupt.tar.gz"
     corrupt.write_bytes(b"not gzip")
     with corrupt.open("rb") as stream:
-        with pytest.raises(SystemExit, match="not a valid gzip tar"):
+        with pytest.raises(SystemExit, match=GENERIC_REJECTION):
             generator._preflight_sdist_members(stream)
         assert stream.tell() == 0
 
@@ -412,40 +412,37 @@ def test_tar_preflight_normalizes_corruption_and_rewinds(tmp_path: Path) -> None
     damaged_payload[15:60] = b"\xff" * 45
     damaged.write_bytes(damaged_payload)
     with damaged.open("rb") as stream:
-        with pytest.raises(SystemExit, match="not a valid gzip tar"):
+        with pytest.raises(SystemExit, match=GENERIC_REJECTION):
             generator._preflight_sdist_members(stream)
         assert stream.tell() == 0
 
     trailing = tmp_path / "trailing.tar.gz"
     _write_raw_sdist(trailing, [], trailing=b"X")
-    with trailing.open("rb") as stream, pytest.raises(
-        SystemExit,
-        match="not a valid gzip tar",
-    ):
+    with trailing.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._preflight_sdist_members(stream)
 
 
 def test_streaming_sdist_preserves_semantic_archive_checks(tmp_path: Path) -> None:
-    """Reject duplicate, unsafe, missing, and oversized package metadata."""
+    """Reject duplicate, unsafe, missing, and oversized package metadata generically."""
     generator = _load_generator()
 
     duplicate = tmp_path / "duplicate.tar.gz"
     one = tarfile.TarInfo("root/file")
     two = tarfile.TarInfo("root/file")
     _write_raw_sdist(duplicate, [(one, b""), (two, b"")])
-    with duplicate.open("rb") as stream, pytest.raises(SystemExit, match="duplicate"):
+    with duplicate.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(stream)
 
     unsafe = tmp_path / "unsafe.tar.gz"
     member = tarfile.TarInfo("../outside")
     _write_raw_sdist(unsafe, [(member, b"")])
-    with unsafe.open("rb") as stream, pytest.raises(SystemExit, match="unsafe"):
+    with unsafe.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(stream)
 
     missing = tmp_path / "missing.tar.gz"
     member = tarfile.TarInfo("root/file")
     _write_raw_sdist(missing, [(member, b"")])
-    with missing.open("rb") as stream, pytest.raises(SystemExit, match="PKG-INFO"):
+    with missing.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(stream)
 
     oversized = tmp_path / "oversized.tar.gz"
@@ -454,5 +451,5 @@ def test_streaming_sdist_preserves_semantic_archive_checks(tmp_path: Path) -> No
         oversized,
         [(member, b"x" * (generator.MAX_METADATA_BYTES + 1))],
     )
-    with oversized.open("rb") as stream, pytest.raises(SystemExit, match="metadata"):
+    with oversized.open("rb") as stream, pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(stream)

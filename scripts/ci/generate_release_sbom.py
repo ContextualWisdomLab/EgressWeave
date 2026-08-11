@@ -38,6 +38,7 @@ MAX_ARCHIVE_MEMBERS = 10_000
 MAX_RELEASE_ARTIFACT_BYTES = 256 * 1024 * 1024
 MAX_EXPANDED_TAR_BYTES = 512 * 1024 * 1024
 MAX_TAR_EXTENSION_BYTES = 1 * 1024 * 1024
+DIRECT_ARTIFACT_REJECTION = "release artifact failed verification"
 ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
 ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
 ZIP64_EOCD_LOCATOR_SIZE = 20
@@ -438,7 +439,7 @@ def _read_expanded(
     return b"".join(chunks), consumed + size
 
 
-def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
+def _preflight_sdist_members_detailed(stream: BinaryIO) -> BinaryIO:
     """Validate and spool one bounded expanded tar stream for semantic parsing."""
     invalid = "release source distribution is not a valid gzip tar"
     stream.seek(0)
@@ -519,6 +520,14 @@ def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
         stream.seek(0)
 
 
+def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
+    """Validate one source archive behind a stable non-leaking rejection."""
+    try:
+        return _preflight_sdist_members_detailed(stream)
+    except SystemExit:
+        raise SystemExit(DIRECT_ARTIFACT_REJECTION) from None
+
+
 def _wheel_metadata(stream: BinaryIO) -> Message:
     """Read the sole bounded wheel METADATA member from the bound archive."""
     _preflight_wheel_members(stream)
@@ -538,7 +547,7 @@ def _wheel_metadata(stream: BinaryIO) -> Message:
         raise SystemExit("release wheel is not a valid ZIP archive") from error
 
 
-def _sdist_metadata(stream: BinaryIO) -> Message:
+def _sdist_metadata_detailed(stream: BinaryIO) -> Message:
     """Read one root PKG-INFO while retaining only bounded streaming state."""
     expanded_archive = _preflight_sdist_members(stream)
     selected_payload: bytes | None = None
@@ -607,6 +616,14 @@ def _sdist_metadata(stream: BinaryIO) -> Message:
         ) from error
     finally:
         expanded_archive.close()
+
+
+def _sdist_metadata(stream: BinaryIO) -> Message:
+    """Read source metadata behind a stable non-leaking rejection."""
+    try:
+        return _sdist_metadata_detailed(stream)
+    except SystemExit:
+        raise SystemExit(DIRECT_ARTIFACT_REJECTION) from None
 
 
 def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:

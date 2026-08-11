@@ -18,6 +18,7 @@ _SemanticArchiveSelf = TypeVar("_SemanticArchiveSelf")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
+GENERIC_REJECTION = "release artifact failed verification"
 
 
 def _load_generator() -> ModuleType:
@@ -187,6 +188,7 @@ class _SemanticArchive:
     def __exit__(self, *args: object) -> None:
         """Leave the archive double without suppressing exceptions."""
         del args
+
     def __iter__(self) -> Iterator[_SemanticMember]:
         """Yield the configured semantic members in order."""
         return iter(self._members)
@@ -219,30 +221,21 @@ def _disable_preflight_and_install_archive(
 def test_secondary_sdist_semantic_defenses_remain_reachable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Keep semantic fallback checks measured even though preflight rejects first."""
+    """Keep semantic fallback checks measured behind one generic public denial."""
     cases = [
-        (
-            [_SemanticMember("root/link", special=True)],
-            "link or special file",
-        ),
-        (
-            [_SemanticMember("root/sparse", sparse=True, regular=True, directory=False)],
-            "sparse archive form",
-        ),
-        (
-            [_SemanticMember("root/unknown", directory=False)],
-            "unsupported tar form",
-        ),
+        [_SemanticMember("root/link", special=True)],
+        [_SemanticMember("root/sparse", sparse=True, regular=True, directory=False)],
+        [_SemanticMember("root/unknown", directory=False)],
     ]
 
-    for members, message in cases:
+    for members in cases:
         generator = _load_generator()
         _disable_preflight_and_install_archive(
             generator,
             monkeypatch,
             _SemanticArchive(members),
         )
-        with pytest.raises(SystemExit, match=message):
+        with pytest.raises(SystemExit, match=GENERIC_REJECTION):
             generator._sdist_metadata(io.BytesIO())
         monkeypatch.undo()
 
@@ -250,7 +243,7 @@ def test_secondary_sdist_semantic_defenses_remain_reachable(
 def test_secondary_sdist_member_count_and_missing_extraction_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Measure redundant member-count defense and unreadable metadata handling."""
+    """Measure redundant defenses while keeping external diagnostics generic."""
     generator = _load_generator()
     monkeypatch.setattr(generator, "MAX_ARCHIVE_MEMBERS", 1)
     _disable_preflight_and_install_archive(
@@ -260,7 +253,7 @@ def test_secondary_sdist_member_count_and_missing_extraction_fail_closed(
             [_SemanticMember("one"), _SemanticMember("two")],
         ),
     )
-    with pytest.raises(SystemExit, match="archive-member safety bound"):
+    with pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(io.BytesIO())
 
     monkeypatch.undo()
@@ -276,5 +269,5 @@ def test_secondary_sdist_member_count_and_missing_extraction_fail_closed(
         monkeypatch,
         _SemanticArchive([metadata], extracted=None),
     )
-    with pytest.raises(SystemExit, match="metadata could not be read"):
+    with pytest.raises(SystemExit, match=GENERIC_REJECTION):
         generator._sdist_metadata(io.BytesIO())
