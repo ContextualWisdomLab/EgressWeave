@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Document the hourly product-development maintainer's bounded root-cause
+  analysis and operational feasibility loop, including canonical prompt and
+  control-plane incident handling.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
@@ -72,6 +75,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   during trusted construction. Timeout-policy subclasses are rejected before
   transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
   preserving the reviewed finite ceilings as the authoritative configuration.
+- Pin the credential-free verifier to a reviewed Python 3.13
+  `python@sha256:<64-hex>` digest, validate it before Docker execution, and
+  remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
 - Enforce one hard connection deadline across every staggered asynchronous
   attempt and coordinator wait, and make the synchronous pinned transport refuse
   a TCP attempt when the zero remaining connection budget is already exhausted.
