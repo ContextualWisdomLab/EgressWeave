@@ -66,6 +66,19 @@ Primary references:
 - [CWE-918: Server-Side Request Forgery](https://cwe.mitre.org/data/definitions/918.html)
 - [CWE-444: Inconsistent Interpretation of HTTP Requests](https://cwe.mitre.org/data/definitions/444.html)
 
+## Request-denial error provenance — CWE-209 / OWASP
+
+A generic denial string is incomplete if its exception object still exposes the
+caught parser or normalization failure through `__cause__` or `__context__`.
+Request-time untrusted method rejection therefore leaves the active exception
+handler before raising a fresh generic `EgressNotAllowedError`. Trusted policy
+construction keeps specific startup diagnostics, so this boundary does not hide
+operator configuration errors.
+
+See [Request-denial exception provenance boundary](request-denial-error-provenance.md)
+for the synchronous/asynchronous contract, privacy boundary, non-goals, RED →
+GREEN evidence model, and APA 7th grounding in CWE-209 and OWASP error handling.
+
 ## Protocol switching and proxy-only fields — RFC 9110
 
 A validated HTTP origin can still be abused as a long-lived channel if an
