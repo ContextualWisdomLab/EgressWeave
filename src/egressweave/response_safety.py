@@ -19,6 +19,7 @@ import httpx
 from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
+_PUBLIC_RESPONSE_EXTENSION_KEYS = ("http_version", "reason_phrase")
 
 
 def _coerce_response_header_item(item: object) -> tuple[bytes, bytes] | None:
@@ -97,6 +98,41 @@ def _force_identity_accept_encoding(
     if trusted_host is not None:
         safe_headers.append(trusted_host)
     return safe_headers
+
+
+def _select_public_response_extensions(extensions: object) -> dict[str, bytes]:
+    """Copy only exact-byte inert response metadata approved for callers.
+
+    HTTPCore may attach capability-bearing objects such as ``network_stream`` to
+    a response. EgressWeave exposes only the protocol version and reason phrase;
+    every other current or future extension remains internal to the transport.
+    The low-level extension container must be an exact built-in ``dict``, and an
+    exposed value must be exact built-in ``bytes`` so a custom mapping or value
+    object cannot cross the caller-visible HTTPX response boundary. Ordinary
+    failures from dependency-controlled dictionary keys are normalized after
+    leaving their active exception context so the transport can apply its normal
+    fail-closed response-stream cleanup without leaking private exception detail.
+    """
+    if type(extensions) is not dict:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+    denied = False
+    public_extensions: dict[str, bytes] = {}
+    try:
+        for key in _PUBLIC_RESPONSE_EXTENSION_KEYS:
+            if key not in extensions:
+                continue
+            value = extensions[key]
+            if type(value) is not bytes:
+                denied = True
+                break
+            public_extensions[key] = value
+    except Exception:  # noqa: BLE001
+        denied = True
+
+    if denied:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+    return public_extensions
 
 
 def _enforce_declared_response_size(
@@ -199,7 +235,7 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
     ) -> None:
-        """Store the wrapped HTTPX stream and its positive policy budget."""
+        """Store the wrapped async stream and its positive policy budget."""
         self._stream = stream
         self._max_response_bytes = max_response_bytes
 
