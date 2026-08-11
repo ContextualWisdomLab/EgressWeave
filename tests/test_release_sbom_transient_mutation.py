@@ -37,7 +37,7 @@ def _metadata(version: str) -> bytes:
         "Requires-Dist: httpx>=0.28,<0.29\n"
         "Requires-Dist: httpcore>=1.0,<2.0\n"
         "Requires-Dist: idna>=3.18,<4\n\n"
-    ).encode("utf-8")
+    ).encode()
 
 
 def _wheel_bytes(version: str) -> bytes:
