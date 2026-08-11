@@ -359,6 +359,9 @@ for the complete control and configuration contract.
 
 ## Version compatibility
 
+EgressWeave's complete hosted quality lane covers Python 3.10–3.14; package
+metadata retains Python 3.10 as the minimum supported runtime.
+
 The pinned transports use a few `httpx` / `httpcore` internals, so those
 libraries are constrained to `httpx>=0.28,<0.29` and `httpcore>=1.0,<2.0` and
 exercised by the test suite. Bumping either requires re-verifying both the

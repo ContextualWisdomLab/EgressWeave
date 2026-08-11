@@ -61,8 +61,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
+- Require the hourly product-development maintainer to perform exact-evidence
+  root-cause analysis and operational feasibility validation before selecting,
+  abandoning, or escalating a remediation.
+- Load the hourly product-development maintainer from one canonical prompt file
+  with a 12 KiB control-plane budget instead of an inline YAML heredoc. Generic
+  scheduler failures are treated as resumable control-plane incidents; prompt
+  repair alone is not completion, and transient connector/provider errors do not
+  disable the recurring loop.
 
 ### Security
+- Enforce one hard connection deadline across every staggered asynchronous
+  attempt and coordinator wait, and make the synchronous pinned transport refuse
+  a TCP attempt when the zero remaining connection budget is already exhausted.
+  Deadline exhaustion keeps dependency-specific failures and cleanup outcomes
+  behind the existing generic egress denial while preserving caller cancellation.
 - Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
   metadata and validated `sni_hostname` identity channel. `trace`, `target`,
   unknown extension keys, non-string keys, and hostile extension mappings now
@@ -72,10 +85,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Byte subclasses fail closed before field parsing or subclass-defined Python
   behavior can run, preserving the generic denial boundary before HTTPCore
   dispatch.
-- Remove the repository-write publisher from the autonomous product scheduler
-  and disable hourly scheduler auto-merge. Verified model output now ends at a
-  short-lived handoff; any pull-request merge remains current-head reviewed and
-  operator-controlled under normal protection.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and
