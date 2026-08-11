@@ -191,12 +191,14 @@ def _build_safe_request_headers(
     content_length_values: list[bytes] = []
     transfer_encoding_values: list[bytes] = []
 
-    for name, value in headers:
+    for item in headers:
+        normalized_item = _coerce_request_header_item(item)
+        if normalized_item is None:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        name, value = normalized_item
         if (
-            not isinstance(name, bytes)
-            or not name
+            not name
             or any(octet not in _HTTP_FIELD_NAME_OCTETS for octet in name)
-            or not isinstance(value, bytes)
             or not _is_valid_http_field_value(value)
         ):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
