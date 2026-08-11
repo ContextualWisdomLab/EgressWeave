@@ -25,7 +25,8 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    dispatch the centrally controlled review autofix workflow.
 2. `pr-review-merge-scheduler.yml` re-reads the live pull request, reviews,
    unresolved threads, required checks, branch state, and head SHA before it
-   updates, queues, or merges anything.
+   updates anything. This repository disables scheduler merges; an operator
+   must perform the final normal protected merge after rechecking that evidence.
 
 The central workflow resolves its co-located scheduler implementation from the
 called workflow's own immutable repository and SHA. The EgressWeave workflow
@@ -124,9 +125,9 @@ does it obtain a write identity, preferring an organization maintenance secret
 and otherwise using the centrally operated OpenCode GitHub App OIDC exchange.
 
 The publisher creates an `agent/hourly-product-gap-*` branch and pull request
-and requests squash auto-merge. It never writes directly to `main`. Normal CI,
+without requesting auto-merge. It never writes directly to `main`. Normal CI,
 security scans, independent review, unresolved-thread checks, branch
-protection, and the hourly PR loop remain authoritative.
+protection, and the operator-controlled final merge remain authoritative.
 
 ## Model change boundary
 

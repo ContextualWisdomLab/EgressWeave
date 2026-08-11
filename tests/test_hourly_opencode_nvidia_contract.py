@@ -98,6 +98,20 @@ def test_open_pull_request_gates_count_every_paginated_page() -> None:
     assert "--slurp" not in workflow
 
 
+def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
+    """Prevent autonomous product changes from being merged without operator review."""
+    product_workflow = _read(PRODUCT_WORKFLOW_PATH)
+    maintenance_workflow = _read(
+        REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
+    )
+
+    assert 'gh pr merge "$pr_url"' not in product_workflow
+    assert "guarded manual merge" in product_workflow
+    assert "normal protected merge remain mandatory" in product_workflow
+    assert "enable_auto_merge: false" in maintenance_workflow
+    assert "merge_mode: disabled" in maintenance_workflow
+
+
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
     """Do not repurpose the centrally managed review-agent credential path."""
     review_workflow = _read(REVIEW_WORKFLOW_PATH)

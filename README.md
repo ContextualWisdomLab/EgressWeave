@@ -324,8 +324,8 @@ Two hourly, credential-separated workflows keep the pull-request queue and the
 product roadmap moving without bypassing normal governance:
 
 - at minute `07`, the repository calls the organization-owned review-fix and
-  merge schedulers to inspect feedback, recheck current-head evidence, update
-  eligible branches, and merge only when every central gate permits it;
+  merge schedulers to inspect feedback, recheck current-head evidence, and
+  update eligible branches; final merges remain operator-controlled;
 - at minute `37`, a bounded OpenCode maintainer backed by
   `NVIDIA_NIM_API_KEY` runs only when there are zero open pull requests and
   implements one test-driven improvement.
@@ -337,7 +337,7 @@ the patch and executes modified source only inside an offline, non-root,
 capability-free, read-only verifier container. A third publisher rechecks the
 sealed patch but never executes modified package code before obtaining an
 external write identity. CI, security scans, independent reviews, branch
-protection, and guarded auto-merge remain authoritative. See
+protection, and the operator-controlled merge boundary remain authoritative. See
 [`docs/hourly-autonomous-maintenance.md`](docs/hourly-autonomous-maintenance.md)
 for the complete control and configuration contract.
 
