@@ -247,7 +247,7 @@ async def test_empty_async_validation_paths_return_none() -> None:
 
 
 def test_sync_backend_covers_no_timeout_and_terminal_errors() -> None:
-    """Cover no-deadline success, last-error propagation, and empty fallback."""
+    """Cover no-deadline success, generic terminal denial, and empty fallback."""
     stream = object()
     backend = _PinnedEgressSyncNetworkBackend(
         "api.example.com", 443, (PUBLIC_ADDRESS,), POLICY
@@ -259,7 +259,7 @@ def test_sync_backend_covers_no_timeout_and_terminal_errors() -> None:
 
     failing_backend = _SyncBackend([OSError("all pinned addresses failed")])
     backend._backend = failing_backend
-    with pytest.raises(OSError, match="all pinned addresses failed"):
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
         backend.connect_tcp("api.example.com", 443)
 
     backend._addresses = ()
@@ -409,11 +409,12 @@ async def test_async_backend_covers_expired_budget_before_wait(monkeypatch) -> N
         lambda: _FakeClock(0.0, 0.0, 0.0, 0.0, 1.0, 1.0),
     )
 
-    assert await backend.connect_tcp("api.example.com", 443, timeout=0.0) is stream
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
+        await backend.connect_tcp("api.example.com", 443, timeout=0.0)
 
 
-async def test_async_backend_raises_last_error_after_deadline(monkeypatch) -> None:
-    """Stop the race and propagate the final backend error after deadline expiry."""
+async def test_async_backend_masks_last_error_observed_after_deadline(monkeypatch) -> None:
+    """Keep a child failure first observed after the deadline behind policy denial."""
     backend = _PinnedEgressNetworkBackend(
         "api.example.com",
         443,
@@ -431,7 +432,7 @@ async def test_async_backend_raises_last_error_after_deadline(monkeypatch) -> No
         lambda: _FakeClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0),
     )
 
-    with pytest.raises(OSError, match="synthetic connect failure"):
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
         await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
 
