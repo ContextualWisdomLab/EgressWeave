@@ -35,6 +35,10 @@ def test_scheduler_loads_one_canonical_prompt_instead_of_inline_policy() -> None
     assert ".github/prompts/hourly-product-maintainer.md" in workflow
     assert "cat >\"$prompt_file\" <<'PROMPT'" not in workflow
     assert "cp -- \"$prompt_source\" \"$prompt_file\"" in workflow
+    assert '[ ! -f "$prompt_source" ] || [ -L "$prompt_source" ]' in workflow
+    assert '[[ ! "$prompt_bytes" =~ ^[0-9]+$ ]]' in workflow
+    assert '[ "$prompt_bytes" -gt 12000 ]' in workflow
+    assert 'chmod 0444 "$prompt_file"' in workflow
 
 
 def test_canonical_prompt_has_a_bounded_control_plane_budget() -> None:
