@@ -60,6 +60,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Reject non-exact integer subclasses in shared policy integer fields before
+  retaining trusted configuration state. Exact built-in integers and existing
+  ASCII decimal strings remain supported, preserving defaults and ranges while
+  preventing subclass-controlled values from crossing immutable policy construction.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
