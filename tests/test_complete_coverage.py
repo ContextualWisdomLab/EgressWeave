@@ -413,6 +413,35 @@ async def test_async_backend_covers_expired_budget_before_wait(monkeypatch) -> N
         await backend.connect_tcp("api.example.com", 443, timeout=0.0)
 
 
+async def test_async_backend_breaks_before_wait_at_expired_budget(monkeypatch) -> None:
+    """Stop the coordinator before waiting when an active child reaches its deadline."""
+    backend = _PinnedEgressNetworkBackend(
+        "api.example.com",
+        443,
+        (PUBLIC_ADDRESS, SECOND_PUBLIC_ADDRESS),
+        POLICY,
+    )
+    clock = _FakeClock(0.0, 0.0, 0.0, 0.0, 1.0)
+    wait_called = False
+
+    async def connect(address, port, timeout, local_address, socket_options):
+        return _AsyncStream()
+
+    async def unexpected_wait(tasks, **kwargs):
+        nonlocal wait_called
+        wait_called = True
+        raise AssertionError("the expired coordinator must not wait")
+
+    monkeypatch.setattr(backend, "_connect_validated_ip_address", connect)
+    monkeypatch.setattr(async_transport.asyncio, "get_running_loop", lambda: clock)
+    monkeypatch.setattr(async_transport.asyncio, "wait", unexpected_wait)
+
+    with pytest.raises(OSError, match="^egress URL is not allowed$"):
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
+
+    assert wait_called is False
+
+
 async def test_async_backend_masks_last_error_observed_after_deadline(monkeypatch) -> None:
     """Keep a child failure first observed after the deadline behind policy denial."""
     backend = _PinnedEgressNetworkBackend(
