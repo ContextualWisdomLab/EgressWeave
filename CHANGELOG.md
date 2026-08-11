@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Enforce one hard connection deadline across every staggered asynchronous
+  attempt and coordinator wait, and make the synchronous pinned transport refuse
+  a TCP attempt when the zero remaining connection budget is already exhausted.
+  Deadline exhaustion keeps dependency-specific failures and cleanup outcomes
+  behind the existing generic egress denial while preserving caller cancellation.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
