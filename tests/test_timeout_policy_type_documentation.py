@@ -10,7 +10,7 @@ CHANGELOG_PATH = REPOSITORY_ROOT / "CHANGELOG.md"
 
 
 def _read(path: Path) -> str:
-    """Return one repository text file as UTF-8."""
+    """Return one repository text file as normalized UTF-8 prose."""
     return " ".join(path.read_text(encoding="utf-8").split())
 
 
@@ -37,3 +37,13 @@ def test_changelog_records_timeout_policy_type_hardening() -> None:
         "subclass",
     ):
         assert fragment in changelog
+
+
+def test_changelog_keeps_security_heading_and_entries_at_markdown_root() -> None:
+    """Prevent whitespace drift from turning release-history structure into code."""
+    changelog = CHANGELOG_PATH.read_text(encoding="utf-8")
+
+    assert "\n### Security\n" in changelog
+    assert "\n- Require the request timeout policy" in changelog
+    assert "\n ### Security\n" not in changelog
+    assert "\n - Require the request timeout policy" not in changelog
