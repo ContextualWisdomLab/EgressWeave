@@ -34,6 +34,7 @@ from egressweave.request_safety import (
 )
 from egressweave.response_safety import (
     _BoundedSyncResponseStream,
+    _close_sync_response_after_policy_denial,
     _enforce_declared_response_size,
     _enforce_response_header_limits,
     _force_identity_accept_encoding,
@@ -268,6 +269,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
             )
         except EgressNotAllowedError:
             response_denied = True
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            _close_sync_response_after_policy_denial(response.stream)
+            raise
         if response_denied:
             try:
                 response.stream.close()

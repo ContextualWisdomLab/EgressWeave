@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -334,6 +335,20 @@ def test_sync_response_rejects_hostile_exact_dict_key_and_closes_source() -> Non
     assert caught.value.__context__ is None
 
 
+def test_sync_response_reraises_keyboard_interrupt_and_closes_source() -> None:
+    """Preserve process cancellation while still closing the sync source stream."""
+    pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
+    pool = _SyncExtensionPool(
+        {_HostileExtensionKey(KeyboardInterrupt): b"unreachable"}
+    )
+    pinned._pool = pool
+
+    with pytest.raises(KeyboardInterrupt):
+        pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
+
+    assert pool.stream.closed is True
+
+
 @pytest.mark.parametrize(
     "exception_type",
     (KeyboardInterrupt, SystemExit, GeneratorExit),
@@ -346,6 +361,19 @@ def test_response_extension_preserves_direct_base_exceptions(
 
     with pytest.raises(exception_type):
         response_safety._select_public_response_extensions(extensions)
+
+
+@pytest.mark.parametrize("cleanup_exception", (RuntimeError, KeyboardInterrupt))
+def test_sync_response_cleanup_preserves_control_flow(cleanup_exception) -> None:
+    """Suppress ordinary cleanup failures but preserve process-control errors."""
+    stream = Mock()
+    stream.close.side_effect = cleanup_exception
+
+    if cleanup_exception is KeyboardInterrupt:
+        with pytest.raises(KeyboardInterrupt):
+            response_safety._close_sync_response_after_policy_denial(stream)
+    else:
+        response_safety._close_sync_response_after_policy_denial(stream)
 
 
 async def test_async_response_rejects_hostile_exact_dict_key_and_closes_source() -> None:
@@ -362,3 +390,32 @@ async def test_async_response_rejects_hostile_exact_dict_key_and_closes_source()
     assert pool.stream.closed is True
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize("cleanup_exception", (RuntimeError, KeyboardInterrupt))
+async def test_async_response_cleanup_preserves_control_flow(cleanup_exception) -> None:
+    """Suppress ordinary cleanup failures but preserve process-control errors."""
+    stream = AsyncMock()
+    stream.aclose.side_effect = cleanup_exception
+
+    if cleanup_exception is KeyboardInterrupt:
+        with pytest.raises(KeyboardInterrupt):
+            await response_safety._close_async_response_after_policy_denial(stream)
+    else:
+        await response_safety._close_async_response_after_policy_denial(stream)
+
+
+async def test_async_response_reraises_keyboard_interrupt_and_closes_source() -> None:
+    """Preserve process cancellation while still closing the async source stream."""
+    pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
+    pool = _AsyncExtensionPool(
+        {_HostileExtensionKey(KeyboardInterrupt): b"unreachable"}
+    )
+    pinned._pool = pool
+
+    with pytest.raises(KeyboardInterrupt):
+        await pinned.handle_async_request(
+            httpx.Request("GET", VALIDATED.normalized_url)
+        )
+
+    assert pool.stream.closed is True

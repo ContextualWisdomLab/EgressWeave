@@ -20,6 +20,29 @@ from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
 _PUBLIC_RESPONSE_EXTENSION_KEYS = ("http_version", "reason_phrase")
+_RESPONSE_CLEANUP_FAILURES = (BaseException,)
+
+
+def _close_sync_response_after_policy_denial(stream: httpx.SyncByteStream) -> None:
+    """Close a rejected sync response while preserving process-control flow."""
+    try:
+        stream.close()
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except _RESPONSE_CLEANUP_FAILURES:
+        return
+
+
+async def _close_async_response_after_policy_denial(
+    stream: httpx.AsyncByteStream,
+) -> None:
+    """Close a rejected async response while preserving process-control flow."""
+    try:
+        await stream.aclose()
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except _RESPONSE_CLEANUP_FAILURES:
+        return
 
 
 def _coerce_response_header_item(item: object) -> tuple[bytes, bytes] | None:
@@ -129,7 +152,7 @@ def _select_public_response_extensions(extensions: object) -> dict[str, bytes]:
             public_extensions[key] = value
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except BaseException:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         denied = True
 
     if denied:
