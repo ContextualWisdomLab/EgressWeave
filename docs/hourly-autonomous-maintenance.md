@@ -26,7 +26,8 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    dispatch the centrally controlled review autofix workflow.
 2. `pr-review-merge-scheduler.yml` re-reads the live pull request, reviews,
    unresolved threads, required checks, branch state, and head SHA before it
-   updates, queues, or merges anything.
+   updates anything. This repository disables scheduler merges; an operator
+   must perform the final normal protected merge after rechecking that evidence.
 
 The central workflow resolves its co-located scheduler implementation from the
 called workflow's own immutable repository and SHA. The EgressWeave product

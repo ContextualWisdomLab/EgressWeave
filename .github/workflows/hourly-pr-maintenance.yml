@@ -45,7 +45,7 @@ jobs:
       trigger_reviews: true
       review_dispatch_limit: "-1"
       branch_update_limit: "-1"
-      enable_auto_merge: true
-      merge_mode: direct_or_auto
+      enable_auto_merge: false
+      merge_mode: disabled
       update_branches: true
     secrets: inherit

@@ -141,6 +141,16 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
     assert "retention-days: 3" in handoff
 
 
+def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
+    """Prevent autonomous product changes from being merged without operator review."""
+    maintenance_workflow = _read(
+        REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
+    )
+
+    assert "enable_auto_merge: false" in maintenance_workflow
+    assert "merge_mode: disabled" in maintenance_workflow
+
+
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
     """Do not repurpose the centrally managed review-agent credential path."""
     review_workflow = _read(REVIEW_WORKFLOW_PATH)
