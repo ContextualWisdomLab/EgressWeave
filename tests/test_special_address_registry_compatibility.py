@@ -89,3 +89,21 @@ def test_current_iana_global_exceptions_remain_allowed_when_stdlib_parent_is_pri
         _validate_global_address(address, _REMOTE_POLICY, hostname="api.example.com")
         == address
     )
+
+
+@pytest.mark.parametrize("address", ["192.0.0.9", "2001:1::1"])
+@pytest.mark.parametrize(
+    ("hostname", "policy"),
+    [
+        ("localhost", EgressPolicy.from_hosts([], allow_local=True)),
+        ("ollama", EgressPolicy.from_hosts("ollama", allow_local=True)),
+    ],
+)
+def test_global_compatibility_exceptions_do_not_widen_local_hostname_authority(
+    address: str,
+    hostname: str,
+    policy: EgressPolicy,
+) -> None:
+    """Keep local-development address scope narrower than remote compatibility."""
+    with pytest.raises(EgressNotAllowedError, match="egress URL is not allowed"):
+        _validate_global_address(address, policy, hostname=hostname)
