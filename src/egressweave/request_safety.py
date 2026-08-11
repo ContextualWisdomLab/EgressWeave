@@ -31,6 +31,7 @@ _FORBIDDEN_OUTBOUND_REQUEST_FIELD_NAMES = frozenset(
         b"upgrade",
     }
 )
+_ALLOWED_REQUEST_EXTENSION_KEYS = frozenset({"sni_hostname", "timeout"})
 _REQUEST_TIMEOUT_EXTENSION_KEYS = ("connect", "read", "write", "pool")
 
 
@@ -190,12 +191,14 @@ def _build_safe_request_headers(
     content_length_values: list[bytes] = []
     transfer_encoding_values: list[bytes] = []
 
-    for name, value in headers:
+    for item in headers:
+        normalized_item = _coerce_request_header_item(item)
+        if normalized_item is None:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+        name, value = normalized_item
         if (
-            not isinstance(name, bytes)
-            or not name
+            not name
             or any(octet not in _HTTP_FIELD_NAME_OCTETS for octet in name)
-            or not isinstance(value, bytes)
             or not _is_valid_http_field_value(value)
         ):
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
@@ -222,6 +225,16 @@ def _copy_timeout_mapping(
     """Copy untrusted timeout metadata or return ``None`` without leaking errors."""
     try:
         return dict(raw_timeout)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _copy_request_extensions(
+    extensions: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Detach untrusted request extensions or return ``None`` on ordinary failures."""
+    try:
+        return dict(extensions)
     except Exception:  # noqa: BLE001
         return None
 
@@ -292,37 +305,44 @@ def _bind_bounded_request_timeouts(
 def _bind_validated_tls_server_name(
     extensions: Mapping[str, Any], hostname: str
 ) -> dict[str, Any]:
-    """Return safe HTTP extensions with TLS SNI bound to ``hostname``.
+    """Return reviewed HTTP extensions with TLS SNI bound to ``hostname``.
 
-    HTTPX and HTTPCore expose low-level request extensions to transports. The
-    ``target`` extension overrides the request target carried by the URL and can
-    encode an absolute URI for forward-proxy dispatch, creating a second
-    destination channel independent of the validated authority. It is therefore
-    always rejected.
+    HTTPCore extensions are capability-bearing escape hatches around its small
+    HTTP request abstraction. EgressWeave therefore forwards only the reviewed
+    ``timeout`` metadata and ``sni_hostname`` identity channel. ``target`` can
+    create a second proxy/tunnel destination, ``trace`` callbacks can receive
+    raw connection return values, and unknown future extensions have no reviewed
+    security meaning, so every other key fails closed before pool dispatch.
 
-    HTTPCore also honors ``sni_hostname`` while opening TLS. A caller-supplied
-    value must either name the already validated host or be rejected. The
-    returned copy always carries the validated hostname, preventing later
+    A caller-supplied ``sni_hostname`` must name the already validated host. The
+    returned copy always carries that validated hostname, preventing later
     consumers from falling back to an untrusted override.
     """
-    if "target" in extensions:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+    safe_extensions = _copy_request_extensions(extensions)
+    if safe_extensions is None or any(
+        type(key) is not str or key not in _ALLOWED_REQUEST_EXTENSION_KEYS
+        for key in safe_extensions
+    ):
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
-    requested_server_name = extensions.get("sni_hostname")
+    requested_server_name = safe_extensions.get("sni_hostname")
     if requested_server_name is not None:
-        if isinstance(requested_server_name, bytes):
+        decode_denied = False
+        if type(requested_server_name) is bytes:
             try:
                 requested_server_name_text = requested_server_name.decode("ascii")
-            except UnicodeDecodeError as exc:
-                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
-        elif isinstance(requested_server_name, str):
+            except UnicodeDecodeError:
+                decode_denied = True
+                requested_server_name_text = ""
+        elif type(requested_server_name) is str:
             requested_server_name_text = requested_server_name
         else:
-            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
+        if decode_denied:
+            raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         if _normalize_host(requested_server_name_text) != hostname:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
-    safe_extensions = dict(extensions)
     safe_extensions["sni_hostname"] = hostname
     return safe_extensions
