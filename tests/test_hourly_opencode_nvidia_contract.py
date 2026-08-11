@@ -116,6 +116,10 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
 
     assert all(fragment not in workflow for fragment in forbidden_fragments)
     assert ": write" not in workflow
+    initial_handoff = workflow.split(
+        "Upload the bounded change for credential-free reverification", 1
+    )[1].split("\n\n  reverify:", 1)[0]
+    assert "${{ runner.temp }}/base-sha" in initial_handoff
     assert "Require the exact handoff base before applying the patch" in workflow
     assert 'handoff_base_sha="$(cat "$handoff_base_sha_file")"' in workflow
     assert '[ "$current_sha" != "$EXPECTED_BASE_SHA" ] ||' in workflow

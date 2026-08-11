@@ -97,9 +97,9 @@ After model execution, only the protected baseline copy of
 `scripts/ci/hourly_product_guard.py` runs on the host. It uses an alternate Git
 index and NUL-safe path handling to reject deletions, renames, mode changes,
 executables, links, binaries, unsafe paths, oversized files, and oversized
-diffs. The job uploads the resulting patch, diff stat, and model result only for
-the next credential-free job. That first artifact is untrusted until independent
-reverification succeeds.
+diffs. The job uploads the resulting patch, diff stat, model result, and the
+captured `base-sha` only for the next credential-free job. That first artifact is
+untrusted until independent reverification succeeds.
 
 ### 2. Credential-free isolated reverification
 
