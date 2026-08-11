@@ -69,7 +69,11 @@ def test_release_build_dependencies_are_hash_locked() -> None:
         assert filename in requirements
         assert f"--hash=sha256:{sha256}" in requirements
 
-    assert "packaging==26.2" in requirements
+    assert "packaging==26.3" in requirements
+    assert (
+        "--hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        in requirements
+    )
     assert "pluggy==1.6.0" in requirements
     assert "tomli==2.4.1 ; python_version < \"3.11\"" in requirements
 
