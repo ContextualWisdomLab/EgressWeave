@@ -192,6 +192,17 @@ for phase semantics, the operational distinction between inactivity limits and
 end-to-end deadlines, and APA 7th references to the primary HTTPX/HTTPCore
 extension documentation, RFC 9112, CWE-400, and OWASP denial-of-service guidance.
 
+## Request extension capabilities — HTTPCore
+
+HTTPCore request extensions can carry more authority than ordinary HTTP metadata.
+EgressWeave therefore uses a positive request-extension allowlist: only the
+reviewed finite `timeout` metadata and validated `sni_hostname` identity channel
+may reach HTTPCore. `target`, `trace`, malformed mappings, non-string keys, and
+unknown future extensions fail closed before pool dispatch. See
+[HTTPCore request-extension capability boundary](request-extension-capabilities.md)
+for the architecture, compatibility impact, `NetworkStream` exposure risk, and
+APA 7th primary references.
+
 ## Provenance
 
 Extracted behaviour-preserving from the naruon control plane's LLM-provider

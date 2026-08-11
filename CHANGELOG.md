@@ -67,6 +67,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   immutable policy with a context that disables hostname or certificate
   verification; private trust, mTLS, and explicit TLS 1.2 compatibility remain
   available through the documented declarative fields.
+- Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
+  metadata and validated `sni_hostname` identity channel. `trace`, `target`,
+  unknown extension keys, non-string keys, and hostile extension mappings now
+  fail closed before pool dispatch so raw transport callback capabilities cannot
+  bypass the EgressWeave HTTP policy surface.
+- Require outbound request-header names and values to be exact built-in `bytes`.
+  Byte subclasses fail closed before field parsing or subclass-defined Python
+  behavior can run, preserving the generic denial boundary before HTTPCore
+  dispatch.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and

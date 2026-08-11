@@ -69,6 +69,7 @@ Public client builders
         +--> synchronous or asynchronous pinned transport
                  |
                  +--> request authority and TLS-SNI binding
+                 +--> positive request-extension allowlist
                  +--> request target / field / body limits
                  +--> finite request-phase timeouts
                  +--> finite connection-pool policy
@@ -112,13 +113,17 @@ the last boundary before HTTPCore.
 Request processing occurs in this order:
 
 1. verify canonical method and request authority;
-2. bind TLS SNI and reject alternate request-target extensions;
-3. validate and rewrite outbound fields;
-4. enforce the exact percent-encoded target budget;
-5. enforce final request-field count and byte budgets;
-6. enforce declared and streamed request-body budgets;
-7. bind finite connect, read, write, and pool-acquisition timeouts; and
-8. dispatch to HTTPCore through the pinned network backend.
+2. apply a positive request-extension allowlist: only reviewed `timeout`
+   metadata and the validated `sni_hostname` identity channel may continue,
+   while `target`, `trace`, non-string keys, and unknown future extensions fail
+   closed before pool dispatch;
+3. bind TLS SNI to the already validated hostname;
+4. validate and rewrite outbound fields;
+5. enforce the exact percent-encoded target budget;
+6. enforce final request-field count and byte budgets;
+7. enforce declared and streamed request-body budgets;
+8. bind finite connect, read, write, and pool-acquisition timeouts; and
+9. dispatch to HTTPCore through the pinned network backend.
 
 Response processing occurs before a caller-visible HTTPX response is returned:
 
