@@ -445,7 +445,8 @@ def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
     consumed = 0
     members = 0
     zero_headers = 0
-    expanded_archive = tempfile.TemporaryFile(mode="w+b")
+    # The validated snapshot lifetime is transferred to _sdist_metadata.
+    expanded_archive = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115
     try:
         with gzip.GzipFile(fileobj=stream, mode="rb") as expanded:
             while zero_headers < 2:
