@@ -17,6 +17,22 @@ CWE-918), and even an allowlisted authority can exhaust resources with an
 unbounded request producer, disabled timeout, or unbounded or compressed
 response (CWE-400).
 
+## Product and architecture source of truth
+
+Start with [`docs/product/PRD.md`](docs/product/PRD.md) for buyer/product
+requirements and [`docs/product/TRD.md`](docs/product/TRD.md) for the technical
+contract. Root [`ARCHITECTURE.md`](ARCHITECTURE.md) remains the authoritative
+protected-main implementation architecture. The product documentation labels
+shipped, active-PR, accepted-target, and planned behavior separately so an
+unmerged design is never presented as protected-main functionality.
+
+Architecture views and durable decisions are indexed in
+[`docs/architecture/UML.md`](docs/architecture/UML.md),
+[`docs/architecture/ERD.md`](docs/architecture/ERD.md), and
+[`docs/adr/README.md`](docs/adr/README.md). The ERD explicitly records that the
+core library owns no durable database rather than inventing persistence for
+architecture completeness.
+
 ## What it defends against
 
 - **SSRF (CWE-918):** rejects private, loopback, link-local, reserved,

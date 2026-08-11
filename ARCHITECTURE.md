@@ -121,9 +121,18 @@ Request processing occurs in this order:
 4. validate and rewrite outbound fields;
 5. enforce the exact percent-encoded target budget;
 6. enforce final request-field count and byte budgets;
-7. enforce declared and streamed request-body budgets;
-8. bind finite connect, read, write, and pool-acquisition timeouts; and
-9. dispatch to HTTPCore through the pinned network backend.
+7. reject unsafe declared request-body lengths before pool dispatch;
+8. bind finite connect, read, write, and pool-acquisition timeouts;
+9. wrap the request body with a bounded stream and dispatch to HTTPCore through
+   the pinned network backend; and
+10. enforce actual streamed-body and declared-length equality while HTTPCore
+    consumes the body.
+
+The declared `Content-Length` ceiling is therefore a pre-pool fail-closed check,
+while actual stream-byte accounting is necessarily lazy: the bounded stream is
+consumed by HTTPCore during transmission. A streamed source cannot be fully
+validated before dispatch without consuming it eagerly and changing the public
+streaming contract.
 
 Response processing occurs before a caller-visible HTTPX response is returned:
 
