@@ -41,7 +41,6 @@ def test_decision_evidence_is_deterministic_and_excludes_request_secrets() -> No
     assert evidence.schema_version == "egressweave.decision-evidence.v1"
     assert evidence.authority == "api.example.com:443"
     assert evidence.allowed_methods == ("GET", "POST")
-    assert evidence.address_count == 2
     assert evidence.ipv4_address_count == 1
     assert evidence.ipv6_address_count == 1
     assert len(evidence.policy_fingerprint) == 64
@@ -52,7 +51,6 @@ def test_decision_evidence_is_deterministic_and_excludes_request_secrets() -> No
         "schema_version": "egressweave.decision-evidence.v1",
         "authority": "api.example.com:443",
         "allowed_methods": ["GET", "POST"],
-        "address_count": 2,
         "ipv4_address_count": 1,
         "ipv6_address_count": 1,
         "policy_fingerprint": evidence.policy_fingerprint,
@@ -156,7 +154,7 @@ def test_decision_evidence_is_immutable_and_serialization_is_detached() -> None:
     )
 
     with pytest.raises(FrozenInstanceError):
-        evidence.address_count = 99
+        evidence.ipv4_address_count = 99
 
     serialized = evidence.as_dict()
     serialized["allowed_methods"].append("CONNECT")
