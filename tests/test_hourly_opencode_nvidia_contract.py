@@ -84,17 +84,18 @@ def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
 
 
 def test_open_pull_request_gates_count_every_paginated_page() -> None:
-    """Refuse autonomous publication when an open PR exists beyond page one."""
+    """Count every open-PR page using the runner-compatible GitHub CLI form."""
     workflow = " ".join(
         _read(PRODUCT_WORKFLOW_PATH).replace("\\\n", "").split()
     )
     complete_query = (
         'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
-        "--paginate --slurp --jq 'map(length) | add // 0'"
+        "--paginate --jq 'length' | "
+        "awk '{total += $1} END {print total + 0}'"
     )
 
     assert workflow.count(complete_query) == 3
-    assert "--jq 'length'" not in workflow
+    assert "--slurp" not in workflow
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
