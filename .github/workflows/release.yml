@@ -116,11 +116,12 @@ jobs:
           )
       - name: Prepare the canonical PyPI-only artifact set
         run: |
+          set -euo pipefail
           mkdir publish-dist
           cp dist/*.whl dist/*.tar.gz publish-dist/
           (
             cd publish-dist
-            sha256sum --check ../dist/SHA256SUMS
+            sha256sum --check --strict ../dist/SHA256SUMS
           )
       - name: Upload complete checksummed release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
