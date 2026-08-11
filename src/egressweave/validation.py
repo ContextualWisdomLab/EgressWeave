@@ -319,7 +319,7 @@ def _resolve_all_global_addresses(
         worker_start_failed = False
         try:
             worker.start()
-        except RuntimeError as exc:
+        except BaseException as exc:
             _DNS_RESOLUTION_SLOTS.release()
             flight.error = exc
             _complete_dns_resolution_flight(key, flight)
