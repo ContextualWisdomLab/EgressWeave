@@ -152,6 +152,17 @@ method policy, aggregate address-family counts, and deterministic policy and
 decision fingerprints. Fingerprints detect configuration drift; they are not
 cryptographic proof against arbitrary in-process code execution.
 
+For provider-neutral interchange, the package ships
+`egressweave/schemas/decision-evidence-v1.schema.json` and exposes
+`get_decision_evidence_json_schema()` as the public detached loader. The resource
+uses JSON Schema Draft 2020-12 and is versioned with the runtime evidence
+contract. It is a machine-readable validation and interchange contract only: it
+does not authorize an egress action, sign an evidence record, or elevate an
+integration's access rights. Consumers must continue to apply purpose limitation,
+tenant-appropriate authorization, and their own retention and disclosure policy
+before storing or exporting evidence because canonical authority can reveal
+service topology.
+
 ## Trust boundaries
 
 | Boundary | Trusted input | Untrusted input | Required behavior |
