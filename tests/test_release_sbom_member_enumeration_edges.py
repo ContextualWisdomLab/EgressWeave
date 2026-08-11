@@ -10,9 +10,9 @@ from collections.abc import Iterator
 from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType
-from typing_extensions import Self
 
 import pytest
+from typing_extensions import Self
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
