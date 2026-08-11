@@ -3,7 +3,9 @@
 The runtime rejection boundary deliberately exposes only a generic error. This
 module provides an explicit opt-in audit record for already validated, allowed
 decisions without recording request paths, resolved IP addresses, credentials,
-or response data.
+or response data. The versioned evidence mapping is also available as a packaged
+JSON Schema so downstream systems can validate the public interchange contract
+without importing EgressWeave implementation classes.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import hashlib
 import ipaddress
 import json
 from dataclasses import dataclass
+from importlib import resources
+from typing import cast
 
 from egressweave.policy import EgressPolicy
 from egressweave.validation import (
@@ -20,6 +24,23 @@ from egressweave.validation import (
 )
 
 DECISION_EVIDENCE_SCHEMA_VERSION = "egressweave.decision-evidence.v1"
+_DECISION_EVIDENCE_SCHEMA_FILENAME = "decision-evidence-v1.schema.json"
+
+
+def get_decision_evidence_json_schema() -> dict[str, object]:
+    """Return a fresh JSON-compatible copy of the packaged evidence schema.
+
+    The resource uses JSON Schema Draft 2020-12 and mirrors the mapping emitted
+    by :meth:`EgressDecisionEvidence.as_dict`. It is loaded again for every call,
+    so caller mutation cannot change later results or package state. Loading the
+    trusted package resource requires no JSON Schema runtime dependency.
+    """
+    resource = resources.files("egressweave").joinpath(
+        "schemas",
+        _DECISION_EVIDENCE_SCHEMA_FILENAME,
+    )
+    with resource.open("r", encoding="utf-8") as schema_file:
+        return cast(dict[str, object], json.load(schema_file))
 
 
 def _sha256_canonical_json(payload: dict[str, object]) -> str:
