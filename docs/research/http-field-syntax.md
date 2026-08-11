@@ -19,13 +19,26 @@ to route a request, and duplicate or malformed host spellings can disagree with
 the URL authority already validated and DNS-pinned by EgressWeave.
 
 EgressWeave therefore validates every outbound raw field name and value before
-either connection pool sees the request. Invalid syntax fails with the same
-generic `EgressNotAllowedError` used for other policy violations. Every
-caller-supplied case-insensitive `Host` field is removed and exactly one field
-containing the validated authority is emitted. This keeps routing identity
-consistent across the URL, TCP destination, TLS server name, and HTTP message.
+either connection pool sees the request. Before field parsing, both the field
+name and value must be exact built-in `bytes`; byte subclasses are rejected
+before field parsing can invoke subclass-defined length, iteration, indexing, or
+case-normalization behavior. This is a Python trust-boundary rule layered on top
+of the RFC field grammar, not a claim that HTTP itself assigns semantics to
+Python object types.
+
+Invalid syntax or type shape fails with the same generic
+`EgressNotAllowedError` used for other policy violations. Every caller-supplied
+case-insensitive `Host` field is removed and exactly one field containing the
+validated authority is emitted. This keeps routing identity consistent across
+the URL, TCP destination, TLS server name, and HTTP message.
 
 ## Primary references
+
+Fielding, R. T., Nottingham, M., & Reschke, J. (Eds.). (2022). *HTTP
+semantics* (STD 97, RFC 9110). RFC Editor. https://doi.org/10.17487/RFC9110
+
+Fielding, R. T., Nottingham, M., & Reschke, J. (Eds.). (2022). *HTTP/1.1*
+(STD 99, RFC 9112). RFC Editor. https://doi.org/10.17487/RFC9112
 
 - [RFC 9110 section 5.1: Field Names](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.1)
 - [RFC 9110 section 5.5: Field Values](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.5)
