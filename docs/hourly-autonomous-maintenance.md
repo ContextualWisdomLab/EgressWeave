@@ -26,7 +26,8 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    dispatch the centrally controlled review autofix workflow.
 2. `pr-review-merge-scheduler.yml` re-reads the live pull request, reviews,
    unresolved threads, required checks, branch state, and head SHA before it
-   updates, queues, or merges anything.
+   updates anything. This repository disables scheduler merges; an operator
+   must perform the final normal protected merge after rechecking that evidence.
 
 The central workflow resolves its co-located scheduler implementation from the
 called workflow's own immutable repository and SHA. The EgressWeave product
@@ -96,9 +97,9 @@ After model execution, only the protected baseline copy of
 `scripts/ci/hourly_product_guard.py` runs on the host. It uses an alternate Git
 index and NUL-safe path handling to reject deletions, renames, mode changes,
 executables, links, binaries, unsafe paths, oversized files, and oversized
-diffs. The job uploads the resulting patch, diff stat, and model result only for
-the next credential-free job. That first artifact is untrusted until independent
-reverification succeeds.
+diffs. The job uploads the resulting patch, diff stat, model result, and the
+captured `base-sha` only for the next credential-free job. That first artifact is
+untrusted until independent reverification succeeds.
 
 ### 2. Credential-free isolated reverification
 

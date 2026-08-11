@@ -94,11 +94,12 @@ def test_open_pull_request_gates_count_every_paginated_page() -> None:
     )
     complete_query = (
         'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
-        "--paginate --slurp --jq 'map(length) | add // 0'"
+        "--paginate --jq 'length' | "
+        "awk '{total += $1} END {print total + 0}'"
     )
 
     assert workflow.count(complete_query) == 2
-    assert "--jq 'length'" not in workflow
+    assert "--slurp" not in workflow
 
 
 def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
@@ -119,6 +120,10 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
 
     assert all(fragment not in workflow for fragment in forbidden_fragments)
     assert ": write" not in workflow
+    initial_handoff = workflow.split(
+        "Upload the bounded change for credential-free reverification", 1
+    )[1].split("\n\n  reverify:", 1)[0]
+    assert "${{ runner.temp }}/base-sha" in initial_handoff
     assert "Require the exact handoff base before applying the patch" in workflow
     assert 'handoff_base_sha="$(cat "$handoff_base_sha_file")"' in workflow
     assert '[ "$current_sha" != "$EXPECTED_BASE_SHA" ] ||' in workflow
@@ -142,6 +147,16 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
     handoff = workflow.split("Upload the independently verified handoff", 1)[1]
     assert "if-no-files-found: error" in handoff
     assert "retention-days: 3" in handoff
+
+
+def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
+    """Prevent autonomous product changes from being merged without operator review."""
+    maintenance_workflow = _read(
+        REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
+    )
+
+    assert "enable_auto_merge: false" in maintenance_workflow
+    assert "merge_mode: disabled" in maintenance_workflow
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
