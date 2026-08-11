@@ -276,13 +276,54 @@ async def test_connection_attempts_are_staggered(monkeypatch) -> None:
     backend._backend = recording_backend
 
     with pytest.raises(OSError):
-        await backend.connect_tcp("api.example.com", 443, timeout=0.2)
+        # Leave scheduling headroom so this behavioral assertion stays stable
+        # when the shared CI runner is busy.
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
     assert len(recording_backend.started_at) == 3
     first_gap = recording_backend.started_at[1] - recording_backend.started_at[0]
     second_gap = recording_backend.started_at[2] - recording_backend.started_at[1]
     assert first_gap >= 0.007
     assert second_gap >= 0.007
+
+
+@pytest.mark.asyncio
+async def test_connection_stagger_waits_when_scheduler_runs_early(monkeypatch) -> None:
+    """Keep the real-start backoff when a scheduler wake-up is premature."""
+    monkeypatch.setattr(
+        transport_module,
+        "_CONNECTION_ATTEMPT_DELAY_SECONDS",
+        0.01,
+    )
+    backend = _backend_with_three_addresses()
+    stream = object()
+    first_started = asyncio.Event()
+    attempted: list[str] = []
+
+    async def connect(address, port, timeout, local_address, socket_options):
+        attempted.append(address)
+        if address == "93.184.216.34":
+            first_started.set()
+            await asyncio.sleep(0.02)
+            raise OSError("first pinned address failed")
+        return stream
+
+    monkeypatch.setattr(backend, "_connect_validated_ip_address", connect)
+    real_wait = asyncio.wait
+    wait_calls = 0
+
+    async def early_wait(tasks, **kwargs):
+        nonlocal wait_calls
+        wait_calls += 1
+        if wait_calls == 1:
+            await first_started.wait()
+            return set(), set(tasks)
+        return await real_wait(tasks, **kwargs)
+
+    monkeypatch.setattr(transport_module.asyncio, "wait", early_wait)
+
+    assert await backend.connect_tcp("api.example.com", 443, timeout=0.2) is stream
+    assert attempted == ["93.184.216.34", "1.1.1.1"]
 
 
 @pytest.mark.asyncio
@@ -373,7 +414,19 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
     monkeypatch,
 ) -> None:
     """Fail generically if the budget expires before the next candidate starts."""
-    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+    clock = _SequenceLoopClock(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        1.0,
+        1.0,
+    )
 
     async def wait_for_failure(tasks, *, timeout, return_when):
         assert timeout == pytest.approx(0.25)
@@ -395,7 +448,19 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
 @pytest.mark.asyncio
 async def test_empty_wait_does_not_start_candidate_after_deadline(monkeypatch) -> None:
     """Do not create a later task if an empty wait reaches the shared deadline."""
-    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+    clock = _SequenceLoopClock(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        1.0,
+        1.0,
+    )
     real_create_task = asyncio.create_task
     created_task_count = 0
 
