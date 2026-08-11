@@ -103,7 +103,7 @@ def test_dns_worker_start_non_runtime_failure_fails_closed(monkeypatch) -> None:
 
 
 def test_dns_worker_start_avoids_direct_base_exception_handler() -> None:
-    """Keep worker-start cleanup explicit without a catch-all BaseException handler."""
+    """Keep worker-start cleanup explicit without a catch-all exception handler."""
     source = textwrap.dedent(inspect.getsource(validation._resolve_all_global_addresses))
     syntax_tree = ast.parse(source)
     direct_base_exception_handlers = [
@@ -111,7 +111,11 @@ def test_dns_worker_start_avoids_direct_base_exception_handler() -> None:
         for node in ast.walk(syntax_tree)
         if isinstance(node, ast.Try)
         for handler in node.handlers
-        if isinstance(handler.type, ast.Name) and handler.type.id == "BaseException"
+        if handler.type is None
+        or (
+            isinstance(handler.type, ast.Name)
+            and handler.type.id == "BaseException"
+        )
     ]
 
     assert direct_base_exception_handlers == []
