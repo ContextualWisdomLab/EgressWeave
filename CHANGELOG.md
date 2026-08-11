@@ -65,6 +65,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a TCP attempt when the zero remaining connection budget is already exhausted.
   Deadline exhaustion keeps dependency-specific failures and cleanup outcomes
   behind the existing generic egress denial while preserving caller cancellation.
+- Remove the repository-write publisher from the autonomous product scheduler
+  and disable hourly scheduler auto-merge. Verified model output now ends at a
+  short-lived handoff; any pull-request merge remains current-head reviewed and
+  operator-controlled under normal protection.
+- Remove the repository-write publisher from the autonomous product scheduler
+  and disable hourly scheduler auto-merge. Verified model output now ends at a
+  short-lived handoff; any pull-request merge remains current-head reviewed and
+  operator-controlled under normal protection.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
