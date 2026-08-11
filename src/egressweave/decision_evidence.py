@@ -3,7 +3,9 @@
 The runtime rejection boundary deliberately exposes only a generic error. This
 module provides an explicit opt-in audit record for already validated, allowed
 decisions without recording request paths, resolved IP addresses, credentials,
-or response data.
+or response data. The versioned evidence shape is also published as a packaged
+JSON Schema so downstream audit systems can validate the contract without
+coupling to EgressWeave implementation details.
 """
 
 from __future__ import annotations
@@ -12,6 +14,8 @@ import hashlib
 import ipaddress
 import json
 from dataclasses import dataclass
+from pathlib import Path
+from typing import cast
 
 from egressweave.policy import EgressPolicy
 from egressweave.validation import (
@@ -20,6 +24,20 @@ from egressweave.validation import (
 )
 
 DECISION_EVIDENCE_SCHEMA_VERSION = "egressweave.decision-evidence.v1"
+_DECISION_EVIDENCE_SCHEMA_FILENAME = "decision-evidence-v1.schema.json"
+
+
+def get_decision_evidence_json_schema() -> dict[str, object]:
+    """Return a fresh JSON-compatible copy of the packaged evidence schema.
+
+    The resource uses JSON Schema Draft 2020-12 and describes exactly the
+    versioned mapping emitted by :meth:`EgressDecisionEvidence.as_dict`. Reading
+    and decoding the trusted package resource for each call deliberately avoids
+    shared mutable schema state and does not require a JSON Schema dependency.
+    """
+    schema_path = Path(__file__).with_name("schemas") / _DECISION_EVIDENCE_SCHEMA_FILENAME
+    with schema_path.open("r", encoding="utf-8") as schema_file:
+        return cast(dict[str, object], json.load(schema_file))
 
 
 def _sha256_canonical_json(payload: dict[str, object]) -> str:
@@ -81,7 +99,6 @@ class EgressDecisionEvidence:
     schema_version: str
     authority: str
     allowed_methods: tuple[str, ...]
-    address_count: int
     ipv4_address_count: int
     ipv6_address_count: int
     policy_fingerprint: str
@@ -93,7 +110,6 @@ class EgressDecisionEvidence:
             "schema_version": self.schema_version,
             "authority": self.authority,
             "allowed_methods": list(self.allowed_methods),
-            "address_count": self.address_count,
             "ipv4_address_count": self.ipv4_address_count,
             "ipv6_address_count": self.ipv6_address_count,
             "policy_fingerprint": self.policy_fingerprint,
@@ -122,7 +138,6 @@ def build_egress_decision_evidence(
         "schema_version": DECISION_EVIDENCE_SCHEMA_VERSION,
         "authority": f"{revalidated.hostname}:{revalidated.port}",
         "allowed_methods": sorted(policy.allowed_methods),
-        "address_count": len(versions),
         "ipv4_address_count": versions.count(4),
         "ipv6_address_count": versions.count(6),
         "policy_fingerprint": policy_digest,
@@ -132,7 +147,6 @@ def build_egress_decision_evidence(
         schema_version=DECISION_EVIDENCE_SCHEMA_VERSION,
         authority=str(evidence_payload["authority"]),
         allowed_methods=tuple(sorted(policy.allowed_methods)),
-        address_count=len(versions),
         ipv4_address_count=versions.count(4),
         ipv6_address_count=versions.count(6),
         policy_fingerprint=policy_digest,
