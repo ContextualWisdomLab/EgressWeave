@@ -67,12 +67,14 @@ def test_transient_same_size_wheel_bytes_cannot_escape_digest_binding(
 
     original_preflight = generator._preflight_wheel_members
     original_parse_metadata = generator._parse_metadata
+    active_stream = None
     swapped = False
     restored = False
 
     def swap_after_preflight(stream) -> None:
-        nonlocal swapped
+        nonlocal active_stream, swapped
         original_preflight(stream)
+        active_stream = stream
         wheel_path.write_bytes(transient_bytes)
         stream.seek(0, 2)
         stream.seek(0)
@@ -83,6 +85,9 @@ def test_transient_same_size_wheel_bytes_cannot_escape_digest_binding(
         parsed = original_parse_metadata(payload, source)
         assert parsed["Version"] == "9.9.9"
         wheel_path.write_bytes(accepted_bytes)
+        assert active_stream is not None
+        active_stream.seek(0, 2)
+        active_stream.seek(0)
         restored = True
         return parsed
 
