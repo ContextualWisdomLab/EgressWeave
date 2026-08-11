@@ -55,8 +55,8 @@ python -m compileall -q src tests scripts
 
 ## References
 
-The reviewed dependency resolution at current head `c96bc71a4c4ad00066bb3dc3a1d6094646dd6047`
-pins HTTPCore 1.0.9 and HTTPX 0.28.1 in the hash-locked
+The response-extension source review commit `c96bc71a4c4ad00066bb3dc3a1d6094646dd6047`
+uses HTTPCore 1.0.9 and HTTPX 0.28.1 from the hash-locked
 `requirements-ci.txt` toolchain (reviewed August 12, 2026).
 
 Encode. (n.d.). *Extensions* (HTTPCore 1.0.9) [Documentation]. Encode. Retrieved
