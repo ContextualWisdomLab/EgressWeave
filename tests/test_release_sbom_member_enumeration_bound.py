@@ -177,6 +177,94 @@ def test_canonical_wheel_and_sdist_remain_compatible(tmp_path: Path) -> None:
     assert generator.build_sbom(sdist, MANIFEST_PATH)["bomFormat"] == "CycloneDX"
 
 
+def test_sdist_preflight_spools_one_validated_expanded_stream(tmp_path: Path) -> None:
+    """Validate regular and directory records while retaining one parseable snapshot."""
+    generator = _load_generator()
+    sdist = tmp_path / "regular-and-directory.tar.gz"
+    regular = tarfile.TarInfo("egressweave-0.3.0/data.txt")
+    directory = tarfile.TarInfo("egressweave-0.3.0/data/")
+    directory.type = tarfile.DIRTYPE
+    _write_raw_sdist(sdist, [(regular, b"payload"), (directory, b"")])
+
+    with sdist.open("rb") as stream:
+        expanded = generator._preflight_sdist_members(stream)
+        try:
+            assert expanded.read(512) == regular.tobuf(format=tarfile.PAX_FORMAT)
+        finally:
+            expanded.close()
+
+
+@pytest.mark.parametrize(
+    ("member_type", "payload", "message"),
+    [
+        (tarfile.SYMTYPE, b"", "link or special file"),
+        (b"X", b"", "unsupported tar form"),
+        (tarfile.XHDTYPE, b"GNU.sparse.map=0,1\n", "sparse archive form"),
+    ],
+)
+def test_sdist_preflight_rejects_physical_member_forms(
+    tmp_path: Path,
+    member_type: bytes,
+    payload: bytes,
+    message: str,
+) -> None:
+    """Reject links, unknown records, and sparse extension metadata in preflight."""
+    generator = _load_generator()
+    sdist = tmp_path / "invalid-member-form.tar.gz"
+    member = tarfile.TarInfo("egressweave-0.3.0/member")
+    member.type = member_type
+    _write_raw_sdist(sdist, [(member, payload)])
+
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match=message):
+        generator._preflight_sdist_members(stream)
+
+
+def test_sdist_preflight_rejects_oversized_extension_header(tmp_path: Path) -> None:
+    """Reject a PAX extension before reading its oversized expanded payload."""
+    generator = _load_generator()
+    sdist = tmp_path / "oversized-extension.tar.gz"
+    member = tarfile.TarInfo("pax-header")
+    member.type = tarfile.XHDTYPE
+    payload = b"x" * (generator.MAX_TAR_EXTENSION_BYTES + 1)
+    _write_raw_sdist(sdist, [(member, payload)])
+
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match="extension header"):
+        generator._preflight_sdist_members(stream)
+
+
+def test_sdist_preflight_rejects_nonzero_trailing_expanded_bytes(tmp_path: Path) -> None:
+    """Reject bytes after the canonical two tar end blocks."""
+    generator = _load_generator()
+    sdist = tmp_path / "trailing-bytes.tar.gz"
+    _write_raw_sdist(sdist, [], trailing=b"unexpected")
+
+    with sdist.open("rb") as stream, pytest.raises(SystemExit, match="valid gzip tar"):
+        generator._preflight_sdist_members(stream)
+
+
+def test_sdist_metadata_parses_the_spooled_snapshot_without_gzip_replay(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Use the validated uncompressed snapshot for semantic metadata parsing."""
+    generator = _load_generator()
+    sdist = tmp_path / "egressweave-0.3.0.tar.gz"
+    _write_valid_sdist(sdist)
+    original_open = generator.tarfile.open
+    modes: list[str | None] = []
+
+    def recording_open(*args: object, **kwargs: object) -> object:
+        modes.append(kwargs.get("mode"))
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(generator.tarfile, "open", recording_open)
+    with sdist.open("rb") as stream:
+        metadata = generator._sdist_metadata(stream)
+
+    assert metadata["Name"] == "egressweave"
+    assert modes == ["r:"]
+
+
 def test_zip_comment_signature_does_not_hide_the_real_eocd(tmp_path: Path) -> None:
     """Ignore EOCD-like bytes inside the bounded ZIP comment."""
     generator = _load_generator()

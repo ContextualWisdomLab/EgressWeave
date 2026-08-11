@@ -17,6 +17,7 @@ import re
 import stat
 import struct
 import tarfile
+import tempfile
 import zipfile
 import zlib
 from email.message import Message
@@ -417,8 +418,9 @@ def _read_expanded(
     consumed: int,
     *,
     retain: bool = True,
+    sink: BinaryIO | None = None,
 ) -> tuple[bytes, int]:
-    """Read or skip bounded expanded tar bytes without one large allocation."""
+    """Read bounded expanded tar bytes, optionally retaining or spooling them."""
     invalid = "release source distribution is not a valid gzip tar"
     if size < 0 or consumed + size > MAX_EXPANDED_TAR_BYTES:
         raise SystemExit("source distribution exceeds the expanded-tar safety bound")
@@ -428,23 +430,31 @@ def _read_expanded(
         chunk = stream.read(min(remaining, 1_048_576))
         if not chunk:
             raise SystemExit(invalid)
+        if sink is not None:
+            sink.write(chunk)
         if retain:
             chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks), consumed + size
 
 
-def _preflight_sdist_members(stream: BinaryIO) -> None:
-    """Bound gzip/tar expansion and physical headers before semantic parsing."""
+def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
+    """Validate and spool one bounded expanded tar stream for semantic parsing."""
     invalid = "release source distribution is not a valid gzip tar"
     stream.seek(0)
     consumed = 0
     members = 0
     zero_headers = 0
+    expanded_archive = tempfile.TemporaryFile(mode="w+b")
     try:
         with gzip.GzipFile(fileobj=stream, mode="rb") as expanded:
             while zero_headers < 2:
-                header, consumed = _read_expanded(expanded, 512, consumed)
+                header, consumed = _read_expanded(
+                    expanded,
+                    512,
+                    consumed,
+                    sink=expanded_archive,
+                )
                 if header == b"\x00" * 512:
                     zero_headers += 1
                     continue
@@ -475,6 +485,7 @@ def _preflight_sdist_members(stream: BinaryIO) -> None:
                     padded_size,
                     consumed,
                     retain=type_flag in {b"x", b"g"},
+                    sink=expanded_archive,
                 )
                 if type_flag in {b"x", b"g"} and b"GNU.sparse." in payload[:size]:
                     raise SystemExit(
@@ -490,11 +501,19 @@ def _preflight_sdist_members(stream: BinaryIO) -> None:
                     )
                 if trailing.strip(b"\x00"):
                     raise SystemExit(invalid)
+                expanded_archive.write(trailing)
                 consumed += len(trailing)
+        expanded_archive.seek(0)
+        return expanded_archive
     except SystemExit:
+        expanded_archive.close()
         raise
     except (OSError, EOFError, zlib.error) as error:
+        expanded_archive.close()
         raise SystemExit(invalid) from error
+    except BaseException:
+        expanded_archive.close()
+        raise
     finally:
         stream.seek(0)
 
@@ -520,12 +539,12 @@ def _wheel_metadata(stream: BinaryIO) -> Message:
 
 def _sdist_metadata(stream: BinaryIO) -> Message:
     """Read one root PKG-INFO while retaining only bounded streaming state."""
-    _preflight_sdist_members(stream)
+    expanded_archive = _preflight_sdist_members(stream)
     selected_payload: bytes | None = None
     seen_names: set[str] = set()
     member_count = 0
     try:
-        with tarfile.open(fileobj=stream, mode="r|gz") as archive:
+        with tarfile.open(fileobj=expanded_archive, mode="r:") as archive:
             for member in archive:
                 member_count += 1
                 if member_count > MAX_ARCHIVE_MEMBERS:
@@ -585,6 +604,8 @@ def _sdist_metadata(stream: BinaryIO) -> Message:
         raise SystemExit(
             "release source distribution is not a valid gzip tar"
         ) from error
+    finally:
+        expanded_archive.close()
 
 
 def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:

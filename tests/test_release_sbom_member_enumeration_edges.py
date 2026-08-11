@@ -55,14 +55,21 @@ def test_low_level_archive_helpers_fail_closed_on_malformed_inputs() -> None:
 
     ordinary_extra = struct.pack("<HH", 0xCAFE, 1) + b"x"
     assert generator._zip_extra_uses_zip64(ordinary_extra) is False
+    assert generator._zip_extra_uses_zip64(struct.pack("<HH", 0x0001, 0)) is True
     with pytest.raises(SystemExit, match="valid ZIP"):
         generator._zip_extra_uses_zip64(struct.pack("<HH", 0xCAFE, 2) + b"x")
 
+    assert generator._tar_number(b"\x00" * 12) == 0
+    assert generator._tar_number(b" " * 12) == 0
     with pytest.raises(SystemExit, match="valid gzip tar"):
         generator._tar_number(b"\x80" + b"\x00" * 11)
     with pytest.raises(SystemExit, match="valid gzip tar"):
         generator._tar_number(b"8\x00")
 
+    valid_checksum = bytearray(512)
+    valid_checksum[0] = 1
+    valid_checksum[148:156] = b"0000401\x00"
+    generator._require_tar_checksum(bytes(valid_checksum))
     bad_checksum = bytearray(512)
     bad_checksum[0] = 1
     bad_checksum[148:156] = b"0000000\x00"
@@ -71,8 +78,12 @@ def test_low_level_archive_helpers_fail_closed_on_malformed_inputs() -> None:
 
     with pytest.raises(SystemExit, match="truncated"):
         generator._read_exact(io.BytesIO(b"a"), 2, "truncated archive")
+    assert generator._read_exact(io.BytesIO(b"ab"), 2, "truncated archive") == b"ab"
+    assert generator._read_expanded(io.BytesIO(b"ab"), 2, 0) == (b"ab", 2)
     with pytest.raises(SystemExit, match="valid gzip tar"):
         generator._read_expanded(io.BytesIO(b"a"), 2, 0)
+    with pytest.raises(SystemExit, match="expanded-tar safety bound"):
+        generator._read_expanded(io.BytesIO(), -1, 0)
     assert generator._read_expanded(io.BytesIO(b"ab"), 2, 0, retain=False) == (
         b"",
         2,
@@ -95,6 +106,21 @@ def test_wheel_declared_count_and_final_count_mismatch_are_independent(
     monkeypatch.setattr(generator, "MAX_ARCHIVE_MEMBERS", 10_000)
     _rewrite_zip_counts(wheel, 1)
     with wheel.open("rb") as stream, pytest.raises(SystemExit, match="valid ZIP"):
+        generator._preflight_wheel_members(stream)
+
+    monkeypatch.setattr(generator, "MAX_ARCHIVE_MEMBERS", 1)
+    with wheel.open("rb") as stream:
+        eocd_offset, fields = generator._find_zip_eocd(stream)
+    dishonest_fields = list(fields)
+    dishonest_fields[2] = dishonest_fields[3] = 1
+    monkeypatch.setattr(
+        generator,
+        "_find_zip_eocd",
+        lambda stream: (eocd_offset, tuple(dishonest_fields)),
+    )
+    with wheel.open("rb") as stream, pytest.raises(
+        SystemExit, match="archive-member safety bound"
+    ):
         generator._preflight_wheel_members(stream)
 
 
@@ -178,8 +204,9 @@ def _disable_preflight_and_install_archive(
 ) -> None:
     """Expose secondary semantic defenses independently of physical preflight."""
 
-    def ignore_preflight(stream: object) -> None:
+    def ignore_preflight(stream: object) -> io.BytesIO:
         del stream
+        return io.BytesIO()
 
     def open_archive(*args: object, **kwargs: object) -> object:
         del args, kwargs
