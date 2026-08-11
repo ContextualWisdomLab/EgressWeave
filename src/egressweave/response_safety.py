@@ -127,7 +127,9 @@ def _select_public_response_extensions(extensions: object) -> dict[str, bytes]:
                 denied = True
                 break
             public_extensions[key] = value
-    except Exception:  # noqa: BLE001
+    except (KeyboardInterrupt, SystemExit, GeneratorExit):
+        raise
+    except BaseException:  # noqa: BLE001
         denied = True
 
     if denied:
