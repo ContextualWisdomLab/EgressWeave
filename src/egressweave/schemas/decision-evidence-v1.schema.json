@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EgressWeave decision evidence v1",
+  "description": "Privacy-minimized deterministic evidence for one successfully authorized EgressWeave authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "authority",
+    "allowed_methods",
+    "ipv4_address_count",
+    "ipv6_address_count",
+    "policy_fingerprint",
+    "decision_fingerprint"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "egressweave.decision-evidence.v1"
+    },
+    "authority": {
+      "type": "string",
+      "minLength": 1
+    },
+    "allowed_methods": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
+        "not": {
+          "const": "CONNECT"
+        }
+      }
+    },
+    "ipv4_address_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "ipv6_address_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "policy_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decision_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
