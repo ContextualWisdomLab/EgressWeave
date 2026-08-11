@@ -60,6 +60,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
+  metadata and validated `sni_hostname` identity channel. `trace`, `target`,
+  unknown extension keys, non-string keys, and hostile extension mappings now
+  fail closed before pool dispatch so raw transport callback capabilities cannot
+  bypass the EgressWeave HTTP policy surface.
+- Require outbound request-header names and values to be exact built-in `bytes`.
+  Byte subclasses fail closed before field parsing or subclass-defined Python
+  behavior can run, preserving the generic denial boundary before HTTPCore
+  dispatch.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
