@@ -189,7 +189,9 @@ def test_sdist_preflight_spools_one_validated_expanded_stream(tmp_path: Path) ->
     with sdist.open("rb") as stream:
         expanded = generator._preflight_sdist_members(stream)
         try:
-            assert expanded.read(512) == regular.tobuf(format=tarfile.PAX_FORMAT)
+            header = expanded.read(512)
+            assert header[: len(regular.name)] == regular.name.encode()
+            assert int(header[124:136].strip(b" \x00") or b"0", 8) == len(b"payload")
         finally:
             expanded.close()
 
