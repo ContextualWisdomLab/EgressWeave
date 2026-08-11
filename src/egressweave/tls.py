@@ -212,7 +212,7 @@ def create_egress_ssl_context(
     """Create the default HTTPX context or a fresh configured enterprise context."""
     if configuration is None:
         return _create_httpx_ssl_context(verify=True, trust_env=False)
-    if not isinstance(configuration, TLSConfiguration):
+    if type(configuration) is not TLSConfiguration:
         raise TypeError("tls_configuration must be TLSConfiguration or None")
     return configuration.create_ssl_context()
 
