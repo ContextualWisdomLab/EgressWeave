@@ -180,6 +180,8 @@ def _special_purpose_global_override(
     ip_address: ipaddress.IPv4Address | ipaddress.IPv6Address,
 ) -> bool | None:
     """Return a reviewed current-registry override for version-sensitive ranges."""
+    if isinstance(ip_address, ipaddress.IPv6Address) and ip_address.ipv4_mapped:
+        return _special_purpose_global_override(ip_address.ipv4_mapped)
     if any(ip_address in network for network in _SPECIAL_PURPOSE_GLOBAL_EXCEPTIONS):
         return True
     if any(ip_address in network for network in _SPECIAL_PURPOSE_NON_GLOBAL_NETWORKS):
