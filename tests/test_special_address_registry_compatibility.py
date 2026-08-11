@@ -91,6 +91,44 @@ def test_current_iana_global_exceptions_remain_allowed_when_stdlib_parent_is_pri
     )
 
 
+def test_ipv4_mapped_non_global_overlay_uses_underlying_ipv4_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deny mapped special-purpose IPv4 even when stale IPv6 metadata says global."""
+    _force_address_properties(
+        monkeypatch,
+        ipaddress.IPv6Address,
+        private=False,
+        global_=True,
+    )
+
+    with pytest.raises(EgressNotAllowedError, match="egress URL is not allowed"):
+        _validate_global_address(
+            "::ffff:192.0.0.8",
+            _REMOTE_POLICY,
+            hostname="api.example.com",
+        )
+
+
+def test_ipv4_mapped_global_exception_uses_underlying_ipv4_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Allow mapped reviewed IPv4 exception despite stale IPv6 private metadata."""
+    _force_address_properties(
+        monkeypatch,
+        ipaddress.IPv6Address,
+        private=True,
+        global_=False,
+    )
+    address = "::ffff:192.0.0.9"
+
+    assert _validate_global_address(
+        address,
+        _REMOTE_POLICY,
+        hostname="api.example.com",
+    ) == str(ipaddress.ip_address(address))
+
+
 @pytest.mark.parametrize("address", ["192.0.0.9", "2001:1::1"])
 @pytest.mark.parametrize(
     ("hostname", "policy"),
