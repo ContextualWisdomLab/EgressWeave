@@ -63,7 +63,7 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
         "uniqueItems": True,
         "items": _METHOD_ITEM_SCHEMA,
     }
-    assert properties["address_count"] == {"type": "integer", "minimum": 1}
+    assert "address_count" not in properties
     for count_field in ("ipv4_address_count", "ipv6_address_count"):
         assert properties[count_field] == {"type": "integer", "minimum": 0}
     for fingerprint_field in ("policy_fingerprint", "decision_fingerprint"):
@@ -95,6 +95,19 @@ def test_schema_accepts_runtime_deny_all_method_policy_shape() -> None:
     allowed_methods = properties["allowed_methods"]
     assert isinstance(allowed_methods, dict)
     assert "minItems" not in allowed_methods
+
+
+def test_schema_uses_family_counts_without_a_contradictory_total() -> None:
+    """Reject a redundant total that could disagree with family counts."""
+    schema = _load_schema()
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    assert "address_count" not in properties
+    assert "address_count" not in schema["required"]
+
+    evidence = _example_evidence()
+    evidence["address_count"] = 3
+    assert set(evidence) - set(properties) == {"address_count"}
 
 
 def test_schema_method_items_match_runtime_normalization_contract() -> None:
@@ -170,11 +183,11 @@ def test_authoritative_docs_publish_versioned_schema_contract() -> None:
 
 
 def test_changelog_records_runtime_aligned_schema_bounds() -> None:
-    """Keep release notes explicit about method and address-count validation."""
+    """Keep release notes explicit about method and family-count validation."""
     changelog = (_REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     for required_fragment in (
         "`CONNECT`",
-        "`address_count`",
+        "family-specific IPv4",
     ):
         assert required_fragment in changelog

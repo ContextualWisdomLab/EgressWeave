@@ -99,7 +99,6 @@ class EgressDecisionEvidence:
     schema_version: str
     authority: str
     allowed_methods: tuple[str, ...]
-    address_count: int
     ipv4_address_count: int
     ipv6_address_count: int
     policy_fingerprint: str
@@ -111,7 +110,6 @@ class EgressDecisionEvidence:
             "schema_version": self.schema_version,
             "authority": self.authority,
             "allowed_methods": list(self.allowed_methods),
-            "address_count": self.address_count,
             "ipv4_address_count": self.ipv4_address_count,
             "ipv6_address_count": self.ipv6_address_count,
             "policy_fingerprint": self.policy_fingerprint,
@@ -140,7 +138,6 @@ def build_egress_decision_evidence(
         "schema_version": DECISION_EVIDENCE_SCHEMA_VERSION,
         "authority": f"{revalidated.hostname}:{revalidated.port}",
         "allowed_methods": sorted(policy.allowed_methods),
-        "address_count": len(versions),
         "ipv4_address_count": versions.count(4),
         "ipv6_address_count": versions.count(6),
         "policy_fingerprint": policy_digest,
@@ -150,7 +147,6 @@ def build_egress_decision_evidence(
         schema_version=DECISION_EVIDENCE_SCHEMA_VERSION,
         authority=str(evidence_payload["authority"]),
         allowed_methods=tuple(sorted(policy.allowed_methods)),
-        address_count=len(versions),
         ipv4_address_count=versions.count(4),
         ipv6_address_count=versions.count(6),
         policy_fingerprint=policy_digest,
