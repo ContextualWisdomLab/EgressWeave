@@ -154,7 +154,7 @@ class _SemanticArchive:
         self._members = members
         self._extracted = extracted
 
-    def __enter__(self: _SemanticArchiveSelf) -> _SemanticArchiveSelf:
+    def __enter__(self: _SemanticArchiveSelf) -> _SemanticArchiveSelf:  # noqa: PYI019
         """Return this archive double from the context manager."""
         return self
 
