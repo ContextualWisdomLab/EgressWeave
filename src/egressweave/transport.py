@@ -47,6 +47,7 @@ from egressweave.response_safety import (
     _enforce_declared_response_size,
     _enforce_response_header_limits,
     _force_identity_accept_encoding,
+    _select_public_response_extensions,
 )
 from egressweave.tls import TLSConfiguration, create_egress_ssl_context
 from egressweave.validation import (
@@ -393,6 +394,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 resp.headers,
                 self._policy.max_response_bytes,
             )
+            safe_response_extensions = _select_public_response_extensions(
+                resp.extensions
+            )
         except EgressNotAllowedError:
             response_denied = True
         if response_denied:
@@ -408,7 +412,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             stream=_BoundedAsyncResponseStream(
                 AsyncResponseStream(resp.stream), self._policy.max_response_bytes
             ),
-            extensions=resp.extensions,
+            extensions=safe_response_extensions,
         )
 
     async def aclose(self) -> None:
