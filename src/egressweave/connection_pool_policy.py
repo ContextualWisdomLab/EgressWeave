@@ -96,7 +96,7 @@ class EgressConnectionPoolPolicy:
         object.__setattr__(
             self,
             "keepalive_expiry_seconds",
-            max_keepalive_connections,
+            keepalive_expiry_seconds,
         )
 
     def as_dict(self) -> dict[str, int | float]:
