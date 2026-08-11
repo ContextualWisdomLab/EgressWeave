@@ -21,9 +21,9 @@ code already executing inside the embedding process.
 Count fields accept only exact built-in integers when callers use the integer
 form; the reviewed ASCII decimal-string form remains supported and normalizes to
 exact integers, while integer subclasses are rejected before finite pool-capacity
-values are retained. This supported configuration-integrity boundary does not
-make EgressWeave a Python sandbox for arbitrary code already running in the host
-process.
+values are retained. This supported configuration-integrity boundary
+does not make EgressWeave a Python sandbox for arbitrary code already running in
+the host process.
 
 `max_connections` must be a positive integer or ASCII decimal string.
 `max_keepalive_connections` may be zero to retain no idle connections but must
