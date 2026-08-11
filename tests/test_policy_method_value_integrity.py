@@ -61,3 +61,13 @@ def test_from_authorities_rejects_str_subclass_before_comma_split() -> None:
             [("api.example.com", 443)],
             allowed_methods=_ExplodingMethodList("GET,POST"),
         )
+
+
+def test_runtime_method_authorization_rejects_str_subclass_before_normalization() -> None:
+    """Reject subclass-controlled normalization at the request authorization boundary."""
+    policy = EgressPolicy.from_hosts(
+        "api.example.com",
+        allowed_methods={"GET"},
+    )
+
+    assert policy.allows_http_method(_NonExactMethod("GET")) is False
