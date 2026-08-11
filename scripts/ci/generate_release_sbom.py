@@ -858,6 +858,26 @@ def _sha256_file(stream: BinaryIO) -> str:
     return digest.hexdigest()
 
 
+def _snapshot_release_artifact(stream: BinaryIO) -> tuple[BinaryIO, str]:
+    """Copy one live artifact into a stable bounded parser snapshot and digest."""
+    source = _LiveBoundedArtifactReader(stream)
+    snapshot = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115
+    digest = hashlib.sha256()
+    try:
+        source.seek(0)
+        while block := source.read(1_048_576):
+            snapshot.write(block)
+            digest.update(block)
+        snapshot.seek(0)
+        return snapshot, digest.hexdigest()
+    except (OSError, TypeError, ValueError) as error:
+        snapshot.close()
+        raise _unsafe_artifact_error(error)
+    except BaseException:
+        snapshot.close()
+        raise
+
+
 def _component_json(item: dict[str, Any]) -> dict[str, Any]:
     """Convert one component to deterministic CycloneDX JSON."""
     properties = [
@@ -886,11 +906,17 @@ def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Build deterministic CycloneDX evidence for one exact distribution."""
     with _open_release_artifact(artifact_path) as artifact_stream:
         digest_before = _sha256_file(artifact_stream)
-        package, version, license_id, requirements = _identity(
-            _artifact_metadata(artifact_stream, artifact_path.name)
-        )
-        digest = _sha256_file(artifact_stream)
-    if digest != digest_before:
+        snapshot, digest = _snapshot_release_artifact(artifact_stream)
+        try:
+            if digest != digest_before:
+                raise SystemExit("release artifact changed during verification")
+            package, version, license_id, requirements = _identity(
+                _artifact_metadata(snapshot, artifact_path.name)
+            )
+            live_digest = _sha256_file(artifact_stream)
+        finally:
+            snapshot.close()
+    if live_digest != digest:
         raise SystemExit("release artifact changed during verification")
 
     root, components = _load_manifest(manifest_path)
