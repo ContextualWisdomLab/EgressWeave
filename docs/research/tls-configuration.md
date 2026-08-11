@@ -50,6 +50,13 @@ trusted integration point for deferred secret retrieval. Every transport owns
 the fresh context that results, eliminating post-validation caller mutation as
 an authority channel.
 
+Before dispatch, transport construction requires the exact `TLSConfiguration`
+type. A subclass cannot replace `create_ssl_context` or otherwise inject
+subclass-controlled TLS policy after validation; callers that need a different
+trusted integration must provide a separate provider-neutral configuration
+value instead. This exact-type boundary complements the independent
+certificate verification and hostname verification requirements above.
+
 ## Trust-store semantics
 
 The default preserves EgressWeave's existing HTTPX trust behavior while
