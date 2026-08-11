@@ -68,6 +68,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Reject non-exact integer subclasses in shared policy integer fields before
+  retaining trusted configuration state. Exact built-in integers and existing
+  ASCII decimal strings remain supported, preserving defaults and ranges while
+  preventing subclass-controlled values from crossing immutable policy construction.
 - Enforce one hard connection deadline across every staggered asynchronous
   attempt and coordinator wait, and make the synchronous pinned transport refuse
   a TCP attempt when the zero remaining connection budget is already exhausted.
