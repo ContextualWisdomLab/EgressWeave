@@ -69,6 +69,7 @@ Public client builders
         +--> synchronous or asynchronous pinned transport
                  |
                  +--> request authority and TLS-SNI binding
+                 +--> positive request-extension allowlist
                  +--> request target / field / body limits
                  +--> finite request-phase timeouts
                  +--> finite connection-pool policy
@@ -112,16 +113,20 @@ the last boundary before HTTPCore.
 Request processing occurs in this order:
 
 1. verify canonical method and request authority;
-2. bind TLS SNI and reject alternate request-target extensions;
-3. validate and rewrite outbound fields;
-4. enforce the exact percent-encoded target budget;
-5. enforce final request-field count and byte budgets;
-6. reject unsafe declared request-body lengths before pool dispatch;
-7. bind finite connect, read, write, and pool-acquisition timeouts;
-8. wrap the request body with a bounded stream and dispatch to HTTPCore through
+2. apply a positive request-extension allowlist: only reviewed `timeout`
+   metadata and the validated `sni_hostname` identity channel may continue,
+   while `target`, `trace`, non-string keys, and unknown future extensions fail
+   closed before pool dispatch;
+3. bind TLS SNI to the already validated hostname;
+4. validate and rewrite outbound fields;
+5. enforce the exact percent-encoded target budget;
+6. enforce final request-field count and byte budgets;
+7. reject unsafe declared request-body lengths before pool dispatch;
+8. bind finite connect, read, write, and pool-acquisition timeouts;
+9. wrap the request body with a bounded stream and dispatch to HTTPCore through
    the pinned network backend; and
-9. enforce actual streamed-body and declared-length equality while HTTPCore
-   consumes the body.
+10. enforce actual streamed-body and declared-length equality while HTTPCore
+    consumes the body.
 
 The declared `Content-Length` ceiling is therefore a pre-pool fail-closed check,
 while actual stream-byte accounting is necessarily lazy: the bounded stream is
