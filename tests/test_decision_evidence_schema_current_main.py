@@ -164,3 +164,28 @@ def test_distribution_verifier_requires_schema_in_wheel_and_sdist() -> None:
     )
     assert "decision-evidence-v1.schema.json" in verifier
     assert "src/{DISTRIBUTION_NAME}/schemas/" in verifier
+
+
+def test_authoritative_docs_publish_schema_privacy_and_packaging_contract() -> None:
+    """Keep buyer-facing architecture and audit guidance aligned with schema v1."""
+    architecture = (_REPOSITORY_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    changelog = (_REPOSITORY_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    evidence_guide = (_REPOSITORY_ROOT / "docs/decision-evidence.md").read_text(
+        encoding="utf-8"
+    )
+
+    for document in (architecture, changelog, evidence_guide):
+        assert "decision-evidence-v1.schema.json" in document
+        assert "get_decision_evidence_json_schema()" in document
+
+    for fragment in (
+        "JSON Schema Draft 2020-12",
+        "address_count",
+        "CONNECT",
+        "purpose limitation",
+    ):
+        assert fragment in evidence_guide
+
+    assert "wheel" in evidence_guide
+    assert "source distribution" in evidence_guide
+    assert "does not authorize" in architecture
