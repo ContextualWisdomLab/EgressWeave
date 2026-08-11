@@ -69,13 +69,13 @@ Public client builders
         +--> synchronous or asynchronous pinned transport
                  |
                  +--> request authority and TLS-SNI binding
+                 +--> positive request-extension allowlist
                  +--> request target / field / body limits
                  +--> finite request-phase timeouts
                  +--> finite connection-pool policy
                  +--> per-connect address revalidation
                  +--> identity-only response coding
                  +--> response field / body limits
-                 +--> response-extension capability filtering
                  +--> generic denial and deterministic cleanup
 ```
 
@@ -113,30 +113,24 @@ the last boundary before HTTPCore.
 Request processing occurs in this order:
 
 1. verify canonical method and request authority;
-2. bind TLS SNI and reject alternate request-target extensions;
-3. validate and rewrite outbound fields;
-4. enforce the exact percent-encoded target budget;
-5. enforce final request-field count and byte budgets;
-6. enforce declared and streamed request-body budgets;
-7. bind finite connect, read, write, and pool-acquisition timeouts; and
-8. dispatch to HTTPCore through the pinned network backend.
+2. apply a positive request-extension allowlist: only reviewed `timeout`
+   metadata and the validated `sni_hostname` identity channel may continue,
+   while `target`, `trace`, non-string keys, and unknown future extensions fail
+   closed before pool dispatch;
+3. bind TLS SNI to the already validated hostname;
+4. validate and rewrite outbound fields;
+5. enforce the exact percent-encoded target budget;
+6. enforce final request-field count and byte budgets;
+7. enforce declared and streamed request-body budgets;
+8. bind finite connect, read, write, and pool-acquisition timeouts; and
+9. dispatch to HTTPCore through the pinned network backend.
 
 Response processing occurs before a caller-visible HTTPX response is returned:
 
 1. enforce decoded field count and byte budgets;
 2. require identity content coding for body-bearing responses;
-3. reject unsafe declared lengths;
-4. wrap the body stream with a cumulative byte budget; and
-5. apply a positive response-extension allowlist: preserve only `http_version`
-   and `reason_phrase` when supplied, while withholding `network_stream` and
-   every unknown raw transport capability from the caller-visible response.
-
-The response-extension allowlist is deliberately separate from the private body
-stream wrapper. EgressWeave keeps ownership of the HTTPCore stream needed for
-ordinary response streaming, closure, and connection reuse, but it does not
-expose the underlying `network_stream` handle through `httpx.Response.extensions`.
-A future response extension must receive an explicit security and compatibility
-review before it becomes caller-visible.
+3. reject unsafe declared lengths; and
+4. wrap the body stream with a cumulative byte budget.
 
 Denied request and response streams are closed. Cleanup failures are suppressed
 behind a fresh generic policy error so attacker-controlled exception text does
@@ -168,7 +162,7 @@ cryptographic proof against arbitrary in-process code execution.
 | Request dispatch | validated authority and policy | method, path, fields, body, extensions | canonicalize only reviewed fields; otherwise deny |
 | TCP connect | pinned address set | connection attempts and platform failures | revalidate every address; never re-resolve by hostname |
 | TLS | fresh context and validated hostname | peer certificate and caller SNI override | bind identity; deny mismatch |
-| Response delivery | finite response policy | peer fields, framing, coding, body, extensions | bound content and expose only reviewed inert metadata |
+| Response delivery | finite response policy | peer fields, framing, coding, and body | bound and validate before exposure |
 | Audit export | revalidated decision | paths, credentials, IPs, response data | omit sensitive request and peer data |
 
 Arbitrary code execution inside the embedding Python process is outside the

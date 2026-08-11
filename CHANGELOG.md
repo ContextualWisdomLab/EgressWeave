@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Document the hourly product-development maintainer's bounded root-cause
+  analysis and operational feasibility loop, including canonical prompt and
+  control-plane incident handling.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
@@ -58,22 +61,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
+- Require the hourly product-development maintainer to perform exact-evidence
+  root-cause analysis and operational feasibility validation before selecting,
+  abandoning, or escalating a remediation.
+- Load the hourly product-development maintainer from one canonical prompt file
+  with a 12 KiB control-plane budget instead of an inline YAML heredoc. Generic
+  scheduler failures are treated as resumable control-plane incidents; prompt
+  repair alone is not completion, and transient connector/provider errors do not
+  disable the recurring loop.
 
 ### Security
-- Restrict caller-visible response extensions to inert `http_version` and
-  `reason_phrase` metadata. The raw `network_stream` transport capability and
-  unknown response extensions remain internal to EgressWeave while ordinary
-  response streaming, closure, and connection-pool reuse continue through the
-  privately wrapped raw transport stream.
+- Pin the credential-free verifier to a reviewed Python 3.13
+  `python@sha256:<64-hex>` digest, validate it before Docker execution, and
+  remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
 - Enforce one hard connection deadline across every staggered asynchronous
   attempt and coordinator wait, and make the synchronous pinned transport refuse
   a TCP attempt when the zero remaining connection budget is already exhausted.
   Deadline exhaustion keeps dependency-specific failures and cleanup outcomes
   behind the existing generic egress denial while preserving caller cancellation.
-- Remove the repository-write publisher from the autonomous product scheduler
-  and disable hourly scheduler auto-merge. Verified model output now ends at a
-  short-lived handoff; any pull-request merge remains current-head reviewed and
-  operator-controlled under normal protection.
+- Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
+  metadata and validated `sni_hostname` identity channel. `trace`, `target`,
+  unknown extension keys, non-string keys, and hostile extension mappings now
+  fail closed before pool dispatch so raw transport callback capabilities cannot
+  bypass the EgressWeave HTTP policy surface.
+- Require outbound request-header names and values to be exact built-in `bytes`.
+  Byte subclasses fail closed before field parsing or subclass-defined Python
+  behavior can run, preserving the generic denial boundary before HTTPCore
+  dispatch.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and

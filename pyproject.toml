@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Security",
     "Topic :: Internet :: WWW/HTTP",
     "Typing :: Typed",
@@ -42,7 +43,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "coverage>=7.15.3,<8",
+    "coverage>=7.15.4,<8",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
 ]

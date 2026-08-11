@@ -69,7 +69,11 @@ def test_release_build_dependencies_are_hash_locked() -> None:
         assert filename in requirements
         assert f"--hash=sha256:{sha256}" in requirements
 
-    assert "packaging==26.2" in requirements
+    assert "packaging==26.3" in requirements
+    assert (
+        "--hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        in requirements
+    )
     assert "pluggy==1.6.0" in requirements
     assert "tomli==2.4.1 ; python_version < \"3.11\"" in requirements
 
@@ -132,6 +136,23 @@ def test_release_tag_creation_rechecks_the_current_main_head() -> None:
     assert "current_main_sha" in tag_job
     assert '"$current_main_sha" != "$RELEASE_SHA"' in tag_job
     assert "Protected main moved after artifact verification" in tag_job
+
+
+def test_pypi_staging_rechecks_verified_distribution_digests_before_upload() -> None:
+    """Bind copied PyPI staging bytes to the verifier-issued SHA256SUMS manifest."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    build_job = workflow.split("  build-distributions:", maxsplit=1)[1].split(
+        "  create-release-tag:", maxsplit=1
+    )[0]
+    prepare_step = build_job.split(
+        "      - name: Prepare the canonical PyPI-only artifact set",
+        maxsplit=1,
+    )[1].split("      - name: Upload complete checksummed release evidence", maxsplit=1)[0]
+
+    assert "set -euo pipefail" in prepare_step
+    assert "cp dist/*.whl dist/*.tar.gz publish-dist/" in prepare_step
+    assert "cd publish-dist" in prepare_step
+    assert "sha256sum --check --strict ../dist/SHA256SUMS" in prepare_step
 
 
 def test_pypi_job_receives_only_canonical_distribution_artifacts() -> None:
