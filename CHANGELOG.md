@@ -62,6 +62,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require the exact `TLSConfiguration` type before TLS context creation. A
+  subclass can no longer override `create_ssl_context()` to replace the reviewed
+  immutable policy with a context that disables hostname or certificate
+  verification; private trust, mTLS, and explicit TLS 1.2 compatibility remain
+  available through the documented declarative fields.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and
