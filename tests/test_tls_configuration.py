@@ -223,7 +223,8 @@ def test_client_identity_is_loaded_into_the_fresh_context(monkeypatch) -> None:
         )
 
     monkeypatch.setattr("egressweave.tls._load_client_identity", capture_identity)
-    password = lambda: "secret"
+    def password() -> str:
+        return "secret"
     configuration = TLSConfiguration(
         client_certificate_file="client.pem",
         client_private_key_file="client.key",
