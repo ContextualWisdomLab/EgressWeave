@@ -68,6 +68,22 @@ a repository-secret fallback.
    100% statement/branch coverage, docstring checks, and independent review
    gates pass.
 
+### Credential-free release-evidence preparation
+
+After local and pull-request package acceptance, the separately documented
+[release-evidence preparation control](release-evidence-preparation.md) may be
+run only from a read-only, credential-free checkout detached at the exact
+accepted source SHA. It requires exactly one wheel and matching source
+distribution, applies compressed-byte bounds before archive parsing, and creates
+the deterministic six-file evidence set plus a separately stored handoff for
+independent re-verification.
+
+This branch-local preparer is not integrated into the credential-bearing release
+workflow and does not modify or weaken that workflow's tag, OIDC, publication,
+release, or approval boundaries. Its output is a credential-free consistency
+handoff, not hosted build provenance, publication authorization, or a SLSA Build
+level claim.
+
 ## Publish
 
 1. Open **Actions → release → Run workflow**.
