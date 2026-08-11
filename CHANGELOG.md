@@ -72,6 +72,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Remove the repository-write publisher from the autonomous product scheduler
+  and disable hourly scheduler auto-merge. Verified model output now ends at a
+  short-lived handoff; any pull-request merge remains current-head reviewed and
+  operator-controlled under normal protection.
+- Canonicalize the public manifest writer's optional `forbidden_root` before any
+  output-parent creation or output-path access. Missing, non-directory,
+  symlinked, unresolvable, or otherwise noncanonical roots now fail with one
+  stable non-leaking error, and every pre-write, descriptor-bound, and post-sync
+  containment check reuses the same resolved directory authority.
 - Revalidate the complete canonical evidence set and the closed owner-only
   manifest after publication but before reporting success. A second independent
   bounded evidence pass must reproduce the exact strict manifest bytes, while a
