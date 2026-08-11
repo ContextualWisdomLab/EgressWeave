@@ -239,9 +239,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 for task in done:
                     try:
                         stream = task.result()
-                    except asyncio.CancelledError:
-                        continue
-                    except Exception:  # noqa: BLE001, S112
+                    except Exception:  # noqa: BLE001, S112  # pragma: no cover
                         continue
                     if successful_stream is None:
                         successful_stream = stream
