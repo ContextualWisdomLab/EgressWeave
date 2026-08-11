@@ -90,11 +90,12 @@ def test_open_pull_request_gates_count_every_paginated_page() -> None:
     )
     complete_query = (
         'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
-        "--paginate --slurp --jq 'map(length) | add // 0'"
+        "--paginate --jq 'length' | "
+        "awk '{total += $1} END {print total + 0}'"
     )
 
     assert workflow.count(complete_query) == 2
-    assert "--jq 'length'" not in workflow
+    assert "--slurp" not in workflow
 
 
 def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:

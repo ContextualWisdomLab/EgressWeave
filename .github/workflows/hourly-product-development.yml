@@ -57,8 +57,8 @@ jobs:
           open_prs="$(
             gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
               --paginate \
-              --slurp \
-              --jq 'map(length) | add // 0'
+              --jq 'length' |
+            awk '{total += $1} END {print total + 0}'
           )"
           if [ "$open_prs" -eq 0 ]; then
             echo "develop=true" >>"$GITHUB_OUTPUT"
@@ -300,8 +300,8 @@ jobs:
           open_prs="$(
             gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
               --paginate \
-              --slurp \
-              --jq 'map(length) | add // 0'
+              --jq 'length' |
+            awk '{total += $1} END {print total + 0}'
           )"
           if [ "$open_prs" -ne 0 ] || [ "$current_sha" != "$EXPECTED_BASE_SHA" ]; then
             echo "verify=false" >>"$GITHUB_OUTPUT"
