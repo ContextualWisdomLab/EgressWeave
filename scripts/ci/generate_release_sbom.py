@@ -9,15 +9,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import os
 import re
+import stat
 import tarfile
 import zipfile
 from email.message import Message
 from email.parser import BytesParser
 from email.policy import default
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 
 from packaging.markers import InvalidMarker, Marker
 from packaging.requirements import InvalidRequirement, Requirement
@@ -28,6 +31,7 @@ CYCLONEDX_SCHEMA = "https://cyclonedx.org/schema/bom-1.7.schema.json"
 CYCLONEDX_SPEC_VERSION = "1.7"
 MAX_METADATA_BYTES = MAX_MANIFEST_BYTES = 1_048_576
 MAX_ARCHIVE_MEMBERS = 10_000
+MAX_RELEASE_ARTIFACT_BYTES = 256 * 1024 * 1024
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 REVIEWED_SPDX_LICENSE_IDS = frozenset(
@@ -47,6 +51,172 @@ def _parse_arguments() -> argparse.Namespace:
     for flag in ("artifact", "manifest", "lock", "output"):
         parser.add_argument(f"--{flag}", type=Path, required=True)
     return parser.parse_args()
+
+
+def _unsafe_artifact_error(error: BaseException | None = None) -> SystemExit:
+    """Return one stable non-leaking failure for unsafe parser-visible state."""
+    failure = SystemExit("release artifact is missing or unsafe")
+    if error is not None:
+        failure.__cause__ = error
+    return failure
+
+
+def _require_live_artifact_descriptor(stream: BinaryIO) -> int:
+    """Return the live regular-file size or fail through a stable public error."""
+    try:
+        descriptor = stream.fileno()
+        metadata = os.fstat(descriptor)
+    except (OSError, TypeError, ValueError) as error:
+        raise _unsafe_artifact_error(error)
+    if (
+        isinstance(descriptor, bool)
+        or not isinstance(descriptor, int)
+        or descriptor < 0
+        or not stat.S_ISREG(metadata.st_mode)
+    ):
+        raise _unsafe_artifact_error()
+    if metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+        raise SystemExit("release artifact exceeds the compressed-byte safety bound")
+    return metadata.st_size
+
+
+def _require_artifact_position(stream: BinaryIO) -> int:
+    """Return one finite nonnegative parser position inside the byte ceiling."""
+    try:
+        position = stream.tell()
+    except (OSError, TypeError, ValueError) as error:
+        raise _unsafe_artifact_error(error)
+    if (
+        isinstance(position, bool)
+        or not isinstance(position, int)
+        or position < 0
+        or position > MAX_RELEASE_ARTIFACT_BYTES
+    ):
+        raise _unsafe_artifact_error()
+    return position
+
+
+class _LiveBoundedArtifactReader(io.BufferedIOBase):
+    """Expose parser reads and seeks while rechecking one finite live descriptor."""
+
+    def __init__(self, stream: BinaryIO) -> None:
+        super().__init__()
+        self._stream = stream
+
+    def readable(self) -> bool:
+        """Report that the accepted artifact descriptor supports reads."""
+        return True
+
+    def seekable(self) -> bool:
+        """Report that archive parsers may seek within the accepted descriptor."""
+        return True
+
+    def fileno(self) -> int:
+        """Return the validated underlying descriptor without leaking failures."""
+        try:
+            descriptor = self._stream.fileno()
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if isinstance(descriptor, bool) or not isinstance(descriptor, int) or descriptor < 0:
+            raise _unsafe_artifact_error()
+        return descriptor
+
+    def tell(self) -> int:
+        """Return one validated finite parser position."""
+        return _require_artifact_position(self._stream)
+
+    def read(self, size: int = -1) -> bytes:
+        """Read no more than the finite ceiling and reject concurrent growth."""
+        _require_live_artifact_descriptor(self._stream)
+        position_before = _require_artifact_position(self._stream)
+        if isinstance(size, bool) or not isinstance(size, int):
+            raise _unsafe_artifact_error()
+        remaining_with_tripwire = MAX_RELEASE_ARTIFACT_BYTES - position_before + 1
+        bounded_size = (
+            remaining_with_tripwire
+            if size < 0 or size > remaining_with_tripwire
+            else size
+        )
+        try:
+            payload = self._stream.read(bounded_size)
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if not isinstance(payload, (bytes, bytearray, memoryview)):
+            raise _unsafe_artifact_error()
+        payload_bytes = bytes(payload)
+        if len(payload_bytes) > bounded_size:
+            raise _unsafe_artifact_error()
+        _require_live_artifact_descriptor(self._stream)
+        position_after = _require_artifact_position(self._stream)
+        if position_after != position_before + len(payload_bytes):
+            raise _unsafe_artifact_error()
+        if len(payload_bytes) > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        return payload_bytes
+
+    def readinto(self, buffer: bytearray | memoryview) -> int:
+        """Fill a parser buffer through the same bounded read contract."""
+        try:
+            payload = self.read(len(buffer))
+            buffer[: len(payload)] = payload
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        return len(payload)
+
+    def seek(self, offset: int, whence: int = os.SEEK_SET) -> int:
+        """Seek only while descriptor state and parser position remain safe."""
+        _require_live_artifact_descriptor(self._stream)
+        try:
+            position = self._stream.seek(offset, whence)
+        except (OSError, TypeError, ValueError) as error:
+            raise _unsafe_artifact_error(error)
+        if (
+            isinstance(position, bool)
+            or not isinstance(position, int)
+            or position < 0
+            or position > MAX_RELEASE_ARTIFACT_BYTES
+        ):
+            raise _unsafe_artifact_error()
+        _require_live_artifact_descriptor(self._stream)
+        if _require_artifact_position(self._stream) != position:
+            raise _unsafe_artifact_error()
+        return position
+
+
+def _open_release_artifact(path: Path) -> BinaryIO:
+    """Open one preflighted regular archive and bind it to the accepted identity."""
+    try:
+        path_metadata = path.lstat()
+    except OSError as error:
+        raise SystemExit("release artifact is missing or unsafe") from error
+    if not stat.S_ISREG(path_metadata.st_mode):
+        raise SystemExit("release artifact is missing or unsafe")
+    if path_metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+        raise SystemExit("release artifact exceeds the compressed-byte safety bound")
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise SystemExit("release artifact is missing or unsafe") from error
+    try:
+        opened_metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened_metadata.st_mode)
+            or opened_metadata.st_dev != path_metadata.st_dev
+            or opened_metadata.st_ino != path_metadata.st_ino
+        ):
+            raise SystemExit("release artifact is missing or unsafe")
+        if opened_metadata.st_size > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _name(value: str) -> str:
@@ -101,10 +271,11 @@ def _parse_metadata(payload: bytes, source: str) -> Message:
     return BytesParser(policy=default).parsebytes(payload)
 
 
-def _wheel_metadata(path: Path) -> Message:
-    """Read the sole bounded wheel METADATA member."""
+def _wheel_metadata(stream: BinaryIO) -> Message:
+    """Read the sole bounded wheel METADATA member from the bound archive."""
+    stream.seek(0)
     try:
-        with zipfile.ZipFile(path) as archive:
+        with zipfile.ZipFile(stream) as archive:
             members = archive.infolist()
             _check_archive_names([item.filename for item in members], "wheel")
             selected = [
@@ -119,10 +290,11 @@ def _wheel_metadata(path: Path) -> Message:
         raise SystemExit("release wheel is not a valid ZIP archive") from error
 
 
-def _sdist_metadata(path: Path) -> Message:
-    """Read the sole bounded root PKG-INFO member."""
+def _sdist_metadata(stream: BinaryIO) -> Message:
+    """Read the sole bounded root PKG-INFO member from the bound archive."""
+    stream.seek(0)
     try:
-        with tarfile.open(path, mode="r:gz") as archive:
+        with tarfile.open(fileobj=stream, mode="r:gz") as archive:
             members = archive.getmembers()
             _check_archive_names([item.name for item in members], "source distribution")
             if any(item.issym() or item.islnk() or item.isdev() for item in members):
@@ -138,20 +310,21 @@ def _sdist_metadata(path: Path) -> Message:
                 raise SystemExit("source distribution must contain one root PKG-INFO")
             if selected[0].size > MAX_METADATA_BYTES:
                 raise SystemExit("source distribution metadata exceeds the safety bound")
-            stream = archive.extractfile(selected[0])
-            if stream is None:
+            extracted = archive.extractfile(selected[0])
+            if extracted is None:
                 raise SystemExit("source distribution metadata could not be read")
-            return _parse_metadata(stream.read(), "source distribution")
+            return _parse_metadata(extracted.read(), "source distribution")
     except tarfile.TarError as error:
         raise SystemExit("release source distribution is not a valid gzip tar") from error
 
 
-def _artifact_metadata(path: Path) -> Message:
-    """Read metadata from a wheel or gzip source distribution."""
-    if path.name.endswith(".whl"):
-        return _wheel_metadata(path)
-    if path.name.endswith(".tar.gz"):
-        return _sdist_metadata(path)
+def _artifact_metadata(stream: BinaryIO, filename: str) -> Message:
+    """Read metadata through a live-bounded wheel or source-archive descriptor."""
+    bounded_stream = _LiveBoundedArtifactReader(stream)
+    if filename.endswith(".whl"):
+        return _wheel_metadata(bounded_stream)
+    if filename.endswith(".tar.gz"):
+        return _sdist_metadata(bounded_stream)
     raise SystemExit("release artifact must be a .whl or .tar.gz distribution")
 
 
@@ -378,12 +551,19 @@ def _identity(metadata: Message) -> tuple[str, str, str, list[str]]:
     return _name(name), version, license_id, requirements
 
 
-def _sha256_file(path: Path) -> str:
-    """Return an artifact SHA-256 without loading it into memory."""
+def _sha256_file(stream: BinaryIO) -> str:
+    """Hash the bound artifact while enforcing its live finite byte ceiling."""
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1_048_576), b""):
-            digest.update(block)
+    stream.seek(0)
+    consumed = 0
+    while block := stream.read(1_048_576):
+        consumed += len(block)
+        if consumed > MAX_RELEASE_ARTIFACT_BYTES:
+            raise SystemExit(
+                "release artifact exceeds the compressed-byte safety bound"
+            )
+        digest.update(block)
+    stream.seek(0)
     return digest.hexdigest()
 
 
@@ -413,11 +593,15 @@ def _component_json(item: dict[str, Any]) -> dict[str, Any]:
 
 def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Build deterministic CycloneDX evidence for one exact distribution."""
-    if not artifact_path.is_file():
-        raise SystemExit("release artifact does not exist or is not a regular file")
-    package, version, license_id, requirements = _identity(
-        _artifact_metadata(artifact_path)
-    )
+    with _open_release_artifact(artifact_path) as artifact_stream:
+        digest_before = _sha256_file(artifact_stream)
+        package, version, license_id, requirements = _identity(
+            _artifact_metadata(artifact_stream, artifact_path.name)
+        )
+        digest = _sha256_file(artifact_stream)
+    if digest != digest_before:
+        raise SystemExit("release artifact changed during verification")
+
     root, components = _load_manifest(manifest_path)
     if package != root["name"] or license_id != root["license"]:
         raise SystemExit("artifact identity or license does not match the manifest")
@@ -426,7 +610,6 @@ def build_sbom(artifact_path: Path, manifest_path: Path) -> dict[str, Any]:
         raise SystemExit("artifact direct runtime dependencies do not match the manifest")
     if requirements != root["requires_dist"]:
         raise SystemExit("artifact runtime requirement declarations do not match the manifest")
-    digest = _sha256_file(artifact_path)
     root_ref = f"urn:egressweave:artifact:sha256:{digest}"
     ordered = sorted(components.values(), key=lambda item: item["purl"])
     dependencies = [
@@ -493,7 +676,7 @@ def main() -> int:
     arguments = _parse_arguments()
     validate_runtime_lock(arguments.manifest.resolve(), arguments.lock.resolve())
     write_sbom(
-        build_sbom(arguments.artifact.resolve(), arguments.manifest.resolve()),
+        build_sbom(arguments.artifact, arguments.manifest.resolve()),
         arguments.output.resolve(),
     )
     print(f"wrote CycloneDX {CYCLONEDX_SPEC_VERSION} SBOM: {arguments.output}")
