@@ -72,6 +72,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   during trusted construction. Timeout-policy subclasses are rejected before
   transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
   preserving the reviewed finite ceilings as the authoritative configuration.
+- Enforce one hard connection deadline across every staggered asynchronous
+  attempt and coordinator wait, and make the synchronous pinned transport refuse
+  a TCP attempt when the zero remaining connection budget is already exhausted.
+  Deadline exhaustion keeps dependency-specific failures and cleanup outcomes
+  behind the existing generic egress denial while preserving caller cancellation.
 - Restrict low-level HTTPCore request extensions to the reviewed finite `timeout`
   metadata and validated `sni_hostname` identity channel. `trace`, `target`,
   unknown extension keys, non-string keys, and hostile extension mappings now
