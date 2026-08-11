@@ -156,6 +156,7 @@ class _SemanticArchive:
 
     def __exit__(self, *args: object) -> None:
         """Leave the archive double without suppressing exceptions."""
+        del args
         return None
 
     def __iter__(self) -> Iterator[_SemanticMember]:
@@ -174,8 +175,16 @@ def _disable_preflight_and_install_archive(
     archive: _SemanticArchive,
 ) -> None:
     """Expose secondary semantic defenses independently of physical preflight."""
-    monkeypatch.setattr(generator, "_preflight_sdist_members", lambda stream: None)
-    monkeypatch.setattr(generator.tarfile, "open", lambda *args, **kwargs: archive)
+
+    def ignore_preflight(stream: object) -> None:
+        del stream
+
+    def open_archive(*args: object, **kwargs: object) -> _SemanticArchive:
+        del args, kwargs
+        return archive
+
+    monkeypatch.setattr(generator, "_preflight_sdist_members", ignore_preflight)
+    monkeypatch.setattr(generator.tarfile, "open", open_archive)
 
 
 def test_secondary_sdist_semantic_defenses_remain_reachable(
