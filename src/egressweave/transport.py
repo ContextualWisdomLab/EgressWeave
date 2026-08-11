@@ -47,6 +47,7 @@ from egressweave.response_safety import (
     _enforce_declared_response_size,
     _enforce_response_header_limits,
     _force_identity_accept_encoding,
+    _select_public_response_extensions,
 )
 from egressweave.tls import TLSConfiguration, create_egress_ssl_context
 from egressweave.validation import (
@@ -163,38 +164,6 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         tasks: set[asyncio.Task] = set()
         more_addresses = True
         next_attempt_at = loop.time()
-        attempt_start_lock = asyncio.Lock()
-        last_attempt_started_at: float | None = None
-        active_attempts = 0
-
-        async def connect_after_stagger(address: str):
-            """Start each backend call only after the prior call's real start."""
-            nonlocal active_attempts, last_attempt_started_at
-            async with attempt_start_lock:
-                if active_attempts and last_attempt_started_at is not None:
-                    remaining_delay = (
-                        last_attempt_started_at
-                        + _CONNECTION_ATTEMPT_DELAY_SECONDS
-                        - loop.time()
-                    )
-                    if remaining_delay > 0:
-                        await asyncio.sleep(remaining_delay)
-                remaining_timeout = None
-                if deadline is not None:
-                    remaining_timeout = max(0.0, deadline - loop.time())
-                last_attempt_started_at = loop.time()
-                active_attempts += 1
-            try:
-                return await self._connect_validated_ip_address(
-                    address,
-                    port,
-                    timeout=remaining_timeout,
-                    local_address=local_address,
-                    socket_options=socket_options,
-                )
-            finally:
-                async with attempt_start_lock:
-                    active_attempts -= 1
 
         def start_next_attempt() -> bool:
             nonlocal more_addresses, next_attempt_at
@@ -211,7 +180,13 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                     return False
             tasks.add(
                 asyncio.create_task(
-                    connect_after_stagger(address)
+                    self._connect_validated_ip_address(
+                        address,
+                        port,
+                        timeout=remaining_timeout,
+                        local_address=local_address,
+                        socket_options=socket_options,
+                    )
                 )
             )
             next_attempt_at = loop.time() + _CONNECTION_ATTEMPT_DELAY_SECONDS
@@ -419,6 +394,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
                 resp.headers,
                 self._policy.max_response_bytes,
             )
+            safe_response_extensions = _select_public_response_extensions(
+                resp.extensions
+            )
         except EgressNotAllowedError:
             response_denied = True
         if response_denied:
@@ -434,7 +412,7 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
             stream=_BoundedAsyncResponseStream(
                 AsyncResponseStream(resp.stream), self._policy.max_response_bytes
             ),
-            extensions=resp.extensions,
+            extensions=safe_response_extensions,
         )
 
     async def aclose(self) -> None:
