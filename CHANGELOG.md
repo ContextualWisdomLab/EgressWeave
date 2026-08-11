@@ -361,6 +361,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   authority-drift rejection, proxy/redirect isolation, and Unix-socket refusal
   as the asynchronous transport, while retrying validated addresses within one
   caller-supplied connection-timeout budget.
+
 ### Security
 - Isolate autonomous maintenance across credential-separated runners. A
   protected guard now rejects out-of-bound patch metadata and files, while
