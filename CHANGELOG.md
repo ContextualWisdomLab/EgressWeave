@@ -60,6 +60,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Stabilize special-purpose remote-address classification across supported
+  Python runtimes with a narrow reviewed source-controlled compatibility overlay;
+  explicit globally reachable exceptions remain allowed only after every normal
+  EgressWeave authority check, and no runtime registry download is introduced.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and
