@@ -61,21 +61,24 @@ must perform the following before changing the advertised pair:
 
 1. select an explicit candidate HTTPX/HTTPCore pair and inspect the private
    interfaces used by both pinned transports;
-2. add or update test-first compatibility evidence for changed shapes or
-   behavior before changing production transport code;
-3. run the complete supported Python matrix, including Python 3.14 when
+2. record the observed failing contract and its exact result before changing
+   `pyproject.toml`, any hash-locked requirements file, or production transport
+   code;
+3. add or update test-first compatibility evidence for changed shapes or
+   behavior;
+4. run the complete supported Python matrix, including Python 3.14 when
    supported, exact 100% owned-production statement/branch coverage, Ruff,
    compile checks, product guard, wheel/sdist verification, and installed-wheel
    smoke testing against the candidate pair;
-4. exercise exact authority, DNS pinning/revalidation, TLS identity,
+5. exercise exact authority, DNS pinning/revalidation, TLS identity,
    request/response bounds, timeouts, pool limits, denial provenance, and stream
    cleanup for synchronous and asynchronous paths;
-5. regenerate the hash-locked CI dependency identities and hashes only after the
+6. regenerate the hash-locked CI dependency identities and hashes only after the
    candidate behavior is accepted;
-6. update package metadata to exactly the dependency identities actually proven,
+7. update package metadata to exactly the dependency identities actually proven,
    or widen it only when an explicit compatibility matrix covers every advertised
    boundary; and
-7. require exact-current-head SAST, dependency review, remaining security gates,
+8. require exact-current-head SAST, dependency review, remaining security gates,
    actionable-review closure, and repository governance before merge or release.
 
 A future adapter or capability check may improve startup diagnostics for a
