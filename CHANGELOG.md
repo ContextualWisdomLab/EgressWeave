@@ -71,10 +71,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and
   operator-controlled under normal protection.
-- Remove the repository-write publisher from the autonomous product scheduler
-  and disable hourly scheduler auto-merge. Verified model output now ends at a
-  short-lived handoff; any pull-request merge remains current-head reviewed and
-  operator-controlled under normal protection.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
