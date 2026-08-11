@@ -320,14 +320,15 @@ def _resolve_all_global_addresses(
         worker_start_failed = False
         try:
             worker.start()
-        except BaseException as exc:
+        except Exception as exc:  # noqa: BLE001
             _DNS_RESOLUTION_SLOTS.release()
-            if isinstance(exc, Exception):
-                flight.error = exc
-                worker_start_failed = True
+            flight.error = exc
+            worker_start_failed = True
             _complete_dns_resolution_flight(key, flight)
-            if not worker_start_failed:
-                raise
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            _DNS_RESOLUTION_SLOTS.release()
+            _complete_dns_resolution_flight(key, flight)
+            raise
         if worker_start_failed:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
