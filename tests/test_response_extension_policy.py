@@ -77,13 +77,20 @@ class _HostileExtensionDict(dict):
 class _HostileExtensionKey:
     """Collide with one reviewed key and fail if dictionary equality executes."""
 
+    def __init__(
+        self,
+        exception_type: type[BaseException] = RuntimeError,
+    ) -> None:
+        """Select the dependency-controlled exception raised during lookup."""
+        self._exception_type = exception_type
+
     def __hash__(self) -> int:
         """Return the same hash as the reviewed HTTP-version extension key."""
         return hash("http_version")
 
     def __eq__(self, other: object) -> bool:
         """Expose exact-dict lookup of dependency-controlled key behavior."""
-        raise RuntimeError("private response extension key comparison")
+        raise self._exception_type("private response extension key comparison")
 
 
 @dataclass
@@ -325,6 +332,20 @@ def test_sync_response_rejects_hostile_exact_dict_key_and_closes_source() -> Non
     assert pool.stream.closed is True
     assert caught.value.__cause__ is None
     assert caught.value.__context__ is None
+
+
+@pytest.mark.parametrize(
+    "exception_type",
+    (KeyboardInterrupt, SystemExit, GeneratorExit),
+)
+def test_response_extension_preserves_direct_base_exceptions(
+    exception_type: type[BaseException],
+) -> None:
+    """Do not normalize process-control exceptions from dependency lookups."""
+    extensions = {_HostileExtensionKey(exception_type): b"unreachable"}
+
+    with pytest.raises(exception_type):
+        response_safety._select_public_response_extensions(extensions)
 
 
 async def test_async_response_rejects_hostile_exact_dict_key_and_closes_source() -> None:
