@@ -8,6 +8,9 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_WORKFLOW_PATH = (
     REPOSITORY_ROOT / ".github" / "workflows" / "hourly-product-development.yml"
 )
+MAINTAINER_PROMPT_PATH = (
+    REPOSITORY_ROOT / ".github" / "prompts" / "hourly-product-maintainer.md"
+)
 REVIEW_WORKFLOW_PATH = (
     REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
 )
@@ -74,12 +77,13 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
 def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
     """Keep untrusted repository execution in the offline secret-free verifier."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
+    maintainer_prompt = _read(MAINTAINER_PROMPT_PATH)
     documentation = " ".join(_read(MAINTENANCE_DOCUMENTATION_PATH).split())
 
     assert '"pytest *":"allow"' not in workflow
     assert '"python -m compileall *":"allow"' not in workflow
     assert '"lsp":"allow"' not in workflow
-    assert "Do not execute repository code in this credential-bearing step" in workflow
+    assert "Do not execute repository code in this credential-bearing step" in maintainer_prompt
     assert "does not execute model-modified repository code" in documentation
 
 
