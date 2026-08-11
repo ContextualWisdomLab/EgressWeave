@@ -84,17 +84,75 @@ def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
 
 
 def test_open_pull_request_gates_count_every_paginated_page() -> None:
-    """Refuse autonomous publication when an open PR exists beyond page one."""
+    """Refuse development or reverification for an open PR beyond page one."""
     workflow = " ".join(
         _read(PRODUCT_WORKFLOW_PATH).replace("\\\n", "").split()
     )
     complete_query = (
         'gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" '
-        "--paginate --slurp --jq 'map(length) | add // 0'"
+        "--paginate --jq 'length' | "
+        "awk '{total += $1} END {print total + 0}'"
     )
 
-    assert workflow.count(complete_query) == 3
-    assert "--jq 'length'" not in workflow
+    assert workflow.count(complete_query) == 2
+    assert "--slurp" not in workflow
+
+
+def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
+    """End the scheduler at a digest-bound credential-free patch handoff."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    forbidden_fragments = (
+        "\n  publish:",
+        "id-token: write",
+        "PR_REVIEW_MERGE_TOKEN",
+        "OPENCODE_APPROVE_TOKEN",
+        "exchange_github_app_token",
+        "git remote set-url",
+        "git push ",
+        "gh pr create",
+        "gh pr merge",
+        "contents: write",
+    )
+
+    assert all(fragment not in workflow for fragment in forbidden_fragments)
+    assert ": write" not in workflow
+    initial_handoff = workflow.split(
+        "Upload the bounded change for credential-free reverification", 1
+    )[1].split("\n\n  reverify:", 1)[0]
+    assert "${{ runner.temp }}/base-sha" in initial_handoff
+    assert "Require the exact handoff base before applying the patch" in workflow
+    assert 'handoff_base_sha="$(cat "$handoff_base_sha_file")"' in workflow
+    assert '[ "$current_sha" != "$EXPECTED_BASE_SHA" ] ||' in workflow
+    assert '[ "$handoff_base_sha" != "$EXPECTED_BASE_SHA" ]; then' in workflow
+    assert "The patch handoff base does not match the exact checkout" in workflow
+    assert 'result_base_sha="$(jq -r ".base_sha" "$result_file")"' in workflow
+    assert '[ "$result_base_sha" != "$EXPECTED_BASE_SHA" ]; then' in workflow
+    assert "Upload the independently verified handoff" in workflow
+    recheck = workflow.split(
+        "Recheck the independently verified immutable patch",
+        1,
+    )[1].split("Upload the independently verified handoff", 1)[0]
+    assert "EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}" in recheck
+    assert '[[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]]' in recheck
+    assert '[ "$base_sha" != "$EXPECTED_BASE_SHA" ]' in recheck
+    assert "does not match the exact handoff base" in recheck
+    assert "hourly-verified-product-change-${{ github.run_id }}" in workflow
+    assert "/opt/egressweave-reverify/egressweave.patch" in workflow
+    assert "/opt/egressweave-reverify/base-sha" in workflow
+    assert "/opt/egressweave-reverify/patch-sha256" in workflow
+    handoff = workflow.split("Upload the independently verified handoff", 1)[1]
+    assert "if-no-files-found: error" in handoff
+    assert "retention-days: 3" in handoff
+
+
+def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
+    """Prevent autonomous product changes from being merged without operator review."""
+    maintenance_workflow = _read(
+        REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
+    )
+
+    assert "enable_auto_merge: false" in maintenance_workflow
+    assert "merge_mode: disabled" in maintenance_workflow
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
@@ -120,6 +178,15 @@ def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() ->
     assert "OpenAI Codex Action" not in documentation
 
 
+def test_operator_documentation_forbids_repository_local_patch_publication() -> None:
+    """Document that verified patches require an external promotion boundary."""
+    documentation = " ".join(_read(MAINTENANCE_DOCUMENTATION_PATH).split())
+
+    assert "does not create a branch, pull request, or auto-merge request" in documentation
+    assert "external credential-separated promotion mechanism" in documentation
+    assert "reconstruct and verify the exact tree" in documentation
+
+
 def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
     """Keep the public execution identity aligned with the audited workflow."""
     readme = _read(README_PATH)
@@ -128,3 +195,56 @@ def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
     assert "bounded OpenCode maintainer" in readme
     assert "`NVIDIA_NIM_API_KEY`" in readme
     assert "COPILOT_GITHUB_TOKEN" not in readme
+
+
+def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
+    """Keep shell format escapes on one YAML line so workflow parsing succeeds."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    workflow_lines = workflow.splitlines()
+    checksum_line = (
+        "          printf '%s  %s\\n' "
+        '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
+    )
+    fallback_line = (
+        "            printf '%s\\n' "
+        "'{\"type\":\"error\",\"message\":\"OpenCode produced no final result\"}' "
+        '>"$result_file"'
+    )
+
+    assert checksum_line in workflow_lines
+    assert fallback_line in workflow_lines
+    assert workflow.endswith("\n")
+
+
+def test_offline_verifier_materializes_the_complete_repository_contract() -> None:
+    """Make every repository-owned test input available before offline checks run."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+    verifier = workflow.split(
+        "Test only inside the offline least-privilege verifier container",
+        1,
+    )[1].split("Recheck the independently verified immutable patch", 1)[0]
+
+    for required_directory in (
+        "/source/src",
+        "/source/tests",
+        "/source/docs",
+        "/source/.github",
+        "/source/scripts",
+    ):
+        assert required_directory in verifier
+
+    root_loop = "for root_file in /source/* /source/.[!.]* /source/..?*; do"
+    regular_file_guard = (
+        '[ -f "$root_file" ] && [ ! -L "$root_file" ] || continue'
+    )
+    root_copy = (
+        'cp --no-preserve=ownership,mode,timestamps "$root_file" /work/'
+    )
+    compileall = "python -m compileall -q src tests scripts"
+    assert root_loop in verifier
+    assert regular_file_guard in verifier
+    assert root_copy in verifier
+    assert compileall in verifier
+    assert verifier.index(root_loop) < verifier.index("ruff check .")
+    assert verifier.index(root_copy) < verifier.index("pytest -q")
+    assert verifier.index(root_copy) < verifier.index(compileall)
