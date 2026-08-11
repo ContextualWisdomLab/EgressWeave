@@ -54,6 +54,7 @@ MAX_ARTIFACT_BYTES = 256 * 1024 * 1024
 __all__ = [
     "build_evidence_manifest",
     "main",
+    "reverify_published_evidence_manifest",
     "write_evidence_manifest",
 ]
 
@@ -745,6 +746,30 @@ def _require_post_publication_state(
         raise SystemExit("evidence manifest output changed after publication")
 
 
+def reverify_published_evidence_manifest(
+    evidence_dir: Path,
+    output_path: Path,
+    *,
+    repository: str,
+    source_sha: str,
+    expected_manifest: dict[str, Any],
+) -> None:
+    """Reverify one sealed evidence set and its exact published manifest bytes.
+
+    ``expected_manifest`` is encoded through the same strict deterministic public
+    evidence contract used by the writer. The verifier then rebuilds the sealed
+    set and rereads the closed output through bounded descriptor/path checks.
+    """
+    expected_payload = _encode_evidence_manifest(expected_manifest)
+    _require_post_publication_state(
+        evidence_dir,
+        output_path,
+        repository=repository,
+        source_sha=source_sha,
+        expected_payload=expected_payload,
+    )
+
+
 def main() -> int:
     """Verify sealed evidence and write one deterministic credential handoff manifest."""
     arguments = _parse_arguments()
@@ -760,18 +785,17 @@ def main() -> int:
         repository=arguments.repository,
         source_sha=arguments.source_sha,
     )
-    expected_payload = _encode_evidence_manifest(manifest)
     write_evidence_manifest(
         manifest,
         output_path,
         forbidden_root=resolved_evidence_dir,
     )
-    _require_post_publication_state(
+    reverify_published_evidence_manifest(
         evidence_dir,
         output_path,
         repository=arguments.repository,
         source_sha=arguments.source_sha,
-        expected_payload=expected_payload,
+        expected_manifest=manifest,
     )
     print(f"verified sealed release evidence: {output_path}")
     return 0
