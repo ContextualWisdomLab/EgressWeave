@@ -414,7 +414,19 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
     monkeypatch,
 ) -> None:
     """Fail generically if the budget expires before the next candidate starts."""
-    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+    clock = _SequenceLoopClock(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        1.0,
+        1.0,
+    )
 
     async def wait_for_failure(tasks, *, timeout, return_when):
         assert timeout == pytest.approx(0.25)
@@ -436,7 +448,19 @@ async def test_predeadline_failure_does_not_start_candidate_after_deadline(
 @pytest.mark.asyncio
 async def test_empty_wait_does_not_start_candidate_after_deadline(monkeypatch) -> None:
     """Do not create a later task if an empty wait reaches the shared deadline."""
-    clock = _SequenceLoopClock(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.9, 1.0)
+    clock = _SequenceLoopClock(
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.9,
+        1.0,
+        1.0,
+    )
     real_create_task = asyncio.create_task
     created_task_count = 0
 
