@@ -145,9 +145,10 @@ def test_pypi_staging_rechecks_verified_distribution_digests_before_upload() -> 
         maxsplit=1,
     )[1].split("      - name: Upload complete checksummed release evidence", maxsplit=1)[0]
 
+    assert "set -euo pipefail" in prepare_step
     assert "cp dist/*.whl dist/*.tar.gz publish-dist/" in prepare_step
     assert "cd publish-dist" in prepare_step
-    assert "sha256sum --check ../dist/SHA256SUMS" in prepare_step
+    assert "sha256sum --check --strict ../dist/SHA256SUMS" in prepare_step
 
 
 def test_pypi_job_receives_only_canonical_distribution_artifacts() -> None:
