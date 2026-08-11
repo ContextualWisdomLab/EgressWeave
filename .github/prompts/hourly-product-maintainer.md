@@ -33,7 +33,7 @@ When a prerequisite reaches its protected branch and an EgressWeave-side action 
 
 ## Control-plane incident recovery
 
-A generic scheduled-task failure, missed run, empty prior response, connector/provider failure, or prompt-processing failure is a control-plane incident, not product completion. Revalidate current repository evidence before changing anything. Do not invent a hidden error code or claim a root cause that the evidence cannot establish. Simplify or correct this canonical prompt only when the observed failure supports that remedy, and continue repository work in the same invocation. Prompt repair alone earns zero completion credit. Do not disable the recurring loop for a transient tool, provider, rate-limit, or connector failure.
+A generic scheduled-task failure, missed run, empty prior response, connector/provider failure, or prompt-processing failure is a control-plane incident, not product completion. Revalidate current repository evidence before changing anything. Do not invent a hidden error code or claim a root cause that the evidence cannot establish. If the observed failure indicates a canonical-prompt defect, record the exact evidence and required external maintainer action. Do not modify the canonical prompt from this workflow. Continue repository work in the same invocation within the permitted edit boundary. Prompt repair alone earns zero completion credit. Do not disable the recurring loop for a transient tool, provider, rate-limit, or connector failure.
 
 ## Test-first and verification contract
 
