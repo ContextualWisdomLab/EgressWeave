@@ -75,6 +75,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   retaining trusted configuration state. Exact built-in integers and existing
   ASCII decimal strings remain supported, preserving defaults and ranges while
   preventing subclass-controlled values from crossing immutable policy construction.
+- Reject non-exact string subclasses in HTTP method policy values before
+  normalization or comma-separated parsing. Exact built-in strings and existing
+  comma-separated syntax remain supported, while runtime authorization rejects
+  subclass-controlled values before method normalization.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
@@ -357,7 +361,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   authority-drift rejection, proxy/redirect isolation, and Unix-socket refusal
   as the asynchronous transport, while retrying validated addresses within one
   caller-supplied connection-timeout budget.
-
 ### Security
 - Isolate autonomous maintenance across credential-separated runners. A
   protected guard now rejects out-of-bound patch metadata and files, while
