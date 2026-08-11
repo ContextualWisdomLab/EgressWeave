@@ -145,6 +145,34 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
         last_error: Exception | None = None
         more_addresses = True
         next_attempt_at = loop.time()
+        attempt_start_lock = asyncio.Lock()
+        last_attempt_started_at: float | None = None
+
+        async def connect_after_stagger(address: str):
+            """Start each backend call only after the prior call's real start."""
+            nonlocal last_attempt_started_at
+            async with attempt_start_lock:
+                if last_attempt_started_at is not None:
+                    remaining_delay = (
+                        last_attempt_started_at
+                        + _CONNECTION_ATTEMPT_DELAY_SECONDS
+                        - loop.time()
+                    )
+                    if remaining_delay > 0:
+                        await asyncio.sleep(remaining_delay)
+                remaining_timeout = None
+                if deadline is not None:
+                    remaining_timeout = max(0.0, deadline - loop.time())
+                    if remaining_timeout <= 0:
+                        raise OSError(EGRESS_NOT_ALLOWED)
+                last_attempt_started_at = loop.time()
+            return await self._connect_validated_ip_address(
+                address,
+                port,
+                timeout=remaining_timeout,
+                local_address=local_address,
+                socket_options=socket_options,
+            )
 
         def start_next_attempt() -> bool:
             nonlocal more_addresses, next_attempt_at
@@ -153,21 +181,29 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
             except StopIteration:
                 more_addresses = False
                 return False
-            remaining_timeout = None
-            if deadline is not None:
-                remaining_timeout = max(0.0, deadline - loop.time())
             tasks.add(
                 asyncio.create_task(
-                    self._connect_validated_ip_address(
-                        address,
-                        port,
-                        timeout=remaining_timeout,
-                        local_address=local_address,
-                        socket_options=socket_options,
-                    )
+                    connect_after_stagger(address)
                 )
             )
             next_attempt_at = loop.time() + _CONNECTION_ATTEMPT_DELAY_SECONDS
+            return True
+
+        async def wait_for_next_attempt() -> bool:
+            """Honor the stagger delay even when the prior attempt failed fast."""
+            nonlocal more_addresses
+            wait_timeout = max(0.0, next_attempt_at - loop.time())
+            if deadline is not None:
+                remaining_budget = max(0.0, deadline - loop.time())
+                if remaining_budget <= 0:
+                    more_addresses = False
+                    return False
+                wait_timeout = min(wait_timeout, remaining_budget)
+            if wait_timeout:
+                await asyncio.sleep(wait_timeout)
+            if deadline is not None and loop.time() >= deadline:
+                more_addresses = False
+                return False
             return True
 
         start_next_attempt()
@@ -207,6 +243,8 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                         await stream.aclose()
                 if successful_stream is not None:
                     return successful_stream
+                if more_addresses and not tasks:
+                    await wait_for_next_attempt()
                 if more_addresses and (not tasks or loop.time() >= next_attempt_at):
                     if deadline is None or loop.time() < deadline:
                         start_next_attempt()

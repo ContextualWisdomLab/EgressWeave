@@ -71,7 +71,9 @@ async def test_connection_attempts_are_staggered(monkeypatch) -> None:
     backend._backend = recording_backend
 
     with pytest.raises(OSError):
-        await backend.connect_tcp("api.example.com", 443, timeout=0.2)
+        # Leave scheduling headroom so this behavioral assertion stays stable
+        # when the shared CI runner is busy.
+        await backend.connect_tcp("api.example.com", 443, timeout=1.0)
 
     assert len(recording_backend.started_at) == 3
     first_gap = recording_backend.started_at[1] - recording_backend.started_at[0]
