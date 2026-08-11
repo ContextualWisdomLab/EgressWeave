@@ -17,7 +17,13 @@ This is a positive allowlist, not an attempt to enumerate dangerous extensions. 
 
 ## Failure and cleanup semantics
 
-Ordinary failures while inspecting dependency-controlled keys or values fail closed behind the generic `EgressNotAllowedError` boundary. The denial is raised after the private inspection exception has left its active exception context so dependency exception details are not exported to callers.
+Ordinary failures mean every `BaseException` other than `KeyboardInterrupt`,
+`SystemExit`, and `GeneratorExit`. The shared `_RESPONSE_BASE_EXCEPTIONS`
+catch is reached only after those three process-control exceptions have been
+explicitly re-raised. Ordinary failures while inspecting dependency-controlled
+keys or values fail closed behind the generic `EgressNotAllowedError` boundary.
+The denial is raised after the private inspection exception has left its active
+exception context so dependency exception details are not exported to callers.
 
 Process-control exceptions `KeyboardInterrupt`, `SystemExit`, and `GeneratorExit` are re-raised rather than normalized into policy denial. Both synchronous and asynchronous transports close the source response stream when extension validation prevents caller-visible delivery.
 
@@ -33,10 +39,27 @@ Tests for this boundary should demonstrate all of the following against the exac
 4. Hostile dictionary-key lookup or comparison failures do not leak private exception provenance.
 5. `KeyboardInterrupt`, `SystemExit`, and `GeneratorExit` are re-raised.
 6. Source streams close deterministically on synchronous and asynchronous rejection paths.
-7. Owned production statement and branch coverage remains exact at the repository-required threshold.
+7. Owned production statement and branch coverage are each 100%.
+
+The exact-current-head evidence for this boundary includes these canonical
+commands:
+
+```text
+pip install -e ".[test]" ruff
+ruff check .
+coverage run -m pytest -q
+coverage report -m
+python scripts/ci/hourly_product_guard.py self-test
+python -m compileall -q src tests scripts
+```
 
 ## References
 
-Encode. (n.d.). *Extensions*. HTTPCore. https://www.encode.io/httpcore/extensions/
+The reviewed dependency resolution at current head `c96bc71a4c4ad00066bb3dc3a1d6094646dd6047`
+pins HTTPCore 1.0.9 and HTTPX 0.28.1 in `uv.lock` (reviewed August 12, 2026).
 
-Encode. (n.d.). *Extensions*. HTTPX. https://www.python-httpx.org/advanced/extensions/
+Encode. (n.d.). *Extensions* (HTTPCore 1.0.9) [Documentation]. Encode. Retrieved
+August 12, 2026, from https://www.encode.io/httpcore/extensions/
+
+Encode. (n.d.). *Extensions* (HTTPX 0.28.1) [Documentation]. Encode. Retrieved
+August 12, 2026, from https://www.python-httpx.org/advanced/extensions/

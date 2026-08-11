@@ -27,7 +27,10 @@ For a non-local target, EgressWeave:
 9. replaces any caller-supplied `Host` header and binds the forwarded `sni_hostname` extension to the validated authority;
 10. disables redirects and environment-derived proxy configuration;
 11. refuses Unix-domain sockets; and
-12. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
+12. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress; and
+13. filters dependency-controlled response extensions to the exact built-in
+    `dict`/`bytes` positive allowlist, keeping `network_stream` and unknown
+    capability-bearing keys private while closing denied source streams.
 
 A failure is surfaced as the generic `EgressNotAllowedError` where validation policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 
