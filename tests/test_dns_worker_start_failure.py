@@ -35,11 +35,11 @@ class _CountingResolutionSlots:
         self.release_count += 1
 
 
-class _SyntheticThreadStartFailure(BaseException):
-    """Model a non-RuntimeError failure before the resolver worker starts."""
+class _SyntheticThreadStartFailure(Exception):
+    """Model a non-RuntimeError ordinary failure before the resolver worker starts."""
 
 
-def _install_failing_resolver_thread(monkeypatch, failure: BaseException) -> None:
+def _install_failing_resolver_thread(monkeypatch, failure: Exception) -> None:
     """Fail only EgressWeave's resolver thread while preserving other threads."""
     original_thread = validation.threading.Thread
 
@@ -58,7 +58,7 @@ def _install_failing_resolver_thread(monkeypatch, failure: BaseException) -> Non
     monkeypatch.setattr(validation.threading, "Thread", selective_thread)
 
 
-def _assert_generic_start_failure(monkeypatch, failure: BaseException) -> None:
+def _assert_generic_start_failure(monkeypatch, failure: Exception) -> None:
     """Require one failed worker start to release its slot and flight."""
     slots = _CountingResolutionSlots()
     monkeypatch.setattr(validation, "_DNS_RESOLUTION_SLOTS", slots)
@@ -91,7 +91,7 @@ def test_dns_worker_start_runtime_failure_erases_private_provenance(monkeypatch)
 
 
 def test_dns_worker_start_non_runtime_failure_fails_closed(monkeypatch) -> None:
-    """Clean resources when a direct non-RuntimeError failure prevents startup."""
+    """Clean resources when an ordinary non-RuntimeError failure prevents startup."""
     _assert_generic_start_failure(
         monkeypatch,
         _SyntheticThreadStartFailure("private thread-start detail"),
