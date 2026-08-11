@@ -63,7 +63,7 @@ def test_packaged_schema_matches_runtime_decision_evidence_contract() -> None:
         "uniqueItems": True,
         "items": _METHOD_ITEM_SCHEMA,
     }
-    assert "address_count" not in properties
+    assert properties["address_count"] == {"type": "integer", "minimum": 1}
     for count_field in ("ipv4_address_count", "ipv6_address_count"):
         assert properties[count_field] == {"type": "integer", "minimum": 0}
     for fingerprint_field in ("policy_fingerprint", "decision_fingerprint"):
@@ -97,17 +97,20 @@ def test_schema_accepts_runtime_deny_all_method_policy_shape() -> None:
     assert "minItems" not in allowed_methods
 
 
-def test_schema_uses_family_counts_without_a_contradictory_total() -> None:
-    """Reject a redundant total that could disagree with family counts."""
+def test_schema_requires_total_and_family_address_counts() -> None:
+    """Require the protected total while allowing either family to be absent."""
     schema = _load_schema()
     properties = schema["properties"]
     assert isinstance(properties, dict)
-    assert "address_count" not in properties
-    assert "address_count" not in schema["required"]
+    required = schema["required"]
+    assert isinstance(required, list)
+    assert "address_count" in required
+    assert properties["address_count"] == {"type": "integer", "minimum": 1}
 
     evidence = _example_evidence()
-    evidence["address_count"] = 3
-    assert set(evidence) - set(properties) == {"address_count"}
+    assert evidence["address_count"] == (
+        evidence["ipv4_address_count"] + evidence["ipv6_address_count"]
+    )
 
 
 def test_schema_method_items_match_runtime_normalization_contract() -> None:
@@ -189,5 +192,6 @@ def test_changelog_records_runtime_aligned_schema_bounds() -> None:
     for required_fragment in (
         "`CONNECT`",
         "family-specific IPv4",
+        "`address_count`",
     ):
         assert required_fragment in changelog

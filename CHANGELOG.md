@@ -13,10 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interchange of `EgressDecisionEvidence`. The schema accepts an empty
   `allowed_methods` array when the runtime policy intentionally denies every
   request method; present entries are unique uppercase EgressWeave-normalized
-  RFC 9110 token strings and reject `CONNECT`. It publishes family-specific IPv4
-  and IPv6 family counts; consumers sum them when a total is needed rather
-  than trusting a redundant field that could contradict them. The schema is not an
-  authorization decision or cryptographic signature, and consumers remain
+  RFC 9110 token strings and reject `CONNECT`. It requires a non-empty total
+  `address_count` plus family-specific IPv4 and IPv6 counts, all derived from
+  the same validated addresses so consumers can check their consistency. The
+  schema is not an authorization decision or cryptographic signature, and consumers remain
   responsible for purpose limitation, tenant authorization, retention, and
   disclosure policy.
 - Document the hourly product-development maintainer's bounded root-cause

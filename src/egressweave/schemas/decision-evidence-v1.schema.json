@@ -8,6 +8,7 @@
     "schema_version",
     "authority",
     "allowed_methods",
+    "address_count",
     "ipv4_address_count",
     "ipv6_address_count",
     "policy_fingerprint",
@@ -31,6 +32,10 @@
           "const": "CONNECT"
         }
       }
+    },
+    "address_count": {
+      "type": "integer",
+      "minimum": 1
     },
     "ipv4_address_count": {
       "type": "integer",
