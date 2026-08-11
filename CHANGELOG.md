@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Restrict caller-visible response extensions to inert `http_version` and
+  `reason_phrase` metadata. The raw `network_stream` transport capability and
+  unknown response extensions remain internal to EgressWeave while ordinary
+  response streaming, closure, and connection-pool reuse continue through the
+  privately wrapped raw transport stream.
 - Enforce one hard connection deadline across every staggered asynchronous
   attempt and coordinator wait, and make the synchronous pinned transport refuse
   a TCP attempt when the zero remaining connection budget is already exhausted.
