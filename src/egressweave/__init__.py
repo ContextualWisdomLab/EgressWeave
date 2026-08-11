@@ -28,6 +28,7 @@ from egressweave.decision_evidence import (
     DECISION_EVIDENCE_SCHEMA_VERSION,
     EgressDecisionEvidence,
     build_egress_decision_evidence,
+    get_decision_evidence_json_schema,
 )
 from egressweave.policy import EgressPolicy
 from egressweave.sync_transport import (
@@ -67,6 +68,7 @@ __all__ = [
     "build_egress_sync_client",
     "build_pinned_https_async_client",
     "build_pinned_https_client",
+    "get_decision_evidence_json_schema",
     "validate_egress_url",
     "validate_egress_url_async",
     "validate_egress_url_details",
