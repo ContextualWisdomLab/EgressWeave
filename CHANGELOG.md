@@ -60,6 +60,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without changing the centrally managed review-agent credential contract.
 
 ### Security
+- Require the request timeout policy to use the exact `EgressTimeoutPolicy` type
+  during trusted construction. Timeout-policy subclasses are rejected before
+  transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
+  preserving the reviewed finite ceilings as the authoritative configuration.
 - Canonicalize the public manifest writer's optional `forbidden_root` before any
   output-parent creation or output-path access. Missing, non-directory,
   symlinked, unresolvable, or otherwise noncanonical roots now fail with one
