@@ -16,12 +16,12 @@ PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
 CI_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 CI_REQUIREMENTS_PATH = REPOSITORY_ROOT / "requirements-ci.txt"
 COVERAGE_WHEEL_URL = (
-    "https://files.pythonhosted.org/packages/37/e7/"
-    "7069b3d6c018917f49ba2e1c5fb910e498c7fefa3a1b78cb1b79e61ff45d/"
-    "coverage-7.15.3-py3-none-any.whl"
+    "https://files.pythonhosted.org/packages/b4/d9/"
+    "e70c286c979378f061d8266e279b686ab0b0b688e1fe0af864684f23a77d/"
+    "coverage-7.15.4-py3-none-any.whl"
 )
 COVERAGE_WHEEL_SHA256 = (
-    "da78fa6fc7dafe4212839173133ee85afcf42c5cd5f3e47fa7c1c210453b445e"
+    "964730a1e9de9c0cf11be6a1a3c79ce419c34882842abd256086ba4698705e84"
 )
 
 
@@ -84,7 +84,7 @@ def test_test_extra_declares_the_supported_coverage_tool() -> None:
     pyproject = _load_pyproject()
     test_dependencies = pyproject["project"]["optional-dependencies"]["test"]
 
-    assert "coverage>=7.15.3,<8" in test_dependencies
+    assert "coverage>=7.15.4,<8" in test_dependencies
 
 
 def test_ci_installs_the_attested_hash_locked_coverage_wheel() -> None:
