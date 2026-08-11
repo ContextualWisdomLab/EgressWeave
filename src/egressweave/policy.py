@@ -69,6 +69,13 @@ from egressweave.timeout_policy import (
 )
 
 
+def _split_exact_method_string(value: object) -> list[str]:
+    """Split a comma-separated method list only after exact-string validation."""
+    if type(value) is not str:
+        raise TypeError("allowed_methods must use exact built-in strings")
+    return value.split(",")
+
+
 @dataclass(frozen=True)
 class EgressPolicy:
     """Immutable outbound-egress allowlist and resource policy.
@@ -244,7 +251,7 @@ class EgressPolicy:
 
         method_values: Iterable[object]
         if isinstance(self.allowed_methods, str):
-            method_values = self.allowed_methods.split(",")
+            method_values = _split_exact_method_string(self.allowed_methods)
         else:
             method_values = self.allowed_methods
         normalized_methods = frozenset(
@@ -371,7 +378,7 @@ class EgressPolicy:
 
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
-            method_items = allowed_methods.split(",")
+            method_items = _split_exact_method_string(allowed_methods)
         else:
             method_items = allowed_methods
 
@@ -434,7 +441,7 @@ class EgressPolicy:
         )
         method_items: Iterable[str]
         if isinstance(allowed_methods, str):
-            method_items = allowed_methods.split(",")
+            method_items = _split_exact_method_string(allowed_methods)
         else:
             method_items = allowed_methods
 
