@@ -14,7 +14,7 @@ import hashlib
 import ipaddress
 import json
 from dataclasses import dataclass
-from importlib import resources
+from importlib import resources  # nosemgrep: python.lang.compatibility.python37.python37-compatibility-importlib2 -- package requires Python >=3.10
 from typing import cast
 
 from egressweave.policy import EgressPolicy
