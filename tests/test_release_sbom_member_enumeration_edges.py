@@ -6,9 +6,10 @@ import importlib.util
 import io
 import struct
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
-from typing import Iterator
+from typing_extensions import Self
 
 import pytest
 
@@ -150,14 +151,13 @@ class _SemanticArchive:
         self._members = members
         self._extracted = extracted
 
-    def __enter__(self) -> _SemanticArchive:
+    def __enter__(self) -> Self:
         """Return this archive double from the context manager."""
         return self
 
     def __exit__(self, *args: object) -> None:
         """Leave the archive double without suppressing exceptions."""
         del args
-        return None
 
     def __iter__(self) -> Iterator[_SemanticMember]:
         """Yield the configured semantic members in order."""
