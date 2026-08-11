@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 VALIDATION_SOURCE = Path("src/egressweave/validation.py")
 
 
