@@ -57,8 +57,8 @@ jobs:
           open_prs="$(
             gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
               --paginate \
-              --slurp \
-              --jq 'map(length) | add // 0'
+              --jq 'length' |
+            awk '{total += $1} END {print total + 0}'
           )"
           if [ "$open_prs" -eq 0 ]; then
             echo "develop=true" >>"$GITHUB_OUTPUT"
@@ -99,10 +99,10 @@ jobs:
           set -euo pipefail
           baseline="${RUNNER_TEMP}/hourly-pristine"
           git clone --quiet --local --no-hardlinks . "$baseline"
-          git -C "$baseline" rev-parse HEAD >"${RUNNER_TEMP}/hourly-development-base-sha"
-          sudo chown -R root:root "$baseline" "${RUNNER_TEMP}/hourly-development-base-sha"
+          git -C "$baseline" rev-parse HEAD >"${RUNNER_TEMP}/base-sha"
+          sudo chown -R root:root "$baseline" "${RUNNER_TEMP}/base-sha"
           sudo chmod -R a-w "$baseline"
-          sudo chmod 0444 "${RUNNER_TEMP}/hourly-development-base-sha"
+          sudo chmod 0444 "${RUNNER_TEMP}/base-sha"
 
       - name: Install the pinned OpenCode CLI
         if: steps.queue.outputs.develop == 'true'
@@ -243,7 +243,7 @@ jobs:
           python "${RUNNER_TEMP}/hourly-pristine/scripts/ci/hourly_product_guard.py" capture \
             --workspace "$GITHUB_WORKSPACE" \
             --baseline "${RUNNER_TEMP}/hourly-pristine" \
-            --base-sha-file "${RUNNER_TEMP}/hourly-development-base-sha" \
+            --base-sha-file "${RUNNER_TEMP}/base-sha" \
             --patch-file "${RUNNER_TEMP}/egressweave.patch" \
             --stat-file "${RUNNER_TEMP}/egressweave.stat"
 
@@ -256,6 +256,7 @@ jobs:
             ${{ runner.temp }}/egressweave.patch
             ${{ runner.temp }}/egressweave.stat
             ${{ runner.temp }}/opencode-result.ndjson
+            ${{ runner.temp }}/base-sha
           if-no-files-found: error
           retention-days: 3
 
@@ -269,10 +270,6 @@ jobs:
       actions: read
       contents: read
       pull-requests: read
-    outputs:
-      publish: ${{ steps.package.outputs.publish }}
-      base_sha: ${{ steps.package.outputs.base_sha }}
-      patch_sha256: ${{ steps.package.outputs.patch_sha256 }}
     steps:
       - name: Harden runner
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
@@ -303,8 +300,8 @@ jobs:
           open_prs="$(
             gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
               --paginate \
-              --slurp \
-              --jq 'map(length) | add // 0'
+              --jq 'length' |
+            awk '{total += $1} END {print total + 0}'
           )"
           if [ "$open_prs" -ne 0 ] || [ "$current_sha" != "$EXPECTED_BASE_SHA" ]; then
             echo "verify=false" >>"$GITHUB_OUTPUT"
@@ -312,6 +309,23 @@ jobs:
             exit 0
           fi
           echo "verify=true" >>"$GITHUB_OUTPUT"
+
+      - name: Require the exact handoff base before applying the patch
+        if: steps.gate.outputs.verify == 'true'
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
+        run: |
+          set -euo pipefail
+          handoff_base_sha_file="${RUNNER_TEMP}/hourly-product-change/base-sha"
+          current_sha="$(git rev-parse HEAD)"
+          handoff_base_sha="$(cat "$handoff_base_sha_file")"
+          if [[ ! "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+             [[ ! "$handoff_base_sha" =~ ^[0-9a-f]{40}$ ]] || \
+             [ "$current_sha" != "$EXPECTED_BASE_SHA" ] || \
+             [ "$handoff_base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The patch handoff base does not match the exact checkout."
+            exit 1
+          fi
 
       - name: Build a trusted verifier image before applying the patch
         if: steps.gate.outputs.verify == 'true'
@@ -349,6 +363,8 @@ jobs:
 
       - name: Validate, apply, and seal the untrusted patch
         if: steps.gate.outputs.verify == 'true'
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
         run: |
           set -euo pipefail
           patch_file="${RUNNER_TEMP}/hourly-product-change/egressweave.patch"
@@ -357,11 +373,16 @@ jobs:
             --workspace "$GITHUB_WORKSPACE" \
             --patch-file "$patch_file" \
             --result-file "$result_file"
+          result_base_sha="$(jq -r ".base_sha" "$result_file")"
+          if [ "$result_base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The verified result base SHA does not match the exact handoff base."
+            exit 1
+          fi
 
           sealed_dir="/opt/egressweave-reverify"
           sudo install -d -m 0555 -o root -g root "$sealed_dir"
           sudo install -m 0444 -o root -g root "$patch_file" "$sealed_dir/egressweave.patch"
-          jq -r '.base_sha' "$result_file" | sudo tee "$sealed_dir/base-sha" >/dev/null
+          printf '%s\n' "$EXPECTED_BASE_SHA" | sudo tee "$sealed_dir/base-sha" >/dev/null
           jq -r '.patch_sha256' "$result_file" | sudo tee "$sealed_dir/patch-sha256" >/dev/null
           sudo chown root:root "$sealed_dir/base-sha" "$sealed_dir/patch-sha256"
           sudo chmod 0444 "$sealed_dir/base-sha" "$sealed_dir/patch-sha256"
@@ -398,17 +419,21 @@ jobs:
             sh -euc '
               mkdir -p "$HOME"
               cp -R --no-preserve=ownership,mode,timestamps \
-                /source/src /source/tests /source/docs \
-                /source/README.md /source/CHANGELOG.md /source/pyproject.toml \
+                /source/src /source/tests /source/docs /source/.github /source/scripts \
                 /work/
+              for root_file in /source/* /source/.[!.]* /source/..?*; do
+                [ -f "$root_file" ] && [ ! -L "$root_file" ] || continue
+                cp --no-preserve=ownership,mode,timestamps "$root_file" /work/
+              done
               ruff check .
               pytest -q
-              python -m compileall -q src tests
+              python -m compileall -q src tests scripts
             '
 
-      - name: Record the independently verified immutable patch
+      - name: Recheck the independently verified immutable patch
         if: steps.gate.outputs.verify == 'true'
-        id: package
+        env:
+          EXPECTED_BASE_SHA: ${{ needs.develop.outputs.base_sha }}
         run: |
           set -euo pipefail
           sealed_dir="/opt/egressweave-reverify"
@@ -418,164 +443,21 @@ jobs:
             echo "::error::The sealed patch changed during independent verification."
             exit 1
           fi
-          echo "publish=true" >>"$GITHUB_OUTPUT"
-          echo "base_sha=$(cat "$sealed_dir/base-sha")" >>"$GITHUB_OUTPUT"
-          echo "patch_sha256=$expected" >>"$GITHUB_OUTPUT"
+          base_sha="$(cat "$sealed_dir/base-sha")"
+          if [[ ! "$base_sha" =~ ^[0-9a-f]{40}$ ]] || \
+             [ "$base_sha" != "$EXPECTED_BASE_SHA" ]; then
+            echo "::error::The sealed base SHA does not match the exact handoff base."
+            exit 1
+          fi
 
-  publish:
-    name: Publish the independently verified change
-    needs: reverify
-    if: needs.reverify.outputs.publish == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      pull-requests: read
-    steps:
-      - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
+      - name: Upload the independently verified handoff
+        if: steps.gate.outputs.verify == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          egress-policy: audit
-
-      - name: Check out a fresh protected branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: main
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Download the independently verified change
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: hourly-product-change-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/hourly-product-change
-
-      - name: Recheck repository state and patch identity
-        id: publish_gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPECTED_BASE_SHA: ${{ needs.reverify.outputs.base_sha }}
-          EXPECTED_PATCH_SHA256: ${{ needs.reverify.outputs.patch_sha256 }}
-        run: |
-          set -euo pipefail
-          patch_file="${RUNNER_TEMP}/hourly-product-change/egressweave.patch"
-          current_sha="$(git rev-parse HEAD)"
-          open_prs="$(
-            gh api "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
-              --paginate \
-              --slurp \
-              --jq 'map(length) | add // 0'
-          )"
-          observed_patch_sha256="$(sha256sum "$patch_file" | awk '{print $1}')"
-          if [ "$open_prs" -ne 0 ] || [ "$current_sha" != "$EXPECTED_BASE_SHA" ]; then
-            echo "publish=false" >>"$GITHUB_OUTPUT"
-            echo "::notice::Discarding the verified patch because repository state changed before publication."
-            exit 0
-          fi
-          if [ "$observed_patch_sha256" != "$EXPECTED_PATCH_SHA256" ]; then
-            echo "::error::The patch artifact changed after independent reverification."
-            exit 1
-          fi
-          result_file="${RUNNER_TEMP}/publish-result.json"
-          python scripts/ci/hourly_product_guard.py apply \
-            --workspace "$GITHUB_WORKSPACE" \
-            --patch-file "$patch_file" \
-            --result-file "$result_file"
-          if [ "$(jq -r '.base_sha' "$result_file")" != "$EXPECTED_BASE_SHA" ] || \
-             [ "$(jq -r '.patch_sha256' "$result_file")" != "$EXPECTED_PATCH_SHA256" ]; then
-            echo "::error::Publisher guard identity did not match independent reverification."
-            exit 1
-          fi
-          echo "publish=true" >>"$GITHUB_OUTPUT"
-
-      - name: Select a write identity that triggers downstream checks
-        if: steps.publish_gate.outputs.publish == 'true'
-        id: write_token
-        env:
-          PREFERRED_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN || secrets.OPENCODE_APPROVE_TOKEN || '' }}
-          OIDC_AUDIENCE: opencode-github-action
-          OPENCODE_API_BASE_URL: https://api.opencode.ai
-        run: |
-          set -euo pipefail
-          if [ -n "${PREFERRED_TOKEN:-}" ]; then
-            echo "::add-mask::$PREFERRED_TOKEN"
-            echo "token=$PREFERRED_TOKEN" >>"$GITHUB_OUTPUT"
-            echo "source=organization-secret" >>"$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
-            echo "::error::No external write identity is available; refusing a GITHUB_TOKEN-authored PR that would suppress downstream workflow events."
-            exit 1
-          fi
-          request_url="${ACTIONS_ID_TOKEN_REQUEST_URL}"
-          separator="&"
-          case "$request_url" in
-            *\?*) ;;
-            *) separator="?" ;;
-          esac
-          oidc_response="$(
-            curl -fsS \
-              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-              "${request_url}${separator}audience=${OIDC_AUDIENCE}"
-          )"
-          oidc_token="$(jq -r '.value // empty' <<<"$oidc_response")"
-          if [ -z "$oidc_token" ]; then
-            echo "::error::OIDC token response was empty."
-            exit 1
-          fi
-          token_response="$(
-            curl -fsS \
-              -X POST \
-              -H "Authorization: Bearer ${oidc_token}" \
-              "${OPENCODE_API_BASE_URL}/exchange_github_app_token"
-          )"
-          app_token="$(jq -r '.token // empty' <<<"$token_response")"
-          if [ -z "$app_token" ]; then
-            echo "::error::OpenCode app token exchange returned no repository write token."
-            exit 1
-          fi
-          echo "::add-mask::$app_token"
-          echo "token=$app_token" >>"$GITHUB_OUTPUT"
-          echo "source=opencode-app-oidc" >>"$GITHUB_OUTPUT"
-
-      - name: Push a branch, open a pull request, and queue guarded auto-merge
-        if: steps.publish_gate.outputs.publish == 'true'
-        env:
-          GH_TOKEN: ${{ steps.write_token.outputs.token }}
-          TOKEN_SOURCE: ${{ steps.write_token.outputs.source }}
-        run: |
-          set -euo pipefail
-          result_file="${RUNNER_TEMP}/hourly-product-change/opencode-result.ndjson"
-          stat_file="${RUNNER_TEMP}/hourly-product-change/egressweave.stat"
-          title="feat: close the next bounded product gap"
-          narrative_sha256="$(sha256sum "$result_file" | awk '{print $1}')"
-          tests="$(printf '%s\n' '- `ruff check .`' '- `pytest -q`' '- `python -m compileall -q src tests`' '- `git diff --check`')"
-          branch="agent/hourly-product-gap-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "$branch"
-          git add -A -- src/egressweave tests docs README.md CHANGELOG.md
-          if git diff --cached --quiet; then
-            echo "::error::The independently verified patch produced no committable change."
-            exit 1
-          fi
-          git commit -m "$title"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push --set-upstream origin "$branch"
-
-          body_file="${RUNNER_TEMP}/hourly-product-change/pr-body.md"
-          {
-            printf '## Autonomous product improvement\n\nThis pull request contains one bounded, independently reverified change selected while the repository had zero open pull requests. The model narrative is retained only in the short-lived workflow artifact so untrusted generated prose is not injected into the review context. Narrative SHA-256: `%s`.\n\n' "$narrative_sha256"
-            printf '## Verification\n\n%s\n\n' "$tests"
-            printf '## Diff boundary\n\n```text\n'
-            cat "$stat_file"
-            printf '```\n\n'
-            printf 'Generated by the hourly bounded maintainer. Write identity: `%s`. Full CI, security scans, independent reviews, and branch protections remain authoritative.\n' "$TOKEN_SOURCE"
-          } >"$body_file"
-
-          pr_url="$(gh pr create --base main --head "$branch" --title "$title" --body-file "$body_file")"
-          gh pr merge "$pr_url" --auto --squash
+          name: hourly-verified-product-change-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /opt/egressweave-reverify/egressweave.patch
+            /opt/egressweave-reverify/base-sha
+            /opt/egressweave-reverify/patch-sha256
+          if-no-files-found: error
+          retention-days: 3
