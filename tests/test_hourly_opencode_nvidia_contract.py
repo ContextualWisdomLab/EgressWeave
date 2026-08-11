@@ -106,6 +106,7 @@ def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
     )
 
     assert 'gh pr merge "$pr_url"' not in product_workflow
+    assert "git add -A" not in product_workflow
     assert "guarded manual merge" in product_workflow
     assert "normal protected merge remain mandatory" in product_workflow
     assert "enable_auto_merge: false" in maintenance_workflow

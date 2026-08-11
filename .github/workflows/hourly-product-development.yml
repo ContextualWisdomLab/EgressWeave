@@ -558,7 +558,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c "$branch"
-          git add -A -- src/egressweave tests docs README.md CHANGELOG.md
+          git add -- src/egressweave tests docs README.md CHANGELOG.md
           if git diff --cached --quiet; then
             echo "::error::The independently verified patch produced no committable change."
             exit 1
