@@ -94,6 +94,10 @@ class _HostileExtensionKey:
         raise self._exception_type("private response extension key comparison")
 
 
+class _UnexpectedExtensionFailure(BaseException):
+    """Represent a dependency failure outside ordinary application exceptions."""
+
+
 @dataclass
 class _CoreResponse:
     """Small response object matching the attributes consumed by transports."""
@@ -363,6 +367,19 @@ def test_response_extension_preserves_direct_base_exceptions(
         response_safety._select_public_response_extensions(extensions)
 
 
+def test_response_extension_normalizes_unexpected_base_exception() -> None:
+    """Normalize non-control dependency failures at the direct selector boundary."""
+    extensions = {
+        _HostileExtensionKey(_UnexpectedExtensionFailure): b"unreachable"
+    }
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as caught:
+        response_safety._select_public_response_extensions(extensions)
+
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
 @pytest.mark.parametrize("cleanup_exception", (RuntimeError, KeyboardInterrupt))
 def test_sync_response_cleanup_preserves_control_flow(cleanup_exception) -> None:
     """Suppress ordinary cleanup failures but preserve process-control errors."""
@@ -386,6 +403,22 @@ async def test_async_response_rejects_hostile_exact_dict_key_and_closes_source()
         await pinned.handle_async_request(
             httpx.Request("GET", VALIDATED.normalized_url)
         )
+
+    assert pool.stream.closed is True
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None
+
+
+def test_sync_response_normalizes_unexpected_base_exception_and_closes_source() -> None:
+    """Normalize a custom dependency failure and release the sync response stream."""
+    pinned = sync_transport._PinnedEgressTransport(VALIDATED, POLICY)
+    pool = _SyncExtensionPool(
+        {_HostileExtensionKey(_UnexpectedExtensionFailure): b"unreachable"}
+    )
+    pinned._pool = pool
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as caught:
+        pinned.handle_request(httpx.Request("GET", VALIDATED.normalized_url))
 
     assert pool.stream.closed is True
     assert caught.value.__cause__ is None
@@ -419,3 +452,21 @@ async def test_async_response_reraises_keyboard_interrupt_and_closes_source() ->
         )
 
     assert pool.stream.closed is True
+
+
+async def test_async_response_normalizes_unexpected_base_exception_and_closes_source() -> None:
+    """Normalize a custom dependency failure and release the async response stream."""
+    pinned = transport._PinnedEgressAsyncTransport(VALIDATED, POLICY)
+    pool = _AsyncExtensionPool(
+        {_HostileExtensionKey(_UnexpectedExtensionFailure): b"unreachable"}
+    )
+    pinned._pool = pool
+
+    with pytest.raises(EgressNotAllowedError, match="^egress URL is not allowed$") as caught:
+        await pinned.handle_async_request(
+            httpx.Request("GET", VALIDATED.normalized_url)
+        )
+
+    assert pool.stream.closed is True
+    assert caught.value.__cause__ is None
+    assert caught.value.__context__ is None

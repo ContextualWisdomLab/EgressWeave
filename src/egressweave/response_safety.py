@@ -20,7 +20,7 @@ from egressweave.validation import EGRESS_NOT_ALLOWED, EgressNotAllowedError
 
 _BODYLESS_RESPONSE_STATUS_CODES = frozenset({204, 304})
 _PUBLIC_RESPONSE_EXTENSION_KEYS = ("http_version", "reason_phrase")
-_RESPONSE_CLEANUP_FAILURES = (BaseException,)
+_RESPONSE_BASE_EXCEPTIONS = (BaseException,)
 
 
 def _close_sync_response_after_policy_denial(stream: httpx.SyncByteStream) -> None:
@@ -29,7 +29,7 @@ def _close_sync_response_after_policy_denial(stream: httpx.SyncByteStream) -> No
         stream.close()
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except _RESPONSE_CLEANUP_FAILURES:
+    except _RESPONSE_BASE_EXCEPTIONS:
         return
 
 
@@ -41,7 +41,7 @@ async def _close_async_response_after_policy_denial(
         await stream.aclose()
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except _RESPONSE_CLEANUP_FAILURES:
+    except _RESPONSE_BASE_EXCEPTIONS:
         return
 
 
@@ -87,7 +87,7 @@ def _enforce_response_header_limits(
             if field_bytes > max_response_header_bytes:
                 denied = True
                 break
-    except Exception:  # noqa: BLE001
+    except _RESPONSE_BASE_EXCEPTIONS:
         denied = True
 
     if denied:
@@ -152,7 +152,7 @@ def _select_public_response_extensions(extensions: object) -> dict[str, bytes]:
             public_extensions[key] = value
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except Exception:  # noqa: BLE001
+    except _RESPONSE_BASE_EXCEPTIONS:
         denied = True
 
     if denied:
