@@ -7,6 +7,7 @@ import io
 import struct
 import zipfile
 from collections.abc import Iterator
+from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType
 from typing_extensions import Self
@@ -145,7 +146,7 @@ class _SemanticMember:
 
 
 class _SemanticArchive:
-    """Context-managed streaming tar double with controlled extraction."""
+    """Streaming tar double with controlled member iteration and extraction."""
 
     def __init__(self, members: list[_SemanticMember], extracted: object = b"") -> None:
         self._members = members
@@ -158,7 +159,6 @@ class _SemanticArchive:
     def __exit__(self, *args: object) -> None:
         """Leave the archive double without suppressing exceptions."""
         del args
-
     def __iter__(self) -> Iterator[_SemanticMember]:
         """Yield the configured semantic members in order."""
         return iter(self._members)
@@ -179,9 +179,9 @@ def _disable_preflight_and_install_archive(
     def ignore_preflight(stream: object) -> None:
         del stream
 
-    def open_archive(*args: object, **kwargs: object) -> _SemanticArchive:
+    def open_archive(*args: object, **kwargs: object) -> object:
         del args, kwargs
-        return archive
+        return nullcontext(archive)
 
     monkeypatch.setattr(generator, "_preflight_sdist_members", ignore_preflight)
     monkeypatch.setattr(generator.tarfile, "open", open_archive)
