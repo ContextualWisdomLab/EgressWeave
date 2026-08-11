@@ -396,10 +396,12 @@ def _revalidate_pinned_egress_url(
     validated: ValidatedEgressURL, policy: EgressPolicy
 ) -> ValidatedEgressURL:
     """Re-check caller-supplied validation state before transport use."""
+    if type(validated) is not ValidatedEgressURL:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
     integrity_signature = getattr(validated, "_integrity_signature", None)
     if (
-        not isinstance(validated, ValidatedEgressURL)
-        or not isinstance(integrity_signature, bytes)
+        not isinstance(integrity_signature, bytes)
         or not isinstance(validated.normalized_url, str)
         or not isinstance(validated.hostname, str)
         or not isinstance(validated.port, int)
