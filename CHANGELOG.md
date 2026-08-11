@@ -71,6 +71,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Reject non-exact integer subclasses in connection-pool count fields before
+  finite capacity is retained. Exact built-in integers and reviewed ASCII
+  decimal strings remain supported and normalize to built-in integers; callers
+  using custom integer subclasses must convert them deliberately before trusted
+  policy construction.
 - Require the request timeout policy to use the exact `EgressTimeoutPolicy` type
   during trusted construction. Timeout-policy subclasses are rejected before
   transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
