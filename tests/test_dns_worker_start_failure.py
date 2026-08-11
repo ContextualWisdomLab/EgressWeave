@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 
 from egressweave import (
@@ -37,10 +41,6 @@ class _CountingResolutionSlots:
 
 class _SyntheticThreadStartFailure(Exception):
     """Model a non-RuntimeError ordinary failure before the resolver worker starts."""
-
-
-class _SyntheticThreadStartInterrupt(BaseException):
-    """Model a process-control interruption before the resolver worker starts."""
 
 
 def _install_failing_resolver_thread(monkeypatch, failure: BaseException) -> None:
@@ -102,15 +102,30 @@ def test_dns_worker_start_non_runtime_failure_fails_closed(monkeypatch) -> None:
     )
 
 
-def test_dns_worker_start_base_exception_cleans_before_propagating(monkeypatch) -> None:
-    """Release owned resolver state before propagating process-control failures."""
+def test_dns_worker_start_avoids_direct_base_exception_handler() -> None:
+    """Keep worker-start cleanup explicit without a catch-all BaseException handler."""
+    source = textwrap.dedent(inspect.getsource(validation._resolve_all_global_addresses))
+    syntax_tree = ast.parse(source)
+    direct_base_exception_handlers = [
+        handler
+        for node in ast.walk(syntax_tree)
+        if isinstance(node, ast.Try)
+        for handler in node.handlers
+        if isinstance(handler.type, ast.Name) and handler.type.id == "BaseException"
+    ]
+
+    assert direct_base_exception_handlers == []
+
+
+def test_dns_worker_start_interrupt_cleans_before_propagating(monkeypatch) -> None:
+    """Release owned resolver state before propagating a real process-control interrupt."""
     slots = _CountingResolutionSlots()
-    failure = _SyntheticThreadStartInterrupt("synthetic process-control interruption")
+    failure = KeyboardInterrupt("synthetic process-control interruption")
     monkeypatch.setattr(validation, "_DNS_RESOLUTION_SLOTS", slots)
     _install_failing_resolver_thread(monkeypatch, failure)
 
     try:
-        with pytest.raises(_SyntheticThreadStartInterrupt) as exc_info:
+        with pytest.raises(KeyboardInterrupt) as exc_info:
             validation._resolve_all_global_addresses(_HOSTNAME, _PORT, _POLICY)
 
         assert exc_info.value is failure
