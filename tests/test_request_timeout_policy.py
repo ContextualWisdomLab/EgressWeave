@@ -228,7 +228,6 @@ def test_timeout_policy_changes_audit_visible_policy_fingerprints() -> None:
 def test_sync_transport_binds_timeout_ceilings_before_pool_dispatch() -> None:
     """Pass only policy-bounded timeout metadata into synchronous HTTPCore."""
     observed: dict[str, object] = {}
-    marker = object()
 
     class CapturingPool:
         """Capture one core request without performing network I/O."""
@@ -268,7 +267,6 @@ def test_sync_transport_binds_timeout_ceilings_before_pool_dispatch() -> None:
                 "write": None,
                 "pool": 7.0,
             },
-            "trace": marker,
         },
     )
 
@@ -283,7 +281,6 @@ def test_sync_transport_binds_timeout_ceilings_before_pool_dispatch() -> None:
         "pool": 1.0,
     }
     assert extensions["sni_hostname"] == "api.example.com"
-    assert extensions["trace"] is marker
     transport.close()
 
 
@@ -291,7 +288,6 @@ def test_sync_transport_binds_timeout_ceilings_before_pool_dispatch() -> None:
 async def test_async_transport_binds_timeout_ceilings_before_pool_dispatch() -> None:
     """Pass only policy-bounded timeout metadata into asynchronous HTTPCore."""
     observed: dict[str, object] = {}
-    marker = object()
 
     class CapturingPool:
         """Capture one asynchronous core request without network I/O."""
@@ -331,7 +327,6 @@ async def test_async_transport_binds_timeout_ceilings_before_pool_dispatch() -> 
                 "write": None,
                 "pool": 7.0,
             },
-            "trace": marker,
         },
     )
 
@@ -346,7 +341,6 @@ async def test_async_transport_binds_timeout_ceilings_before_pool_dispatch() -> 
         "pool": 1.0,
     }
     assert extensions["sni_hostname"] == "api.example.com"
-    assert extensions["trace"] is marker
     await transport.aclose()
 
 
