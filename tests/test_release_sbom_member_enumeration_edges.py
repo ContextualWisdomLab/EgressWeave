@@ -12,7 +12,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from typing_extensions import Self
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
@@ -152,7 +151,7 @@ class _SemanticArchive:
         self._members = members
         self._extracted = extracted
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> _SemanticArchive:
         """Return this archive double from the context manager."""
         return self
 
