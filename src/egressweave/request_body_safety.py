@@ -88,7 +88,7 @@ def _close_sync_request_after_policy_denial(stream: httpx.SyncByteStream) -> Non
         stream.close()
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except _DENIAL_CLEANUP_FAILURES:  # noqa: BLE001
+    except _DENIAL_CLEANUP_FAILURES:
         return
 
 
@@ -163,7 +163,7 @@ async def _close_async_request_after_policy_denial(
         cleanup = asyncio.gather(close_awaitable, return_exceptions=True)
     except (KeyboardInterrupt, SystemExit, GeneratorExit):
         raise
-    except _DENIAL_CLEANUP_FAILURES:  # noqa: BLE001
+    except _DENIAL_CLEANUP_FAILURES:
         return
     _ = await cleanup
 
