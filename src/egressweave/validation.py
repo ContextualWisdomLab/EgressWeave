@@ -317,15 +317,18 @@ def _resolve_all_global_addresses(
             name="egressweave-dns-resolver",
             daemon=True,
         )
+        worker_start_failed = False
         try:
             worker.start()
         except BaseException as exc:
             _DNS_RESOLUTION_SLOTS.release()
             if isinstance(exc, Exception):
                 flight.error = exc
+                worker_start_failed = True
             _complete_dns_resolution_flight(key, flight)
-            if not isinstance(exc, Exception):
+            if not worker_start_failed:
                 raise
+        if worker_start_failed:
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
 
     remaining_timeout = deadline - time.monotonic()
