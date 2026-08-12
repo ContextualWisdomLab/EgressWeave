@@ -1,6 +1,6 @@
 # ADR 0004: Bounded canonical automation prompt
 
-Status: **Proposed**
+Status: **Accepted**
 
 Date: 2026-08-10
 
@@ -26,9 +26,9 @@ The GitHub Actions workflow SHALL load that file into a private runner path befo
 
 ### 2. Explicit prompt-size budget
 
-The canonical prompt SHALL be a regular, non-symbolic-link file no larger than **12 KiB**. The workflow SHALL fail before model execution if the file is missing, is a symbolic link, has an invalid byte count, or exceeds that limit.
+The canonical prompt SHALL be a regular, non-symbolic-link file no larger than **12,000 bytes**. The workflow SHALL fail before model execution if the file is missing, is a symbolic link, has an invalid byte count, or exceeds that limit.
 
-The 12 KiB value is an internal engineering budget chosen to keep the model handoff compact and reviewable. It is not evidence of an external scheduler limit and must not be represented as the confirmed root cause of any generic scheduled-task failure.
+The 12,000-byte value is an internal engineering budget chosen to keep the model handoff compact and reviewable. It is not evidence of an external scheduler limit and must not be represented as the confirmed root cause of any generic scheduled-task failure.
 
 ### 3. Prompt content remains work-conserving and authority-bounded
 
@@ -51,13 +51,13 @@ This decision SHALL NOT broaden repository-write authority, model tools, egress 
 
 A **generic scheduled-task failure**, missed expected run, empty previous response, connector/provider failure, or prompt-processing failure is recorded as a **control-plane incident**, not product completion. The next successful invocation re-fetches live automation and GitHub state before acting.
 
-The loop SHALL distinguish only causes supported by observable evidence and SHALL NOT invent a hidden error code. It MAY simplify or correct this same canonical prompt when evidence supports that remedy, but **prompt repair alone** earns zero completion credit. The invocation continues repository work in the same run whenever a safe EgressWeave action remains. A transient provider, connector, tool or rate-limit failure does not disable the recurring loop.
+The loop SHALL distinguish only causes supported by observable evidence and SHALL NOT invent a hidden error code. If evidence supports correction of the canonical prompt, the repository-local model workflow SHALL record the exact evidence and required **external maintainer** action; it SHALL NOT modify `.github/**` or the canonical prompt itself. An external prompt repair alone earns zero completion credit. The invocation continues repository work in the same run whenever a safe EgressWeave action remains. A transient provider, connector, tool or rate-limit failure does not disable the recurring loop.
 
 ### 5. Verification and maturity
 
 Repository tests SHALL verify the canonical path, size bound, unique no-early-stop and double-exit headings, workflow loader, absence of the old inline heredoc, credentialed-execution prohibition, dependency handoff, control-plane recovery, operator documentation and release-facing changelog entry.
 
-This decision is **ACTIVE-PR** implementation until the scheduler branch that adds the canonical prompt and loader reaches protected main. Protected-main workflow source remains authoritative until then. This ADR remains Proposed until normal review and protected-branch integration accept it.
+The canonical prompt file, regular-file/non-symlink and **12,000-byte** guard, private runner copy, OpenCode handoff, and credential-free verifier separation are **IMPLEMENTED-ON-PROTECTED-MAIN**. Protected-main workflow source remains authoritative. Operational acceptance of the external scheduler is a separate evidence boundary: an external generic failure still requires fresh observable control-plane evidence and does not invalidate or silently strengthen this repository-owned implementation.
 
 ## Consequences
 
@@ -72,8 +72,8 @@ This decision is **ACTIVE-PR** implementation until the scheduler branch that ad
 ### Costs
 
 - The workflow gains another repository-owned file that must be present in checkout and offline verification.
-- Prompt changes require the same review rigor as workflow policy changes.
-- The 12 KiB budget forces consolidation instead of unlimited historical accumulation.
+- Prompt changes require the same review rigor as workflow policy changes and an external maintainer because the model workflow denies `.github/**` edits.
+- The 12,000-byte budget forces consolidation instead of unlimited historical accumulation.
 - External scheduled-task failures still require external telemetry for a definitive scheduler-side RCA.
 
 ## Alternatives considered

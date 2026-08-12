@@ -67,7 +67,7 @@ They need documented control contributions, reproducible package and release evi
 
 ### PRD-G-007 — Bounded and resumable automation control plane
 
-**ACTIVE-PR.** Repository-local autonomous product development SHALL use one bounded canonical maintainer prompt, keep model execution separate from repository-write/publication authority, and treat a generic scheduled-task failure as a resumable **control-plane incident** rather than product completion. Prompt repair is an intermediate control-plane action and does not replace subsequent repository progress.
+**IMPLEMENTED-ON-PROTECTED-MAIN.** Repository-local autonomous product development uses one bounded canonical maintainer prompt, keeps model execution separate from repository-write/publication authority, and treats a generic scheduled-task failure as a resumable **control-plane incident** rather than product completion. The repository-local model workflow must not repair its own canonical prompt or other `.github/**` controls; evidence-backed prompt changes require an **external maintainer** under normal repository governance. External scheduler success remains a separate operational-acceptance boundary, and an external prompt repair is only an intermediate control-plane action rather than repository completion.
 
 ## 6. Functional requirements
 
@@ -117,7 +117,7 @@ EgressWeave public policy and builder contracts SHALL remain suitable for host-o
 
 ### PRD-FR-012 — Canonical automation prompt integrity
 
-The repository-local product-development workflow SHALL load `.github/prompts/hourly-product-maintainer.md` as the single bounded canonical maintainer prompt, reject missing/symlink/over-budget prompt input before model execution, and avoid duplicating the policy in an inline YAML heredoc. This requirement must not broaden repository-write authority, reviewer identity, model egress, signing, publication or release authority.
+The repository-local product-development workflow SHALL load `.github/prompts/hourly-product-maintainer.md` as the single bounded canonical maintainer prompt, reject missing/symlink input and prompt content over **12,000 bytes** before model execution, and avoid duplicating the policy in an inline YAML heredoc. This requirement must not broaden repository-write authority, reviewer identity, model egress, signing, publication or release authority; the model edit allowlist SHALL continue to deny `.github/**` so canonical prompt repair remains an external-maintainer action.
 
 ## 7. Non-functional requirements
 
@@ -149,7 +149,7 @@ The repository-local product-development workflow SHALL load `.github/prompts/ho
 - Public/shipped symbol docstrings: 100% under the repository contract.
 - Deterministic offline regressions for security boundaries.
 - Wheel and source-distribution acceptance before release.
-- Machine-checkable prompt path, byte budget, workflow loading and incident-recovery contracts for repository-local autonomous development.
+- Machine-checkable prompt path, exact **12,000-byte** budget, workflow loading and incident-recovery contracts for repository-local autonomous development.
 
 ## 8. Explicit non-goals
 
@@ -168,7 +168,7 @@ The following are **OUT-OF-SCOPE** for EgressWeave core unless a future accepted
 
 A buyer-facing release is acceptable only when the exact protected release source satisfies the repository's required CI, security, coverage/docstring, packaging, dependency/supply-chain, provenance/SBOM where applicable, independent review, release and operational-acceptance gates. A green feature branch, model review comment, or stale predecessor check is not release evidence.
 
-Repository-local automation acceptance additionally requires the exact integrated workflow to load the reviewed bounded canonical prompt, keep the model non-publishing, verify model changes in the credential-free stage, and demonstrate that generic control-plane errors resume through fresh-state recovery. The current canonical-prompt implementation remains **ACTIVE-PR** until protected-main integration and operational acceptance.
+Repository-local automation acceptance requires the exact integrated workflow to load the reviewed bounded canonical prompt, keep the model non-publishing, and verify model changes in the credential-free stage. Those repository-owned controls are **IMPLEMENTED-ON-PROTECTED-MAIN**. Demonstrating recovery from a generic external scheduler/control-plane failure remains separate operational evidence and must be bound to the exact integrated source rather than inferred from documentation or a generic success message.
 
 Host organizations remain responsible for service-level objectives, incident operations, tenant access control, secrets, application logging/retention, host-owned adapters, and network-layer enforcement. See [`OPERABILITY.md`](OPERABILITY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and [Release, rollback, and provenance](RELEASE_PROVENANCE.md).
 
