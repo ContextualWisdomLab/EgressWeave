@@ -84,8 +84,11 @@ The organization-owned review scheduler retains its existing identity and
 inherited-secret contract. Autonomous product development uses a pinned
 OpenCode CLI with `NVIDIA_NIM_API_KEY`, never `COPILOT_GITHUB_TOKEN`. Model
 execution cannot directly publish changes. A separate credential-free lane
-reverifies a bounded patch before a publishing identity creates a normal pull
-request.
+reverifies a bounded patch and emits only a short-lived digest-bound handoff.
+No repository-local product-development job obtains repository-write authority
+or creates or publishes a branch or pull request. Any later promotion is
+external to the product workflow, independently reviewed, credential-separated,
+and exact-tree verified before repository write.
 
 ## Alternatives considered
 
