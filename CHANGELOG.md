@@ -61,6 +61,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Restore the hourly PR-maintenance calls to the reviewed immutable
+  `ContextualWisdomLab/.github` revision
+  `59505c1d89eb7ea816e921b6da38079c736608c2`. The regression contract now
+  checks the actual reusable-workflow jobs, passes only the named review
+  credentials, and preserves declared permissions and disabled scheduler merge
+  authority.
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
