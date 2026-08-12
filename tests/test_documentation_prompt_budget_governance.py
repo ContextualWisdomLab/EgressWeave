@@ -12,8 +12,8 @@ def _read(relative_path: str) -> str:
     return (REPOSITORY_ROOT / relative_path).read_text(encoding="utf-8")
 
 
-def test_adr_records_bounded_canonical_prompt_without_claiming_shipped_behavior() -> None:
-    """Keep prompt source, size, incident recovery, and maturity in one decision."""
+def test_adr_records_integrated_bounded_canonical_prompt() -> None:
+    """Keep prompt source, size, incident recovery, and shipped maturity aligned."""
     adr = _read("docs/adr/0004-bounded-canonical-automation-prompt.md")
 
     for required_phrase in (
@@ -22,10 +22,11 @@ def test_adr_records_bounded_canonical_prompt_without_claiming_shipped_behavior(
         "inline YAML heredoc",
         "control-plane incident",
         "prompt repair alone",
-        "ACTIVE-PR",
+        "IMPLEMENTED-ON-PROTECTED-MAIN",
     ):
         assert required_phrase in adr
-    assert "Status: **Proposed**" in adr
+    assert "Status: **Accepted**" in adr
+    assert "This decision is **ACTIVE-PR** implementation" not in adr
 
 
 def test_product_and_technical_requirements_include_prompt_control_plane_contract() -> None:
@@ -35,7 +36,7 @@ def test_product_and_technical_requirements_include_prompt_control_plane_contrac
 
     assert "bounded canonical maintainer prompt" in prd
     assert "control-plane incident" in prd
-    assert "ACTIVE-PR" in prd
+    assert "IMPLEMENTED-ON-PROTECTED-MAIN" in prd
     assert ".github/prompts/hourly-product-maintainer.md" in trd
     assert "12 KiB" in trd
     assert "must not broaden repository-write authority" in trd
@@ -62,8 +63,8 @@ def test_architecture_and_uml_show_prompt_loading_and_resumable_failure() -> Non
         assert required_phrase in uml
 
 
-def test_operability_audit_and_traceability_cover_generic_scheduler_errors() -> None:
-    """Turn generic task failures into an auditable, non-terminal runbook path."""
+def test_operability_audit_and_traceability_cover_integrated_scheduler_recovery() -> None:
+    """Keep generic scheduler recovery current with the integrated prompt loader."""
     operability = _read("docs/product/OPERABILITY.md")
     audit = _read("docs/product/DOCUMENTATION_AUDIT.md")
     traceability = _read("docs/product/TRACEABILITY.md")
@@ -73,7 +74,8 @@ def test_operability_audit_and_traceability_cover_generic_scheduler_errors() -> 
         assert "control-plane incident" in document
     assert "12 KiB" in operability
     assert "exact hidden error code is unavailable" in operability
-    assert "ACTIVE-PR" in audit
+    assert "IMPLEMENTED-ON-PROTECTED-MAIN" in audit
+    assert "canonical prompt" in audit
     assert "ADR 0004" in traceability
 
 
