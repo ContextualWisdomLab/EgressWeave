@@ -270,8 +270,13 @@ publication before the GitHub Release is made public.
   inherited secret contract are preserved.
 - At minute `37` each hour, product development runs only when no pull request is
   open. It uses a pinned OpenCode CLI with `NVIDIA_NIM_API_KEY`, not
-  `COPILOT_GITHUB_TOKEN`. Model execution, credential-free reverification, and
-  publication use separate runners and permissions.
+  `COPILOT_GITHUB_TOKEN`. Model execution and credential-free reverification use
+  separate runners and permissions. The verifier emits only a short-lived
+  digest-bound handoff; no repository-local product-development job obtains
+  repository-write authority or creates or publishes a branch or pull request.
+  Any later promotion is external to the product workflow, independently
+  reviewed, credential-separated, and exact-tree verified before repository
+  write.
 
 Neither automation path may treat queued, pending, cancelled, stale-head, or
 previous-head evidence as success.
