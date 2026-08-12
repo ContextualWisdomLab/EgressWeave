@@ -76,9 +76,15 @@ def test_release_evidence_gate_binds_exact_integrating_pr_and_live_rules() -> No
     assert "contents/${workflow_path}?ref=${workflow_ref}" in evidence_job
     assert "actions/runs?head_sha=${SOURCE_HEAD_SHA}&per_page=100" in evidence_job
     assert '.head_sha == $head' in evidence_job
+    assert 'workflow_url // ""' in evidence_job
+    assert 'required_workflow_url_prefix="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/required_workflows/"' in evidence_job
+    assert 'source_workflow_url_prefix="https://api.github.com/repos/${workflow_source}/actions/workflows/"' in evidence_job
+    assert '"$workflow_url" == "${required_workflow_url_prefix}"*' in evidence_job
+    assert '"$workflow_url" == "${source_workflow_url_prefix}"*' in evidence_job
+    assert '[[ "$workflow_url_id" =~ ^[1-9][0-9]*$ ]]' in evidence_job
+    assert "did not bind to the target required-workflow or declared source repository" in evidence_job
     assert "[ \"$(jq -r '.status' <<<\"$latest_run\")\" != \"completed\" ]" in evidence_job
     assert "[ \"$(jq -r '.conclusion' <<<\"$latest_run\")\" != \"success\" ]" in evidence_job
-    assert 'contains("/actions/required_workflows/")' in evidence_job
 
 
 def test_release_evidence_gate_fails_closed_on_review_governance_drift() -> None:
