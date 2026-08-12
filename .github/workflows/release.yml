@@ -329,9 +329,19 @@ jobs:
               echo "::error::Required workflow ${workflow_path} is not completed-success on the exact source head."
               exit 1
             fi
-            if ! jq -e '.workflow_url | contains("/actions/required_workflows/")' \
-              <<<"$latest_run" >/dev/null; then
-              echo "::error::Workflow ${workflow_path} did not execute as repository-required workflow evidence."
+            workflow_url="$(jq -r '.workflow_url // ""' <<<"$latest_run")"
+            required_workflow_url_prefix="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/required_workflows/"
+            source_workflow_url_prefix="https://api.github.com/repos/${workflow_source}/actions/workflows/"
+            if [[ "$workflow_url" == "${required_workflow_url_prefix}"* ]]; then
+              workflow_url_id="${workflow_url#"$required_workflow_url_prefix"}"
+            elif [[ "$workflow_url" == "${source_workflow_url_prefix}"* ]]; then
+              workflow_url_id="${workflow_url#"$source_workflow_url_prefix"}"
+            else
+              echo "::error::Workflow ${workflow_path} did not bind to the target required-workflow or declared source repository."
+              exit 1
+            fi
+            if ! [[ "$workflow_url_id" =~ ^[1-9][0-9]*$ ]]; then
+              echo "::error::Workflow ${workflow_path} exposed a malformed workflow URL identity."
               exit 1
             fi
             if [ "$workflow_path" = ".github/workflows/security-scan.yml" ]; then
