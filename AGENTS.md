@@ -7,6 +7,20 @@ requests cannot reach unintended authorities. Treat every change to
 `policy.py`, `validation.py`, and either transport as security-sensitive, and
 never weaken a check to make a test pass.
 
+## Canonical documentation
+
+Read [`docs/product/PRD.md`](docs/product/PRD.md) for product requirements,
+[`docs/product/TRD.md`](docs/product/TRD.md) for the technical contract, root
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for protected-main implementation
+architecture, and [`docs/adr/README.md`](docs/adr/README.md) for durable
+architecture decisions before changing product boundaries.
+
+When a change alters a durable product, architecture, security, ownership,
+compatibility, automation, persistence, or release contract, update the relevant
+canonical documentation in the same reviewed change. Keep implementation
+maturity explicit: active pull requests and target architecture are not shipped
+protected-main behavior.
+
 ## Invariants that must not regress
 
 1. **Fail closed.** Any parse error, resolution failure, or ambiguous state
@@ -45,7 +59,9 @@ never weaken a check to make a test pass.
 - Production statement and branch coverage must both remain 100% on every
   supported Python version; do not use blanket coverage exclusions to hide a
   reachable branch.
-- This package is extracted from naruon; port security fixes in both directions.
+- This package was extracted from naruon. Evaluate security fixes for reuse in
+  both directions, but do not claim the concrete naruon adapter exists until the
+  separately governed integration is implemented and verified.
 
 ## Verify
 
@@ -62,12 +78,19 @@ The CI path installs `requirements-ci.txt` with `--require-hashes` and uses the
 same coverage configuration from `pyproject.toml`. A local report below 100% is
 a failing quality gate, not an advisory metric.
 
-## Code-owner review gates — disabled (on hold)
+## Independent review and code-owner gates
 
-As of 2026-08-04, code-owner review requirements
-(`require_code_owner_reviews` in branch protection,
-`require_code_owner_review` in rulesets) are disabled across the
-ContextualWisdomLab org: there is a single maintainer (solo developer), so a
-code-owner approval gate can never be satisfied. This is ON HOLD until the org
-has multiple maintainers — do NOT re-enable these settings or add
-CODEOWNERS-based merge gates before then.
+**Independent non-author approval** is an explicit EgressWeave/CWL integration
+governance requirement where the repository's current merge contract calls for
+it. Automated review, COMMENTED reviews, statuses, checks, reactions, author
+reviews, predecessor-head reviews, and synthetic-merge evidence do not satisfy
+that requirement, and agents must never self-approve or manufacture approval.
+
+Code-owner review requirements are a separate mechanism and are currently
+disabled/on hold. As of 2026-08-04, `require_code_owner_reviews` in branch
+protection and `require_code_owner_review` in rulesets are disabled across the
+ContextualWisdomLab org because there is a single maintainer and a CODEOWNERS
+approval gate cannot be satisfied. Do not re-enable CODEOWNERS-based merge
+gates before the organization has an eligible independent maintainer. This
+CODEOWNERS hold does not authorize self-approval and does not convert automated
+review evidence into independent non-author approval.
