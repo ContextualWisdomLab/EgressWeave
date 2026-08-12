@@ -74,6 +74,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Require the request timeout policy to use the exact `EgressTimeoutPolicy` type
+  during trusted construction. Timeout-policy subclasses are rejected before
+  transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
+  preserving the reviewed finite ceilings as the authoritative configuration.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
