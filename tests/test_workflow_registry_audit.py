@@ -292,3 +292,37 @@ def test_audit_repository_fails_closed_when_open_pr_snapshot_changes(monkeypatch
             SOURCE_SHA,
             observed_at=OBSERVED_AT,
         )
+
+
+def test_audit_repository_fails_closed_when_workflow_registry_changes(monkeypatch) -> None:
+    """Never classify workflow lifecycle state from a registry that changes mid-audit."""
+    auditor = _load_auditor()
+    responses = iter(
+        [
+            {"default_branch": "main"},
+            {"commit": {"sha": SOURCE_SHA}},
+            [],
+            {"commit": {"sha": SOURCE_SHA}},
+        ]
+    )
+
+    def fake_request_json(url: str, *, token: str | None = None):
+        del url, token
+        return next(responses)
+
+    registry_pages = iter(
+        [
+            [_page(_workflow(17, ".github/workflows/old.yml", "active"))],
+            [_page(_workflow(17, ".github/workflows/old.yml", "disabled_manually"))],
+        ]
+    )
+    monkeypatch.setattr(auditor, "request_json", fake_request_json)
+    monkeypatch.setattr(auditor, "collect_registry_pages", lambda fetch_page: next(registry_pages))
+    monkeypatch.setattr(auditor, "_collect_open_pr_workflow_snapshot", lambda repository, token: ())
+
+    with pytest.raises(auditor.AuditError, match="workflow registry changed"):
+        auditor.audit_repository(
+            "ContextualWisdomLab/EgressWeave",
+            SOURCE_SHA,
+            observed_at=OBSERVED_AT,
+        )
