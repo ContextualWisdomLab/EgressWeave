@@ -85,13 +85,18 @@ def _source_identity() -> bytes:
     ).encode("utf-8")
 
 
-def _evidence(root: Path) -> dict[str, Path]:
+def _evidence(
+    root: Path,
+    *,
+    wheel_bytes: bytes = b"wheel",
+    sdist_bytes: bytes = b"sdist",
+) -> dict[str, Path]:
     """Create one complete valid six-file release evidence set."""
     root.mkdir()
     wheel = root / f"egressweave-{VERSION}-py3-none-any.whl"
     sdist = root / f"egressweave-{VERSION}.tar.gz"
-    wheel.write_bytes(b"wheel")
-    sdist.write_bytes(b"sdist")
+    wheel.write_bytes(wheel_bytes)
+    sdist.write_bytes(sdist_bytes)
     wheel_sbom = root / f"{wheel.name}.cdx.json"
     sdist_sbom = root / f"{sdist.name}.cdx.json"
     wheel_sbom.write_text(
@@ -182,6 +187,41 @@ def test_stable_read_rejects_each_digest_mismatch(mismatch: str) -> None:
             digest_before=digest_before,
             digest_after=digest_after,
             label="payload",
+        )
+
+
+def test_manifest_rejects_release_root_replacement_after_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a whole-directory replacement outside the sealed-evidence boundary."""
+    root = tmp_path / "evidence"
+    parked_root = tmp_path / "evidence-original"
+    replacement_root = tmp_path / "evidence-replacement"
+    _evidence(root)
+    _evidence(
+        replacement_root,
+        wheel_bytes=b"replacement wheel bytes",
+        sdist_bytes=b"replacement sdist bytes",
+    )
+    original_load_checksums = release_evidence._load_checksums
+
+    def replace_root_then_load(
+        checksum_path: Path,
+        expected_names: set[str],
+    ) -> tuple[dict[str, str], str]:
+        """Replace the already-selected evidence directory before first hashing."""
+        root.rename(parked_root)
+        replacement_root.rename(root)
+        return original_load_checksums(checksum_path, expected_names)
+
+    monkeypatch.setattr(release_evidence, "_load_checksums", replace_root_then_load)
+
+    with pytest.raises(SystemExit, match="release evidence directory changed"):
+        release_evidence.build_evidence_manifest(
+            root,
+            repository=REPOSITORY,
+            source_sha=SOURCE_SHA,
         )
 
 
