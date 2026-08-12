@@ -112,8 +112,13 @@ level claim.
    the `dependency-review` job plus the pinned `Dependency review` action step
    itself to have completed successfully. A successful wrapper job with that
    action absent, skipped, queued, neutral, cancelled, failed, or stale is a
-   publication blocker. This check verifies central evidence; it does not copy
-   or replace the centrally owned scanner.
+   publication blocker. When Strix is an active ruleset-required workflow, the
+   same evidence job also requires exactly one completed-successful `strix` job
+   and inspects that job's check-run annotations. A `Strix backend unavailable`
+   annotation is a publication blocker even when the wrapper job is green. Strix
+   evidence is enforced only when the active ruleset requires Strix. These
+   checks verify central evidence; they do not copy or replace centrally owned
+   scanners or reviewers.
 6. A credential-separated tag job waits for both build acceptance and the
    evidence verifier, rechecks that the live protected `main` head still equals
    the accepted workflow SHA, then creates the lightweight `v<version>` tag at
@@ -158,7 +163,9 @@ level claim.
 - Download both artifacts and verify them against the attached `SHA256SUMS`.
 - Inspect the released source commit's integrating PR and confirm the exact-head
   required-workflow set is still attributable, including an actually executed
-  successful `Dependency review` action in Security Scan.
+  successful `Dependency review` action in Security Scan and, when required by
+  the active ruleset, substantive completed-successful Strix evidence without a
+  backend-unavailable annotation.
 - Install the wheel in clean Python 3.10 and Python 3.13 environments and run a
   minimal import/version check outside the source tree.
 - Confirm the GitHub Release tag resolves to the exact workflow and protected
