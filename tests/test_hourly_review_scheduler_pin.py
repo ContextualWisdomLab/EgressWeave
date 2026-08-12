@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOW = _REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
 _PROVEN_CENTRAL_SHA = "5983b41ace75040c1d81818171ca7d0f3653254e"
