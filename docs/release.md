@@ -102,7 +102,8 @@ level claim.
 4. In parallel, the read-only `verify-release-evidence` job binds the exact
    protected-main commit to exactly one merged integrating PR, resolves that
    PR's immutable contributor head, reads the active branch rulesets applicable
-   to protected main, and paginates the exact-head required-workflow evidence.
+   to protected main, resolves each required workflow's source repository and
+   ref, and paginates the exact-head required-workflow evidence.
    Every required workflow must be the repository-required workflow instance on
    that same source head and must be completed-success. Current-head non-author
    approvals are counted only when live rules require them, required review

@@ -175,8 +175,8 @@ jobs:
               '.[0] | [(.number | tostring), .head.sha, (.user.login // "")] | @tsv' \
               <<<"$integrating_pr"
           )
-          if ! [[ "$pr_number" =~ ^[0-9]+$ ]]; then
-            echo "::error::Integrating PR did not expose one exact numeric PR identity."
+          if ! [[ "$pr_number" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Integrating PR did not expose one exact positive numeric PR identity."
             exit 1
           fi
           if ! [[ "$source_head_sha" =~ ^[0-9a-f]{40}$ ]]; then
@@ -187,9 +187,11 @@ jobs:
             echo "::error::Integrating PR did not expose one valid author identity."
             exit 1
           fi
-          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
-          echo "source_head_sha=$source_head_sha" >> "$GITHUB_OUTPUT"
-          echo "author_login=$author_login" >> "$GITHUB_OUTPUT"
+          {
+            echo "pr_number=$pr_number"
+            echo "source_head_sha=$source_head_sha"
+            echo "author_login=$author_login"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Require required workflow evidence for integrating PR head
         id: required_workflows
@@ -288,6 +290,31 @@ jobs:
           strix_run_id=""
           while IFS=$'\t' read -r workflow_path workflow_repository_id workflow_ref; do
             [ -n "$workflow_path" ] || continue
+            if ! [[ "$workflow_repository_id" =~ ^[0-9]+$ ]] || \
+               ! [[ "$workflow_ref" =~ ^refs/(heads|tags)/[A-Za-z0-9._/-]+$ ]]; then
+              echo "::error::Required workflow ${workflow_path} exposed an unsupported source repository or ref."
+              exit 1
+            fi
+            if ! workflow_source="$(
+              gh api \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repositories/${workflow_repository_id}" \
+                --jq '.full_name'
+            )"; then
+              echo "::error::Required workflow ${workflow_path} source repository could not be resolved."
+              exit 1
+            fi
+            if ! [[ "$workflow_source" =~ ^[^/]+/[^/]+$ ]]; then
+              echo "::error::Required workflow ${workflow_path} source repository was malformed."
+              exit 1
+            fi
+            if ! gh api \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "repos/${workflow_source}/contents/${workflow_path}?ref=${workflow_ref}" \
+              >/dev/null; then
+              echo "::error::Required workflow ${workflow_path} source ref ${workflow_ref} was unavailable."
+              exit 1
+            fi
             latest_run="$(
               jq -c --arg path "$workflow_path" --arg head "$SOURCE_HEAD_SHA" \
                 '[.[] | .workflow_runs[]? | select(.path == $path and .head_sha == $head)] | sort_by(.created_at, .id) | last // empty' \
@@ -313,16 +340,18 @@ jobs:
             if [ "$workflow_path" = ".github/workflows/strix.yml" ]; then
               strix_run_id="$(jq -r '.id' <<<"$latest_run")"
             fi
-            printf 'Verified required workflow %s from repository %s at %s.\n' \
-              "$workflow_path" "$workflow_repository_id" "$workflow_ref"
+            printf 'Verified required workflow %s from repository %s (id %s) at %s.\n' \
+              "$workflow_path" "$workflow_source" "$workflow_repository_id" "$workflow_ref"
           done < "$required_workflows"
 
           if [ -z "$security_scan_run_id" ]; then
             echo "::error::Live protected-main rules did not yield Security Scan evidence."
             exit 1
           fi
-          echo "security_scan_run_id=$security_scan_run_id" >> "$GITHUB_OUTPUT"
-          echo "strix_run_id=$strix_run_id" >> "$GITHUB_OUTPUT"
+          {
+            echo "security_scan_run_id=$security_scan_run_id"
+            echo "strix_run_id=$strix_run_id"
+          } >> "$GITHUB_OUTPUT"
 
           gh api --paginate --slurp \
             -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -342,6 +371,7 @@ jobs:
             owner="${GITHUB_REPOSITORY%%/*}"
             repository_name="${GITHUB_REPOSITORY#*/}"
             thread_pages="$(mktemp)"
+            # shellcheck disable=SC2016
             gh api graphql --paginate --slurp \
               -F owner="$owner" \
               -F name="$repository_name" \
@@ -419,19 +449,13 @@ jobs:
             echo "::error::Strix job did not expose a check-run URL."
             exit 1
           fi
-          expected_check_run_prefix="https://api.github.com/repos/${GITHUB_REPOSITORY}/check-runs/"
-          if [[ "$STRIX_CHECK_RUN_URL" != "${expected_check_run_prefix}"* ]]; then
-            echo "::error::Strix check-run URL did not belong to this repository."
-            exit 1
-          fi
-          strix_check_run_id="${STRIX_CHECK_RUN_URL#${expected_check_run_prefix}}"
-          if ! [[ "$strix_check_run_id" =~ ^[0-9]+$ ]]; then
-            echo "::error::Strix check-run URL did not expose one numeric check-run identity."
+          if ! [[ "$STRIX_CHECK_RUN_URL" =~ ^https://api\.github\.com/repos/${GITHUB_REPOSITORY}/check-runs/[0-9]+$ ]]; then
+            echo "::error::Strix check-run URL was malformed or did not belong to this repository."
             exit 1
           fi
           gh api --paginate --slurp \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "repos/${GITHUB_REPOSITORY}/check-runs/${strix_check_run_id}/annotations?per_page=100" \
+            "${STRIX_CHECK_RUN_URL}/annotations?per_page=100" \
             > "$annotation_pages"
           if jq -e \
             '[.[][] | select(.title == "Strix backend unavailable")] | length > 0' \
