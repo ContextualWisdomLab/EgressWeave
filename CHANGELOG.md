@@ -88,6 +88,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Reject repeated exact empty `bytes` chunks from synchronous and asynchronous
+  outbound request streams after permitting one compatibility empty chunk without
+  dispatch. A valid empty body can therefore retain HTTPX's canonical one-empty-
+  chunk encoding, while a second zero-progress chunk closes the source
+  deterministically and receives the generic non-leaking denial instead of
+  consuming CPU outside byte and write timeout budgets.
 - Harden release publication evidence with validated integrating-PR identity,
   cross-repository required-workflow source checks, and Strix check-run
   annotations without adding an elevated release credential.
