@@ -220,3 +220,75 @@ def test_collect_registry_pages_is_bounded_and_records_exact_page_numbers() -> N
     pages = auditor.collect_registry_pages(fetch_page, per_page=2, max_pages=2)
     assert [page["page"] for page in pages] == [1, 2]
     assert sum(len(page["workflows"]) for page in pages) == 3
+
+
+def test_collect_open_pr_workflow_snapshot_binds_paths_to_exact_heads(monkeypatch) -> None:
+    """Include every open PR head so a same-path head replacement is observable."""
+    auditor = _load_auditor()
+
+    def fake_request_json(url: str, *, token: str | None = None):
+        del token
+        if "/pulls?" in url:
+            return [
+                {"number": 41, "head": {"sha": "a" * 40}},
+                {"number": 42, "head": {"sha": "b" * 40}},
+            ]
+        if "/pulls/41/files?" in url:
+            return [
+                {"filename": ".github/workflows/new.yml", "status": "added"},
+                {"filename": "README.md", "status": "modified"},
+            ]
+        if "/pulls/42/files?" in url:
+            return [{"filename": ".github/workflows/removed.yml", "status": "removed"}]
+        raise AssertionError(f"unexpected GitHub API URL: {url}")
+
+    monkeypatch.setattr(auditor, "request_json", fake_request_json)
+    assert auditor._collect_open_pr_workflow_snapshot("ContextualWisdomLab/EgressWeave", None) == (
+        (41, "a" * 40, (".github/workflows/new.yml",)),
+        (42, "b" * 40, ()),
+    )
+
+
+def test_audit_repository_fails_closed_when_open_pr_snapshot_changes(monkeypatch) -> None:
+    """Never emit active-PR reservations assembled across different PR heads."""
+    auditor = _load_auditor()
+    responses = iter(
+        [
+            {"default_branch": "main"},
+            {"commit": {"sha": SOURCE_SHA}},
+            [],
+            {"commit": {"sha": SOURCE_SHA}},
+        ]
+    )
+
+    def fake_request_json(url: str, *, token: str | None = None):
+        del url, token
+        return next(responses)
+
+    monkeypatch.setattr(auditor, "request_json", fake_request_json)
+    monkeypatch.setattr(auditor, "collect_registry_pages", lambda fetch_page: [_page()])
+    snapshots = iter(
+        [
+            ((41, "a" * 40, (".github/workflows/new.yml",)),),
+            ((41, "b" * 40, (".github/workflows/new.yml",)),),
+        ]
+    )
+    monkeypatch.setattr(
+        auditor,
+        "_collect_open_pr_workflow_snapshot",
+        lambda repository, token: next(snapshots),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        auditor,
+        "_collect_open_pr_workflow_paths",
+        lambda repository, token: {".github/workflows/new.yml"},
+        raising=False,
+    )
+
+    with pytest.raises(auditor.AuditError, match="pull request workflow reservations changed"):
+        auditor.audit_repository(
+            "ContextualWisdomLab/EgressWeave",
+            SOURCE_SHA,
+            observed_at=OBSERVED_AT,
+        )
