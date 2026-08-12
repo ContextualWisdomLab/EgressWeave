@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -115,7 +116,13 @@ def request_json(
     ``token`` is used only as a bearer header for the current request and is
     never copied into output or diagnostics.
     """
-    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+        raise AuditError("GitHub API timeout is invalid")
+    try:
+        canonical_timeout = float(timeout)
+    except (OverflowError, ValueError):
+        raise AuditError("GitHub API timeout is invalid") from None
+    if not math.isfinite(canonical_timeout) or canonical_timeout <= 0:
         raise AuditError("GitHub API timeout is invalid")
     headers = {
         "Accept": "application/vnd.github+json",
@@ -126,7 +133,7 @@ def request_json(
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        with opener(request, timeout=timeout) as response:
+        with opener(request, timeout=canonical_timeout) as response:
             status = _request_status(response)
             if status != 200:
                 raise AuditError(f"GitHub API returned HTTP {status}")
