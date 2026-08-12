@@ -46,6 +46,39 @@ class _EmptyAsyncChunkStream(httpx.AsyncByteStream):
         self.closed = True
 
 
+class _BodylessSyncStream(httpx.SyncByteStream):
+    """Represent a valid empty body by yielding no request chunks."""
+
+    def __init__(self) -> None:
+        """Initialize the normal caller-controlled closure marker."""
+        self.closed = False
+
+    def __iter__(self) -> Iterator[bytes]:
+        """Finish immediately without producing a zero-progress chunk."""
+        return iter(())
+
+    def close(self) -> None:
+        """Record normal caller-controlled stream cleanup."""
+        self.closed = True
+
+
+class _BodylessAsyncStream(httpx.AsyncByteStream):
+    """Represent a valid asynchronous empty body with no chunks."""
+
+    def __init__(self) -> None:
+        """Initialize the normal asynchronous closure marker."""
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        """Finish immediately without producing a zero-progress chunk."""
+        if False:
+            yield b"unreachable"
+
+    async def aclose(self) -> None:
+        """Record normal caller-controlled asynchronous cleanup."""
+        self.closed = True
+
+
 def _assert_clean_denial(error: EgressNotAllowedError) -> None:
     """Require the stable non-leaking outbound policy denial."""
     assert str(error) == "egress URL is not allowed"
@@ -74,4 +107,36 @@ async def test_async_request_rejects_empty_chunk_before_dispatch_progress() -> N
         await anext(stream.__aiter__())
 
     _assert_clean_denial(caught.value)
+    assert source.closed is True
+
+
+def test_sync_request_allows_a_bodyless_stream_with_no_chunks() -> None:
+    """Keep an empty request body valid when its stream simply completes."""
+    source = _BodylessSyncStream()
+    stream = _BoundedSyncRequestStream(
+        source,
+        max_request_bytes=1,
+        declared_request_bytes=0,
+    )
+
+    assert list(stream) == []
+    assert source.closed is False
+
+    stream.close()
+    assert source.closed is True
+
+
+async def test_async_request_allows_a_bodyless_stream_with_no_chunks() -> None:
+    """Keep an async empty request valid when its stream simply completes."""
+    source = _BodylessAsyncStream()
+    stream = _BoundedAsyncRequestStream(
+        source,
+        max_request_bytes=1,
+        declared_request_bytes=0,
+    )
+
+    assert [chunk async for chunk in stream] == []
+    assert source.closed is False
+
+    await stream.aclose()
     assert source.closed is True
