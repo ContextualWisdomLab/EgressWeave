@@ -174,7 +174,8 @@ def test_request_json_fails_closed_on_permission_or_transport_http_errors(status
     class Response:
         """Minimal context-managed HTTP response fixture."""
 
-        status = status
+        def __init__(self) -> None:
+            self.status = status
 
         def __enter__(self):
             return self
