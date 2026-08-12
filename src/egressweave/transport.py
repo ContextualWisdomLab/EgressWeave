@@ -29,6 +29,7 @@ import httpx
 from httpcore._backends.auto import AutoBackend
 from httpx._transports.default import AsyncResponseStream, map_httpcore_exceptions
 
+from egressweave.cookie_safety import _new_explicit_cookie_jar
 from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.request_body_safety import (
     _BoundedAsyncRequestStream,
@@ -447,8 +448,9 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
 
 
 def _build_async_httpx_client(transport: httpx.AsyncBaseTransport) -> httpx.AsyncClient:
-    """Build a client without HTTPX's ambient hop-by-hop connection header."""
+    """Build a client with safe ambient headers and caller-owned cookie state."""
     client = httpx.AsyncClient(
+        cookies=_new_explicit_cookie_jar(),
         follow_redirects=False,
         trust_env=False,
         transport=transport,
@@ -467,7 +469,9 @@ async def build_egress_http_client(
 
     Empty or absent URLs return a deny-all client. HTTPX's ambient ``Connection``
     header is removed at construction while caller-supplied hop-by-hop fields
-    remain subject to the transport's strict request-header policy. Exact outbound
+    remain subject to the transport's strict request-header policy. Response-
+    provided cookies remain visible but are not promoted to ambient later-request
+    state; callers may still provide cookie state explicitly. Exact outbound
     targets are limited by ``policy.max_request_target_bytes``. Final outbound
     fields are limited by ``policy.max_request_header_fields`` and
     ``policy.max_request_header_bytes``. Request bodies are limited to
@@ -502,7 +506,8 @@ def build_pinned_https_async_client(
 
     HTTPX's ambient ``Connection`` header is removed at construction while any
     caller-supplied hop-by-hop field remains subject to the fail-closed transport
-    policy.
+    policy. Response cookies are observable but never promoted to ambient later-
+    request state; explicit caller-owned cookies remain available.
     """
     return _build_async_httpx_client(
         _PinnedEgressAsyncTransport(
