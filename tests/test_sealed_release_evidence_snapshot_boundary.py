@@ -225,6 +225,70 @@ def test_manifest_rejects_release_root_replacement_after_selection(
         )
 
 
+def test_manifest_keeps_original_root_authority_across_transient_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not let replace-then-restore redirect one verification decision."""
+    root = tmp_path / "evidence"
+    parked_root = tmp_path / "evidence-original"
+    replacement_root = tmp_path / "evidence-replacement"
+    original_paths = _evidence(root)
+    _evidence(
+        replacement_root,
+        wheel_bytes=b"replacement wheel bytes",
+        sdist_bytes=b"replacement sdist bytes",
+    )
+    original_load_checksums = release_evidence._load_checksums
+    original_sha256_file = release_evidence._sha256_file
+    checksum_hash_count = 0
+
+    def replace_root_then_load(
+        checksum_path: Path,
+        expected_names: set[str],
+    ) -> tuple[dict[str, str], str]:
+        """Redirect later path opens to a self-consistent replacement root."""
+        root.rename(parked_root)
+        replacement_root.rename(root)
+        return original_load_checksums(checksum_path, expected_names)
+
+    def hash_then_restore_root(
+        path: Path,
+        *,
+        maximum_bytes: int,
+        label: str,
+    ) -> str:
+        """Restore the original pathname only after replacement verification."""
+        nonlocal checksum_hash_count
+        digest = original_sha256_file(
+            path,
+            maximum_bytes=maximum_bytes,
+            label=label,
+        )
+        if label == "SHA256SUMS":
+            checksum_hash_count += 1
+            if checksum_hash_count == 3:
+                root.rename(replacement_root)
+                parked_root.rename(root)
+        return digest
+
+    monkeypatch.setattr(release_evidence, "_load_checksums", replace_root_then_load)
+    monkeypatch.setattr(release_evidence, "_sha256_file", hash_then_restore_root)
+
+    manifest = release_evidence.build_evidence_manifest(
+        root,
+        repository=REPOSITORY,
+        source_sha=SOURCE_SHA,
+    )
+    artifact_digests = {
+        item["kind"]: item["artifactSha256"] for item in manifest["artifacts"]
+    }
+    assert artifact_digests == {
+        "sdist": _digest(original_paths["sdist"]),
+        "wheel": _digest(original_paths["wheel"]),
+    }
+
+
 def test_manifest_rejects_payload_mutation_during_sbom_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
