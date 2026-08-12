@@ -44,6 +44,10 @@ jobs:
       - run: ruff check .
       - run: coverage run -m pytest -q
       - run: coverage report -m
+      - name: Expose exact line and function coverage metrics
+        run: |
+          coverage json -o coverage.json
+          python scripts/ci/report_coverage_metrics.py --coverage-json coverage.json --source-root src/egressweave
       - run: python scripts/ci/hourly_product_guard.py self-test
       - run: python -m compileall -q src tests scripts
 
