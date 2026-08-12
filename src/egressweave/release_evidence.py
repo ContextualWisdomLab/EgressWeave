@@ -17,7 +17,9 @@ import os
 import re
 import stat
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 DISTRIBUTION_NAME = "egressweave"
@@ -211,6 +213,86 @@ def _select_evidence_paths(
         source_identity_path,
         checksum_path,
     )
+
+
+def _evidence_root_identity(evidence_dir: Path) -> tuple[int, int]:
+    """Return the current filesystem identity of one admitted evidence root."""
+    try:
+        state = evidence_dir.lstat()
+    except OSError as error:
+        raise SystemExit("release evidence directory changed") from error
+    return state.st_dev, state.st_ino
+
+
+def _snapshot_selected_evidence(
+    evidence_dir: Path,
+    snapshot_root: Path,
+) -> tuple[
+    tuple[Path, Path, Path, Path, Path, Path],
+    tuple[Path, Path, Path, Path, Path, Path],
+    tuple[int, int],
+    dict[str, str],
+]:
+    """Copy one descriptor-bound evidence authority into a private finite snapshot."""
+    canonical_root = _require_canonical_evidence_root(evidence_dir)
+    root_identity = _evidence_root_identity(canonical_root)
+    original_paths = _select_evidence_paths(canonical_root)
+    maximums = (
+        MAX_ARTIFACT_BYTES,
+        MAX_ARTIFACT_BYTES,
+        MAX_SBOM_BYTES,
+        MAX_SBOM_BYTES,
+        MAX_SOURCE_IDENTITY_BYTES,
+        MAX_CHECKSUM_BYTES,
+    )
+    labels = (
+        "wheel",
+        "source distribution",
+        "wheel SBOM",
+        "source-distribution SBOM",
+        "sealed source identity",
+        "SHA256SUMS",
+    )
+    source_digests: dict[str, str] = {}
+
+    with ExitStack() as stack:
+        opened: list[tuple[Path, Any, int, str]] = []
+        for path, maximum_bytes, label in zip(
+            original_paths,
+            maximums,
+            labels,
+            strict=True,
+        ):
+            try:
+                stream = stack.enter_context(path.open("rb"))
+            except OSError as error:
+                raise SystemExit(f"{label} is unreadable") from error
+            _require_open_regular_file(path, stream, label=label)
+            opened.append((path, stream, maximum_bytes, label))
+
+        if _evidence_root_identity(canonical_root) != root_identity:
+            raise SystemExit("release evidence directory changed")
+        for path, stream, _, label in opened:
+            _require_open_regular_file(path, stream, label=label)
+
+        for path, stream, maximum_bytes, label in opened:
+            digest = hashlib.sha256()
+            total_bytes = 0
+            snapshot_path = snapshot_root / path.name
+            try:
+                with snapshot_path.open("xb") as output:
+                    for block in iter(lambda: stream.read(1_048_576), b""):
+                        total_bytes += len(block)
+                        if total_bytes > maximum_bytes:
+                            raise SystemExit(f"{label} exceeds the safety bound")
+                        digest.update(block)
+                        output.write(block)
+            except OSError as error:
+                raise SystemExit(f"{label} cannot be snapshotted safely") from error
+            source_digests[path.name] = digest.hexdigest()
+
+    snapshot_paths = _select_evidence_paths(snapshot_root)
+    return snapshot_paths, original_paths, root_identity, source_digests
 
 
 def _load_checksums(
@@ -498,90 +580,130 @@ def build_evidence_manifest(
     if SOURCE_SHA_PATTERN.fullmatch(source_sha) is None:
         raise SystemExit("source SHA must be exactly 40 lowercase hexadecimal characters")
 
-    (
-        wheel_path,
-        sdist_path,
-        wheel_sbom,
-        sdist_sbom,
-        source_identity_path,
-        checksum_path,
-    ) = _select_evidence_paths(evidence_dir)
-    payload_specs = (
-        (wheel_path, MAX_ARTIFACT_BYTES, "wheel"),
-        (sdist_path, MAX_ARTIFACT_BYTES, "source distribution"),
-        (wheel_sbom, MAX_SBOM_BYTES, "wheel SBOM"),
-        (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
+    with TemporaryDirectory(prefix="egressweave-release-evidence-") as snapshot_directory:
+        snapshot_root = Path(snapshot_directory)
         (
+            snapshot_paths,
+            original_paths,
+            root_identity,
+            source_snapshot_digests,
+        ) = _snapshot_selected_evidence(evidence_dir, snapshot_root)
+        (
+            wheel_path,
+            sdist_path,
+            wheel_sbom,
+            sdist_sbom,
             source_identity_path,
-            MAX_SOURCE_IDENTITY_BYTES,
-            "sealed source identity",
-        ),
-    )
-    payload_paths = tuple(path for path, _, _ in payload_specs)
-    checksums, checksum_digest = _load_checksums(
-        checksum_path,
-        {path.name for path in payload_paths},
-    )
-    observed_digests = _payload_digests(payload_specs)
-    if checksums != observed_digests:
-        raise SystemExit("release evidence digest mismatch")
-
-    sealed_repository, sealed_source_sha = _load_source_identity(
-        source_identity_path,
-        expected_digest=observed_digests[source_identity_path.name],
-    )
-    if sealed_repository != repository or sealed_source_sha != source_sha:
-        raise SystemExit("sealed source identity does not match caller expectations")
-
-    version = WHEEL_PATTERN.fullmatch(wheel_path.name).group("version")
-    artifacts: list[dict[str, str]] = []
-    for kind, artifact_path, sbom_path in (
-        ("sdist", sdist_path, sdist_sbom),
-        ("wheel", wheel_path, wheel_sbom),
-    ):
-        artifact_digest = observed_digests[artifact_path.name]
-        serial_number = _verify_sbom(
-            sbom_path,
-            artifact_name=artifact_path.name,
-            artifact_digest=artifact_digest,
-            version=version,
-            expected_digest=observed_digests[sbom_path.name],
-        )
-        artifacts.append(
-            {
-                "artifactFilename": artifact_path.name,
-                "artifactSha256": artifact_digest,
-                "kind": kind,
-                "sbomFilename": sbom_path.name,
-                "sbomSerialNumber": serial_number,
-                "sbomSha256": observed_digests[sbom_path.name],
-            }
-        )
-    if _payload_digests(payload_specs) != observed_digests:
-        raise SystemExit("release evidence changed during verification")
-    if (
-        _sha256_file(
             checksum_path,
-            maximum_bytes=MAX_CHECKSUM_BYTES,
-            label="SHA256SUMS",
+        ) = snapshot_paths
+        payload_specs = (
+            (wheel_path, MAX_ARTIFACT_BYTES, "wheel"),
+            (sdist_path, MAX_ARTIFACT_BYTES, "source distribution"),
+            (wheel_sbom, MAX_SBOM_BYTES, "wheel SBOM"),
+            (sdist_sbom, MAX_SBOM_BYTES, "source-distribution SBOM"),
+            (
+                source_identity_path,
+                MAX_SOURCE_IDENTITY_BYTES,
+                "sealed source identity",
+            ),
         )
-        != checksum_digest
-    ):
-        raise SystemExit("SHA256SUMS changed during verification")
-    artifacts.sort(key=lambda item: item["artifactFilename"])
-    return {
-        "artifacts": artifacts,
-        "checksumFilename": checksum_path.name,
-        "checksumSha256": checksum_digest,
-        "format": EVIDENCE_MANIFEST_FORMAT,
-        "formatVersion": EVIDENCE_MANIFEST_VERSION,
-        "cycloneDxSpecVersion": CYCLONEDX_SPEC_VERSION,
-        "predicateType": ATTESTATION_PREDICATE_TYPE,
-        "repository": sealed_repository,
-        "sourceIdentityFilename": source_identity_path.name,
-        "sourceIdentitySha256": observed_digests[source_identity_path.name],
-        "sourceSha": sealed_source_sha,
-    }
+        payload_paths = tuple(path for path, _, _ in payload_specs)
+        checksums, checksum_digest = _load_checksums(
+            checksum_path,
+            {path.name for path in payload_paths},
+        )
+        observed_digests = _payload_digests(payload_specs)
+        if checksums != observed_digests:
+            raise SystemExit("release evidence digest mismatch")
+
+        sealed_repository, sealed_source_sha = _load_source_identity(
+            source_identity_path,
+            expected_digest=observed_digests[source_identity_path.name],
+        )
+        if sealed_repository != repository or sealed_source_sha != source_sha:
+            raise SystemExit("sealed source identity does not match caller expectations")
+
+        version = WHEEL_PATTERN.fullmatch(wheel_path.name).group("version")
+        artifacts: list[dict[str, str]] = []
+        for kind, artifact_path, sbom_path in (
+            ("sdist", sdist_path, sdist_sbom),
+            ("wheel", wheel_path, wheel_sbom),
+        ):
+            artifact_digest = observed_digests[artifact_path.name]
+            serial_number = _verify_sbom(
+                sbom_path,
+                artifact_name=artifact_path.name,
+                artifact_digest=artifact_digest,
+                version=version,
+                expected_digest=observed_digests[sbom_path.name],
+            )
+            artifacts.append(
+                {
+                    "artifactFilename": artifact_path.name,
+                    "artifactSha256": artifact_digest,
+                    "kind": kind,
+                    "sbomFilename": sbom_path.name,
+                    "sbomSerialNumber": serial_number,
+                    "sbomSha256": observed_digests[sbom_path.name],
+                }
+            )
+        if _payload_digests(payload_specs) != observed_digests:
+            raise SystemExit("release evidence changed during verification")
+        if (
+            _sha256_file(
+                checksum_path,
+                maximum_bytes=MAX_CHECKSUM_BYTES,
+                label="SHA256SUMS",
+            )
+            != checksum_digest
+        ):
+            raise SystemExit("SHA256SUMS changed during verification")
+
+        canonical_original_root = _require_canonical_evidence_root(evidence_dir)
+        if _evidence_root_identity(canonical_original_root) != root_identity:
+            raise SystemExit("release evidence directory changed")
+        original_maximums = (
+            MAX_ARTIFACT_BYTES,
+            MAX_ARTIFACT_BYTES,
+            MAX_SBOM_BYTES,
+            MAX_SBOM_BYTES,
+            MAX_SOURCE_IDENTITY_BYTES,
+            MAX_CHECKSUM_BYTES,
+        )
+        original_labels = (
+            "wheel",
+            "source distribution",
+            "wheel SBOM",
+            "source-distribution SBOM",
+            "sealed source identity",
+            "SHA256SUMS",
+        )
+        original_specs = tuple(
+            (path, maximum_bytes, label)
+            for path, maximum_bytes, label in zip(
+                original_paths,
+                original_maximums,
+                original_labels,
+                strict=True,
+            )
+        )
+        if _payload_digests(original_specs) != source_snapshot_digests:
+            raise SystemExit("release evidence changed during verification")
+
+        artifacts.sort(key=lambda item: item["artifactFilename"])
+        return {
+            "artifacts": artifacts,
+            "checksumFilename": checksum_path.name,
+            "checksumSha256": checksum_digest,
+            "format": EVIDENCE_MANIFEST_FORMAT,
+            "formatVersion": EVIDENCE_MANIFEST_VERSION,
+            "cycloneDxSpecVersion": CYCLONEDX_SPEC_VERSION,
+            "predicateType": ATTESTATION_PREDICATE_TYPE,
+            "repository": sealed_repository,
+            "sourceIdentityFilename": source_identity_path.name,
+            "sourceIdentitySha256": observed_digests[source_identity_path.name],
+            "sourceSha": sealed_source_sha,
+        }
 
 
 def _encode_evidence_manifest(manifest: dict[str, Any]) -> bytes:
