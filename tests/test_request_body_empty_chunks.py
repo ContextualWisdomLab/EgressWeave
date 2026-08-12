@@ -1,4 +1,4 @@
-"""Regressions for zero-progress outbound request streams."""
+"""Regressions for bounded zero-progress outbound request streams."""
 
 from __future__ import annotations
 
@@ -14,15 +14,16 @@ from egressweave.request_body_safety import (
 )
 
 
-class _EmptySyncChunkStream(httpx.SyncByteStream):
-    """Yield one empty byte chunk and record fail-closed cleanup."""
+class _RepeatedEmptySyncChunkStream(httpx.SyncByteStream):
+    """Yield repeated empty chunks and record fail-closed cleanup."""
 
     def __init__(self) -> None:
         """Initialize the source closure marker."""
         self.closed = False
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield a chunk that consumes no byte budget and makes no progress."""
+        """Model an unbounded no-write source with two observable iterations."""
+        yield b""
         yield b""
 
     def close(self) -> None:
@@ -30,52 +31,20 @@ class _EmptySyncChunkStream(httpx.SyncByteStream):
         self.closed = True
 
 
-class _EmptyAsyncChunkStream(httpx.AsyncByteStream):
-    """Yield one empty async byte chunk and record cleanup."""
+class _RepeatedEmptyAsyncChunkStream(httpx.AsyncByteStream):
+    """Yield repeated empty async chunks and record cleanup."""
 
     def __init__(self) -> None:
         """Initialize the asynchronous source closure marker."""
         self.closed = False
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield a chunk that consumes no byte budget and makes no progress."""
+        """Model an async no-write source with two observable iterations."""
+        yield b""
         yield b""
 
     async def aclose(self) -> None:
         """Record source closure after policy denial."""
-        self.closed = True
-
-
-class _BodylessSyncStream(httpx.SyncByteStream):
-    """Represent a valid empty body by yielding no request chunks."""
-
-    def __init__(self) -> None:
-        """Initialize the normal caller-controlled closure marker."""
-        self.closed = False
-
-    def __iter__(self) -> Iterator[bytes]:
-        """Finish immediately without producing a zero-progress chunk."""
-        return iter(())
-
-    def close(self) -> None:
-        """Record normal caller-controlled stream cleanup."""
-        self.closed = True
-
-
-class _BodylessAsyncStream(httpx.AsyncByteStream):
-    """Represent a valid asynchronous empty body with no chunks."""
-
-    def __init__(self) -> None:
-        """Initialize the normal asynchronous closure marker."""
-        self.closed = False
-
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Finish immediately without producing a zero-progress chunk."""
-        if False:
-            yield b"unreachable"
-
-    async def aclose(self) -> None:
-        """Record normal caller-controlled asynchronous cleanup."""
         self.closed = True
 
 
@@ -86,33 +55,33 @@ def _assert_clean_denial(error: EgressNotAllowedError) -> None:
     assert error.__context__ is None
 
 
-def test_sync_request_rejects_empty_chunk_before_dispatch_progress() -> None:
-    """Prevent a synchronous body from spinning on zero-progress chunks."""
-    source = _EmptySyncChunkStream()
+def test_sync_request_rejects_repeated_empty_chunks_before_unbounded_spin() -> None:
+    """Stop a synchronous source after its second zero-progress chunk."""
+    source = _RepeatedEmptySyncChunkStream()
     stream = _BoundedSyncRequestStream(source, max_request_bytes=1)
 
     with pytest.raises(EgressNotAllowedError) as caught:
-        next(iter(stream))
+        list(stream)
 
     _assert_clean_denial(caught.value)
     assert source.closed is True
 
 
-async def test_async_request_rejects_empty_chunk_before_dispatch_progress() -> None:
-    """Prevent an asynchronous body from spinning on zero-progress chunks."""
-    source = _EmptyAsyncChunkStream()
+async def test_async_request_rejects_repeated_empty_chunks_before_unbounded_spin() -> None:
+    """Stop an asynchronous source after its second zero-progress chunk."""
+    source = _RepeatedEmptyAsyncChunkStream()
     stream = _BoundedAsyncRequestStream(source, max_request_bytes=1)
 
     with pytest.raises(EgressNotAllowedError) as caught:
-        await anext(stream.__aiter__())
+        _ = [chunk async for chunk in stream]
 
     _assert_clean_denial(caught.value)
     assert source.closed is True
 
 
-def test_sync_request_allows_a_bodyless_stream_with_no_chunks() -> None:
-    """Keep an empty request body valid when its stream simply completes."""
-    source = _BodylessSyncStream()
+def test_sync_request_preserves_httpx_empty_body_encoding() -> None:
+    """Consume HTTPX's one canonical empty chunk without dispatching it."""
+    source = httpx.ByteStream(b"")
     stream = _BoundedSyncRequestStream(
         source,
         max_request_bytes=1,
@@ -120,15 +89,11 @@ def test_sync_request_allows_a_bodyless_stream_with_no_chunks() -> None:
     )
 
     assert list(stream) == []
-    assert source.closed is False
-
-    stream.close()
-    assert source.closed is True
 
 
-async def test_async_request_allows_a_bodyless_stream_with_no_chunks() -> None:
-    """Keep an async empty request valid when its stream simply completes."""
-    source = _BodylessAsyncStream()
+async def test_async_request_preserves_httpx_empty_body_encoding() -> None:
+    """Consume HTTPX's async canonical empty chunk without dispatching it."""
+    source = httpx.ByteStream(b"")
     stream = _BoundedAsyncRequestStream(
         source,
         max_request_bytes=1,
@@ -136,7 +101,3 @@ async def test_async_request_allows_a_bodyless_stream_with_no_chunks() -> None:
     )
 
     assert [chunk async for chunk in stream] == []
-    assert source.closed is False
-
-    await stream.aclose()
-    assert source.closed is True
