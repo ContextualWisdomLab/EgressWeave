@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -101,3 +102,11 @@ async def test_async_request_preserves_httpx_empty_body_encoding() -> None:
     )
 
     assert [chunk async for chunk in stream] == []
+
+
+def test_changelog_describes_repeated_zero_progress_boundary() -> None:
+    """Keep release history aligned with the one-empty-chunk compatibility rule."""
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "Reject repeated exact empty `bytes` chunks" in changelog
+    assert "Reject exact empty `bytes` chunks" not in changelog
