@@ -134,7 +134,7 @@ def _analyse_source(
     *,
     source_root: Path,
 ) -> tuple[int, int, int, int, list[str]]:
-    """Return covered/total line and function counts for one owned source file."""
+    """Return covered/total line and measurable-function counts for one source file."""
     executed = _line_set(record.get("executed_lines"), field="executed_lines")
     missing = _line_set(record.get("missing_lines"), field="missing_lines")
     overlap = executed & missing
@@ -162,8 +162,10 @@ def _analyse_source(
             continue
         start, end = _function_body_lines(node)
         measured_body = {line for line in measured if start <= line <= end}
+        if not measured_body:
+            continue
         function_total += 1
-        if measured_body and measured_body <= executed:
+        if measured_body <= executed:
             function_covered += 1
         else:
             uncovered.append(f"{path.relative_to(source_root)}:{node.name}")
