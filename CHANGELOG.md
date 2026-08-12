@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Document the hourly product-development maintainer's bounded root-cause
   analysis and operational feasibility loop, including canonical prompt and
   control-plane incident handling.
+- Add the commercial documentation baseline with canonical PRD, TRD, API,
+  test/operability/compliance contracts, Mermaid UML/ERD architecture views,
+  ADR governance, and centralized standards traceability.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
@@ -71,10 +74,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
-- Require the request timeout policy to use the exact `EgressTimeoutPolicy` type
-  during trusted construction. Timeout-policy subclasses are rejected before
-  transport dispatch can dynamically invoke an overridden `as_httpcore_timeout()`,
-  preserving the reviewed finite ceilings as the authoritative configuration.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
