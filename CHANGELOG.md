@@ -88,6 +88,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Harden release publication evidence with validated integrating-PR identity,
+  cross-repository required-workflow source checks, and Strix check-run
+  annotations without adding an elevated release credential.
 - Require the exact `TLSConfiguration` type before TLS context creation. A
   subclass can no longer override `create_ssl_context()` to replace the reviewed
   immutable policy with a context that disables hostname or certificate
