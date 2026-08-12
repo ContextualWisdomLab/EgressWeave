@@ -3,9 +3,10 @@
 EgressWeave releases use a credential-separated GitHub Actions workflow and
 PyPI Trusted Publishing. The workflow is dispatched manually from protected
 `main` with an explicit `v<version>` input. The build job receives no write or
-publishing identity, the tag job receives only repository-content write access,
-the PyPI job receives only artifact-read and OIDC permissions, and the final
-GitHub Release job receives no PyPI identity.
+publishing identity, a separate read-only evidence job proves the exact
+integrating pull request and its live governance evidence, the tag job receives
+only repository-content write access, the PyPI job receives only artifact-read
+and OIDC permissions, and the final GitHub Release job receives no PyPI identity.
 
 Release readiness does not itself mean the package is publicly installable.
 `pip install egressweave` becomes an authoritative installation path only after
@@ -65,8 +66,10 @@ a repository-secret fallback.
    ```
 
 5. Merge only after current-head CI, package acceptance, SAST, security scans,
-   100% statement/branch coverage, docstring checks, and independent review
-   gates pass.
+   100% statement/branch coverage, docstring checks, any actually required
+   independent review, and all required-workflow gates pass. A wrapper-green
+   Security Scan is not sufficient when its pinned `Dependency review` action
+   was skipped or otherwise did not execute successfully.
 
 ### Credential-free release-evidence preparation
 
@@ -96,23 +99,48 @@ level claim.
    installed wheel, and uploads two immutable artifact sets:
    - canonical wheel and sdist only for PyPI;
    - wheel, sdist, and `SHA256SUMS` as complete release evidence.
-4. A credential-separated tag job rechecks that the live protected `main` head
-   still equals the accepted workflow SHA, then creates the lightweight
-   `v<version>` tag at that exact reviewed commit. If `main` advanced after
-   acceptance, or the tag already exists at another commit, the run fails
-   rather than publishing stale evidence or moving the tag.
-5. The `publish-to-pypi` job enters the protected `pypi` environment. Its only
-   steps download the canonical distribution artifact and invoke the pinned
-   PyPA Trusted Publishing action with attestations enabled. It receives no
-   repository-content write permission and no long-lived package-index token.
-6. Only after PyPI succeeds, the final job rechecks that the tag still points to
+4. In parallel, the read-only `verify-release-evidence` job binds the exact
+   protected-main commit to exactly one merged integrating PR, resolves that
+   PR's immutable contributor head, reads the active branch rulesets applicable
+   to protected main, and paginates the exact-head required-workflow evidence.
+   Every required workflow must be the repository-required workflow instance on
+   that same source head and must be completed-success. Current-head non-author
+   approvals are counted only when live rules require them, required review
+   threads must be resolved, and governance modes the verifier cannot prove
+   safely fail closed rather than being guessed.
+5. The evidence job separately opens the exact Security Scan run and requires
+   the `dependency-review` job plus the pinned `Dependency review` action step
+   itself to have completed successfully. A successful wrapper job with that
+   action absent, skipped, queued, neutral, cancelled, failed, or stale is a
+   publication blocker. This check verifies central evidence; it does not copy
+   or replace the centrally owned scanner.
+6. A credential-separated tag job waits for both build acceptance and the
+   evidence verifier, rechecks that the live protected `main` head still equals
+   the accepted workflow SHA, then creates the lightweight `v<version>` tag at
+   that exact reviewed commit. If `main` advanced after acceptance, or the tag
+   already exists at another commit, the run fails rather than publishing stale
+   evidence or moving the tag.
+7. The `publish-to-pypi` job also depends directly on the evidence verifier and
+   enters the protected `pypi` environment. Its only steps download the
+   canonical distribution artifact and invoke the pinned PyPA Trusted Publishing
+   action with attestations enabled. It receives no repository-content write
+   permission and no long-lived package-index token.
+8. Only after PyPI succeeds, the final job rechecks that the tag still points to
    the reviewed SHA, verifies `SHA256SUMS`, creates a draft GitHub Release with
    all evidence attached, and then publishes that complete draft. It refuses to
-   overwrite an existing public release.
+   overwrite an existing public release and also depends directly on the same
+   release-evidence gate.
 
 ## Failure and retry semantics
 
-- A build or acceptance failure creates no tag, PyPI package, or GitHub Release.
+- A build, evidence-admission, or acceptance failure creates no tag, PyPI
+  package, or GitHub Release.
+- Missing, stale, skipped, non-successful, or ambiguous required-workflow
+  evidence fails closed. Repair or regenerate the authoritative PR evidence;
+  never substitute a local scanner or aggregate status for the missing gate.
+- If protected-main governance changes to a review mode the verifier cannot
+  prove safely, publication stops until a narrow evidence proof is implemented
+  and reviewed.
 - If `main` changes before tag creation, start a fresh release run from the new
   reviewed head rather than tagging the stale accepted artifact set.
 - If exact tag creation succeeds but PyPI publication is blocked, the immutable
@@ -128,6 +156,9 @@ level claim.
 - Confirm PyPI shows both wheel and source distribution for the exact version.
 - Inspect PyPI provenance and publish-attestation evidence.
 - Download both artifacts and verify them against the attached `SHA256SUMS`.
+- Inspect the released source commit's integrating PR and confirm the exact-head
+  required-workflow set is still attributable, including an actually executed
+  successful `Dependency review` action in Security Scan.
 - Install the wheel in clean Python 3.10 and Python 3.13 environments and run a
   minimal import/version check outside the source tree.
 - Confirm the GitHub Release tag resolves to the exact workflow and protected
@@ -138,5 +169,7 @@ level claim.
 
 - [GitHub Docs: Manually running a workflow](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 - [GitHub Docs: Events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
+- [GitHub Docs: REST API endpoints for rules](https://docs.github.com/en/rest/repos/rules)
+- [GitHub Docs: REST API endpoints for commits](https://docs.github.com/en/rest/commits/commits)
 - [PyPI Docs: Publishing with a Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 - [PyPI Docs: Trusted Publishing security model](https://docs.pypi.org/trusted-publishers/security-model/)
