@@ -125,7 +125,7 @@ def _normalize_allowed_port(value: object) -> int | None:
             raise ValueError("allowed_ports entries must be decimal port numbers")
         port = int(normalized)
     else:
-        if isinstance(value, bool) or not isinstance(value, int):
+        if type(value) is not int:
             raise TypeError("allowed_ports entries must be integer port numbers")
         port = value
 
@@ -188,7 +188,7 @@ def _normalize_max_resolved_addresses(value: object) -> int:
             )
         address_count = int(normalized)
     else:
-        if isinstance(value, bool) or not isinstance(value, int):
+        if type(value) is not int:
             raise TypeError("max_resolved_addresses must be an integer count")
         address_count = value
 
@@ -205,7 +205,7 @@ def _normalize_positive_count(value: object, field_name: str) -> int:
             raise ValueError(f"{field_name} must be a positive decimal count")
         item_count = int(normalized)
     else:
-        if isinstance(value, bool) or not isinstance(value, int):
+        if type(value) is not int:
             raise TypeError(f"{field_name} must be an integer count")
         item_count = value
 
@@ -224,7 +224,7 @@ def _normalize_positive_byte_count(value: object, field_name: str) -> int:
             )
         byte_count = int(normalized)
     else:
-        if isinstance(value, bool) or not isinstance(value, int):
+        if type(value) is not int:
             raise TypeError(f"{field_name} must be an integer byte count")
         byte_count = value
 

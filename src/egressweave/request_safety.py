@@ -50,9 +50,11 @@ def _enforce_allowed_http_method(method: str, policy: EgressPolicy) -> None:
     """
     try:
         normalized_method = _normalize_allowed_method(method)
-    except (TypeError, ValueError) as exc:
-        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from exc
+    except (TypeError, ValueError):
+        normalized_method = None
 
+    if normalized_method is None:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
     if method != normalized_method or normalized_method not in policy.allowed_methods:
         raise EgressNotAllowedError(EGRESS_NOT_ALLOWED)
 
