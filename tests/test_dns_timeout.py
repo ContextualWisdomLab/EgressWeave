@@ -1,3 +1,4 @@
+import asyncio
 import math
 import threading
 import time
@@ -11,6 +12,8 @@ from egressweave import (
     validate_egress_url_details_async,
 )
 from egressweave import validation as v
+
+_AUTHORITY_KEY = ("api.openai.com", 443)
 
 
 @pytest.mark.parametrize(
@@ -48,6 +51,18 @@ def _install_blocking_resolver(monkeypatch):
     return started, release
 
 
+def _release_and_wait_for_resolver(release: threading.Event) -> None:
+    with v._DNS_RESOLUTION_FLIGHTS_LOCK:
+        flight = v._DNS_RESOLUTION_FLIGHTS.get(_AUTHORITY_KEY)
+
+    assert flight is not None
+    release.set()
+    assert flight.completed.wait(timeout=1.0)
+
+    with v._DNS_RESOLUTION_FLIGHTS_LOCK:
+        assert _AUTHORITY_KEY not in v._DNS_RESOLUTION_FLIGHTS
+
+
 def test_sync_validation_enforces_dns_timeout(monkeypatch):
     started, release = _install_blocking_resolver(monkeypatch)
     policy = EgressPolicy.from_hosts(
@@ -67,7 +82,7 @@ def test_sync_validation_enforces_dns_timeout(monkeypatch):
         assert started.wait(timeout=0.2)
         assert time.monotonic() - started_at < 0.5
     finally:
-        release.set()
+        _release_and_wait_for_resolver(release)
 
 
 async def test_async_validation_uses_same_bounded_dns_timeout(monkeypatch):
@@ -89,7 +104,34 @@ async def test_async_validation_uses_same_bounded_dns_timeout(monkeypatch):
         assert started.wait(timeout=0.2)
         assert time.monotonic() - started_at < 0.5
     finally:
-        release.set()
+        _release_and_wait_for_resolver(release)
+
+
+async def test_async_dns_timeout_includes_to_thread_scheduling_delay(monkeypatch):
+    """Count executor scheduling delay inside the public async DNS deadline."""
+    policy = EgressPolicy.from_hosts(
+        "api.openai.com",
+        dns_timeout_seconds=0.05,
+    )
+
+    async def delayed_to_thread(function, *args):
+        assert function is v._resolve_all_global_addresses
+        assert args == ("api.openai.com", 443, policy)
+        await asyncio.sleep(0.25)
+        return ("93.184.216.34",)
+
+    monkeypatch.setattr(v.asyncio, "to_thread", delayed_to_thread)
+    started_at = time.monotonic()
+
+    with pytest.raises(
+        EgressNotAllowedError, match="^egress URL is not allowed$"
+    ):
+        await validate_egress_url_details_async(
+            "https://api.openai.com/v1",
+            policy=policy,
+        )
+
+    assert time.monotonic() - started_at < 0.2
 
 
 def test_resolver_failure_remains_generic(monkeypatch):
