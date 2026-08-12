@@ -1,6 +1,6 @@
 # ADR 0004: Bounded canonical automation prompt
 
-Status: **Proposed**
+Status: **Accepted**
 
 Date: 2026-08-10
 
@@ -57,7 +57,7 @@ The loop SHALL distinguish only causes supported by observable evidence and SHAL
 
 Repository tests SHALL verify the canonical path, size bound, unique no-early-stop and double-exit headings, workflow loader, absence of the old inline heredoc, credentialed-execution prohibition, dependency handoff, control-plane recovery, operator documentation and release-facing changelog entry.
 
-This decision is **ACTIVE-PR** implementation until the scheduler branch that adds the canonical prompt and loader reaches protected main. Protected-main workflow source remains authoritative until then. This ADR remains Proposed until normal review and protected-branch integration accept it.
+The canonical prompt file, regular-file/non-symlink and **12 KiB** guard, private runner copy, OpenCode handoff, and credential-free verifier separation are **IMPLEMENTED-ON-PROTECTED-MAIN**. Protected-main workflow source remains authoritative. Operational acceptance of the external scheduler is a separate evidence boundary: an external generic failure still requires fresh observable control-plane evidence and does not invalidate or silently strengthen this repository-owned implementation.
 
 ## Consequences
 
