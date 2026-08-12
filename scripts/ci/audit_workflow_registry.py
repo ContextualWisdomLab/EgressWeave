@@ -305,6 +305,36 @@ def build_audit(
     }
 
 
+def _workflow_registry_snapshot(
+    registry_pages: Iterable[Mapping[str, object]],
+    *,
+    default_sha: str,
+) -> tuple[tuple[int, str, str], ...]:
+    """Return validated workflow ID/path/state facts, excluding presentation metadata."""
+    audit = build_audit(
+        registry_pages=registry_pages,
+        present_paths=(),
+        active_pr_paths=(),
+        expected_default_sha=default_sha,
+        observed_default_sha=default_sha,
+        observed_at="registry-snapshot",
+    )
+    records = audit.get("records")
+    if not isinstance(records, list):
+        raise AuditError("workflow registry snapshot is malformed")
+    snapshot: list[tuple[int, str, str]] = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise AuditError("workflow registry snapshot is malformed")
+        workflow_id = _require_workflow_id(record.get("workflow_id"))
+        path = _require_workflow_path(record.get("path"))
+        state = record.get("state")
+        if not isinstance(state, str) or not state:
+            raise AuditError("workflow registry snapshot is malformed")
+        snapshot.append((workflow_id, path, state))
+    return tuple(snapshot)
+
+
 def _api_url(repository: str, suffix: str, **query: object) -> str:
     """Build one validated GitHub REST URL without embedding credentials."""
     repository = _require_repository(repository)
@@ -428,17 +458,33 @@ def audit_repository(
         if item_type == "file":
             present_paths.add(_require_workflow_path(path))
 
-    registry_pages = collect_registry_pages(
+    initial_registry_pages = collect_registry_pages(
         lambda page: request_json(
             _api_url(repository, "actions/workflows", per_page=100, page=page),
             token=token,
         )
+    )
+    initial_registry_snapshot = _workflow_registry_snapshot(
+        initial_registry_pages,
+        default_sha=expected_sha,
     )
     initial_pr_snapshot = _collect_open_pr_workflow_snapshot(repository, token)
     active_pr_paths = _workflow_paths_from_pr_snapshot(initial_pr_snapshot)
     final_pr_snapshot = _collect_open_pr_workflow_snapshot(repository, token)
     if final_pr_snapshot != initial_pr_snapshot:
         raise AuditError("pull request workflow reservations changed during audit")
+    final_registry_pages = collect_registry_pages(
+        lambda page: request_json(
+            _api_url(repository, "actions/workflows", per_page=100, page=page),
+            token=token,
+        )
+    )
+    final_registry_snapshot = _workflow_registry_snapshot(
+        final_registry_pages,
+        default_sha=expected_sha,
+    )
+    if final_registry_snapshot != initial_registry_snapshot:
+        raise AuditError("workflow registry changed during audit")
 
     final_branch = request_json(
         _api_url(repository, f"branches/{encoded_branch}"),
@@ -454,7 +500,7 @@ def audit_repository(
         "+00:00", "Z"
     )
     return build_audit(
-        registry_pages=registry_pages,
+        registry_pages=final_registry_pages,
         present_paths=present_paths,
         active_pr_paths=active_pr_paths,
         expected_default_sha=expected_sha,
