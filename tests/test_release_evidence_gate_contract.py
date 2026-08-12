@@ -86,3 +86,14 @@ def test_release_evidence_gate_rejects_wrapper_green_dependency_review_skip() ->
     assert '.name == "dependency-review" and .status == "completed" and .conclusion == "success"' in workflow
     assert '.name == "Dependency review" and .status == "completed" and .conclusion == "success"' in workflow
     assert "Pinned Dependency review action was absent, skipped, or non-passing." in workflow
+
+
+def test_release_evidence_gate_rejects_wrapper_green_unavailable_strix() -> None:
+    """Reject a successful required Strix wrapper when no review was produced."""
+    workflow = _release_workflow()
+
+    assert 'workflow_path" = ".github/workflows/strix.yml"' in workflow
+    assert "Require substantive Strix review evidence" in workflow
+    assert "check-runs/${STRIX_JOB_ID}/annotations?per_page=100" in workflow
+    assert '.title == "Strix backend unavailable"' in workflow
+    assert "Wrapper-green Strix run reported backend-unavailable review evidence." in workflow
