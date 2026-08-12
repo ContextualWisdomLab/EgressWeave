@@ -88,6 +88,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Harden release publication evidence with validated integrating-PR identity,
+  cross-repository required-workflow source checks, and Strix check-run
+  annotations without adding an elevated release credential.
 - Deduplicate overlapping same-authority DNS resolution through one live
   in-flight `(hostname, port)` worker while preserving the finite global
   resolver ceiling, per-caller deadlines, and caller-specific address policy.
