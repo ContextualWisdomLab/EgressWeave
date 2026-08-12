@@ -1,0 +1,161 @@
+# EgressWeave Technical Requirements Document
+
+Status: Proposed documentation baseline. Protected-main implementation truth remains [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md).
+
+## 1. Scope and maturity
+
+This TRD turns the product requirements in [`PRD.md`](PRD.md) into verifiable technical constraints. It distinguishes **IMPLEMENTED-ON-PROTECTED-MAIN**, **ACTIVE-PR**, **ACCEPTED-TARGET**, **PLANNED**, **RESEARCH-ONLY**, and **OUT-OF-SCOPE** behavior. An active pull request is never described as shipped.
+
+## 2. Architectural constraints
+
+### TRD-AR-001 — In-process library boundary
+
+**IMPLEMENTED-ON-PROTECTED-MAIN.** EgressWeave is a Python library embedded in a host process. It does not require a resident control-plane service or package-owned database.
+
+### TRD-AR-002 — Provider-neutral policy objects
+
+**IMPLEMENTED-ON-PROTECTED-MAIN.** Security-sensitive configuration is represented by explicit immutable policy, TLS, timeout, and connection-pool values rather than ambient provider state.
+
+### TRD-AR-003 — One authorization identity
+
+**IMPLEMENTED-ON-PROTECTED-MAIN.** The normalized `(hostname, port)` authority approved before DNS remains the logical identity through validated address selection, TCP connection, TLS SNI/certificate verification, and HTTP `Host` construction.
+
+### TRD-AR-004 — No hidden alternate egress path
+
+**IMPLEMENTED-ON-PROTECTED-MAIN.** Guarded clients disable or reject redirect, ambient proxy, Unix-socket, caller-target, and caller-selected destination mechanisms that could create an authority not covered by policy.
+
+### TRD-AR-005 — Bounded canonical automation prompt
+
+**ACTIVE-PR.** Repository-local product development loads one canonical prompt from `.github/prompts/hourly-product-maintainer.md`. The workflow validates that it is a regular non-symlink file and no larger than **12 KiB**, then copies it into a private runner location before OpenCode execution. The policy must not be duplicated in an inline YAML heredoc.
+
+Moving the policy out of YAML must not broaden repository-write authority, reviewer identity, tool permissions, model egress, signing, publication, release, or credential scope. The model remains denied `.github/**` edits, repository execution, `.git` mutation, branch/PR creation, merge, signing, package publication, and release operations. Modified code executes only in the later credential-free verifier.
+
+A generic scheduled-task failure is treated as a resumable control-plane incident. The next successful invocation revalidates live repository state and may repair the same bounded prompt when evidence supports that action, but prompt repair alone is not completion and an unclassified transient error does not disable the recurring loop.
+
+## 3. Validation pipeline
+
+The required logical pipeline is:
+
+1. Normalize trusted policy configuration.
+2. Parse and canonicalize the candidate HTTPS URL.
+3. Enforce authority and method policy before DNS.
+4. Resolve DNS under a finite timeout.
+5. Canonicalize, deduplicate, classify, and bound address candidates.
+6. Construct integrity-bound `ValidatedEgressURL` state.
+7. Revalidate current policy immediately before use.
+8. Connect only to accepted addresses while retaining hostname-based TLS and HTTP identity.
+9. Apply request target/header/framing/body and timeout/pool controls before or during dispatch.
+10. Apply response header/body/content-coding controls before caller exposure and during streaming.
+11. Emit only stable public denials and bounded decision evidence.
+
+See [`../architecture/SYSTEM_ARCHITECTURE.md`](../architecture/SYSTEM_ARCHITECTURE.md) and [`../architecture/UML.md`](../architecture/UML.md).
+
+## 4. Security invariants
+
+### TRD-SI-001 — Parse before resolve
+
+Untrusted URL structure must not be sent to DNS before scheme, authority, credentials, fragments, hostname syntax, port, and method policy have been validated.
+
+### TRD-SI-002 — Validate every DNS answer
+
+All candidates used for connection must individually satisfy address policy. Over-limit candidate sets fail closed rather than being silently truncated into a different security decision.
+
+### TRD-SI-003 — Preserve TLS identity
+
+Connecting to a validated IP must not change SNI or certificate hostname verification from the originally approved hostname.
+
+### TRD-SI-004 — Revalidate signed/integrity state
+
+A `ValidatedEgressURL` is not a perpetual capability. Security-relevant policy drift or modified validation state must fail before network use.
+
+### TRD-SI-005 — Stable error boundary
+
+Dependency-private resolver, socket, TLS, stream, cleanup, and parser details must not replace the documented generic policy denial when the operation is rejected by the security boundary.
+
+## 5. Resource controls
+
+**IMPLEMENTED-ON-PROTECTED-MAIN** includes finite policy for:
+
+- DNS resolution duration and maximum unique resolved addresses;
+- connect/read/write/pool timeout phases;
+- total and idle connection-pool capacity and idle lifetime;
+- request-target bytes;
+- request-header field count and bytes;
+- request-body bytes through `max_request_bytes`;
+- response-header field count and bytes;
+- response-body bytes through `max_response_bytes`.
+
+Exact numeric defaults are public API behavior and must be verified from the current implementation/tests when documentation is changed. Documentation must not copy a historical value without exact-head verification.
+
+## 6. HTTP request requirements
+
+- Method bytes must correspond to the canonical method authorized by policy.
+- Raw field names/values must meet the library's strict HTTP syntax contract.
+- `Host` is reconstructed from trusted authority state.
+- Connection/proxy authentication and protocol-upgrade controls rejected by policy may not pass through.
+- `Content-Length` and `Transfer-Encoding` must not form an ambiguous request framing state.
+- Caller `target` extensions may not carry a second destination.
+- Body streams are single-consumption and bounded; the first over-budget bytes are not delivered downstream.
+
+## 7. HTTP response requirements
+
+- Response header fanout and cumulative bytes are bounded before constructing a caller-visible response.
+- Body size is checked from trustworthy metadata when possible and always enforced during stream consumption.
+- Unsupported or unsafe content-coding states are rejected before decompression can turn a bounded wire response into unbounded caller allocation.
+- Rejected streams are cleaned up best-effort; dependency cleanup failure remains behind the stable denial boundary while caller/coordinator cancellation semantics remain explicit.
+
+## 8. Concurrency requirements
+
+**IMPLEMENTED-ON-PROTECTED-MAIN.** The asynchronous pinned backend staggers validated address attempts and gives a newly started child connection only the remaining connection-timeout budget. The protected-main coordinator also stops starting later candidates when its current deadline budget is exhausted. However, protected main does not yet enforce one coordinator-owned deadline across every coordinator wait after all candidates have started; the final in-flight wait can therefore outlive that outer budget when an injected backend does not finish within the child timeout as expected.
+
+Protected-main behavior still requires that first accepted success wins under the current ordering rules and that losing tasks are cancelled and awaited after success. Exact hostname/port authorization, DNS-pinned address revalidation, TLS identity, proxy isolation, and finite child connection timeouts remain shipped behavior.
+
+**ACTIVE-PR.** The global-deadline hardening under review requires one coordinator-owned absolute monotonic deadline across every asynchronous attempt and coordinator wait, including after all candidates have started. It also normalizes terminal all-candidate failure, rejects completions first observed at or after the deadline, and contains dependency-controlled child cleanup failure without consuming outer coordinator cancellation. These refinements are not protected-main behavior until their pull request is accepted and merged.
+
+The synchronous backend must preserve equivalent terminal authority and error semantics where concurrency mechanics do not apply; global terminal-error normalization that exists only on an active PR is likewise not described as shipped here.
+
+## 9. API and integration constraints
+
+The public API contract is documented in [`API_CONTRACT.md`](API_CONTRACT.md). Host adapters, including naruon integration, may translate configuration and lifecycle concerns but must reuse the same security-critical policy/builder layer. The core SHALL NOT infer tenant, user, business-object, credential, queue, or persistence authority from transport policy.
+
+## 10. Data and persistence
+
+**OUT-OF-SCOPE.** The core package owns no durable database. Runtime objects are in-memory security/configuration/evidence objects. If a host persists audit information, that schema is host-owned and must apply independent access, retention, encryption, and privacy controls. Automation run state and control-plane incident records are likewise platform-owned, not EgressWeave core persistence. See [`../architecture/ERD.md`](../architecture/ERD.md).
+
+## 11. Automation execution and recovery requirements
+
+The **ACTIVE-PR** repository-local scheduler must satisfy all of the following:
+
+1. Check out the exact protected branch and reject product development while any open PR exists.
+2. Install one SHA-256-verified OpenCode release and use the existing `NVIDIA_NIM_API_KEY` through the documented `NVIDIA_API_KEY` mapping.
+3. Validate and copy `.github/prompts/hourly-product-maintainer.md` under the 12 KiB limit before the credential-bearing model step.
+4. Keep model tools deny-by-default and prohibit repository-code execution in that credential-bearing step.
+5. Package only an allowlisted, bounded patch tied to the exact base SHA.
+6. Recheck zero-open-PR and unchanged-base conditions before applying the patch in a fresh checkout.
+7. Execute all modified code only in the offline, non-root, capability-free, credential-free verifier.
+8. End at a digest-bound verified patch handoff without branch push, PR creation, merge, OIDC publication, signing, package publication, or release.
+9. Treat generic control-plane failures as resumable incident evidence, use exact observable evidence for RCA, and continue another safe EgressWeave action when available.
+10. Preserve the work-conserving dependency-advancement handoff and double-exit-sweep semantics defined by ADR 0003 and ADR 0004.
+
+## 12. Verification requirements
+
+- Test-first regressions for new security acceptance/rejection behavior.
+- Exact 100% owned production statement and branch coverage.
+- Shipped-symbol docstring completeness under repository tests.
+- Supported Python matrix.
+- Offline deterministic unit/integration tests without public DNS.
+- Sync/async parity for shared invariants.
+- Property/adversarial tests for URL, DNS, HTTP fields, framing, streams, filesystem/release evidence where applicable.
+- Ruff, compileall, package build/archive verification, and installed-wheel smoke tests.
+- Exact-head security scans and independent review according to repository policy.
+- Machine-checkable canonical prompt path, byte budget, non-symlink validation, loader, no-inline-heredoc, credentialed-execution prohibition, incident recovery, dependency handoff and maturity classification.
+
+See [`TEST_STRATEGY.md`](TEST_STRATEGY.md).
+
+## 13. Operations, compliance, and release
+
+Host operational ownership is defined in [`OPERABILITY.md`](OPERABILITY.md). Security/compliance contributions and limitations are mapped in [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md). Standards are centralized in [`../doctoring/REFERENCES.md`](../doctoring/REFERENCES.md).
+
+A release is **ACCEPTED-TARGET** only after the exact protected release source passes all repository-required quality, security, package, provenance/SBOM where applicable, independent review, and operational-acceptance gates. Release automation changes under an **ACTIVE-PR** remain unshipped until protected merge evidence exists.
+
+The bounded canonical prompt decision is recorded in [`../adr/0004-bounded-canonical-automation-prompt.md`](../adr/0004-bounded-canonical-automation-prompt.md); work conservation and dependency handoff are governed by [`../adr/0003-work-conserving-automation-and-dependency-handoff.md`](../adr/0003-work-conserving-automation-and-dependency-handoff.md).
