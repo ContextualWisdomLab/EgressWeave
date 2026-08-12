@@ -135,7 +135,7 @@ def request_json(
         raise
     except urllib.error.HTTPError as exc:
         raise AuditError(f"GitHub API returned HTTP {exc.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError):
         raise AuditError("GitHub API request failed") from None
     if len(payload) > MAX_RESPONSE_BYTES:
         raise AuditError("GitHub API response exceeds the audit safety bound")
