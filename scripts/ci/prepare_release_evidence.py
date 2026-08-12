@@ -436,14 +436,17 @@ def prepare_release_evidence(
     )
     resolved_handoff = _require_handoff_outside_evidence(handoff_path, evidence_root)
     reviewed_input_label = "reviewed input"
-    dependency_manifest = _require_canonical_file(
-        dependency_manifest_path,
-        label=reviewed_input_label,
-    )
-    runtime_lock = _require_canonical_file(
-        runtime_lock_path,
-        label=reviewed_input_label,
-    )
+    try:
+        dependency_manifest = _require_canonical_file(
+            dependency_manifest_path,
+            label=reviewed_input_label,
+        )
+        runtime_lock = _require_canonical_file(
+            runtime_lock_path,
+            label=reviewed_input_label,
+        )
+    except SystemExit:
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
     dependency_manifest_identity = _require_reviewed_input_preflight(
         dependency_manifest,
         label=reviewed_input_label,
