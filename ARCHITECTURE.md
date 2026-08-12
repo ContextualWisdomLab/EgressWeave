@@ -168,6 +168,29 @@ detect configuration drift; they are not cryptographic proof against arbitrary
 in-process code execution. The evidence artifact does not authorize a request
 or replace application path, credential, tenant, or destination authorization.
 
+### Release-evidence preparation layer
+
+Release-evidence preparation is repository tooling, not part of the runtime
+network path. It runs without repository-write, signing, OIDC-attestation,
+publication, tag, or release credentials and accepts only already-built wheel
+and source-distribution archives plus two reviewed dependency inputs.
+
+The reviewed dependency manifest and hash-locked runtime requirements are each
+bounded to 1 MiB and bound to an accepted `(device, inode, size)` identity. The
+preparer opens each path with no-follow semantics and copies the descriptor bytes
+into separate owner-only private snapshots with fixed internal names before the
+SBOM generator is loaded. Both wheel and source-distribution SBOM passes receive
+the same detached snapshots; the generator never reopens caller-controlled
+reviewed-input paths. Distribution archives are independently copied through the
+same identity-bound pattern into private parser snapshots. All private snapshots
+are removed before generated evidence is published.
+
+This layer establishes a deterministic, internally consistent handoff for one
+exact repository/source identity. It does not prove that the distributions were
+honestly built from that source and does not itself create provenance; those
+claims remain the responsibility of independently reviewed, credential-separated
+hosted build and attestation controls.
+
 ## Trust boundaries
 
 | Boundary | Trusted input | Untrusted input | Required behavior |
@@ -180,6 +203,7 @@ or replace application path, credential, tenant, or destination authorization.
 | TLS | fresh context and validated hostname | peer certificate and caller SNI override | bind identity; deny mismatch |
 | Response delivery | finite response policy | peer fields, framing, coding, and body | bound and validate before exposure |
 | Audit export | revalidated decision | paths, credentials, IPs, response data | omit sensitive request and peer data |
+| Release evidence | exact accepted file identities | mutable reviewed-input and archive paths | consume bounded no-follow private snapshots; fail closed on drift |
 
 Arbitrary code execution inside the embedding Python process is outside the
 security model. Network firewalls, service-mesh policies, sandboxing, tenant
