@@ -62,6 +62,43 @@ def _write_fixture(
     return source_root, coverage_json
 
 
+def _write_noop_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """Create one measured function plus a docstring-only no-op function."""
+    source_root = tmp_path / "src" / "egressweave"
+    source_root.mkdir(parents=True)
+    source_file = source_root / "sample.py"
+    source_file.write_text(
+        "def measured() -> int:\n"
+        "    return 1\n"
+        "\n\n"
+        "def noop() -> None:\n"
+        "    \"\"\"Intentionally has no measurable executable body.\"\"\"\n",
+        encoding="utf-8",
+    )
+    coverage_json = tmp_path / "coverage.json"
+    coverage_json.write_text(
+        json.dumps(
+            {
+                "meta": {"branch_coverage": True, "version": "fixture"},
+                "files": {
+                    str(source_file): {
+                        "executed_lines": [1, 2, 5],
+                        "missing_lines": [],
+                        "excluded_lines": [],
+                        "summary": {
+                            "covered_lines": 3,
+                            "num_statements": 3,
+                            "missing_lines": 0,
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return source_root, coverage_json
+
+
 def _run_reporter(source_root: Path, coverage_json: Path) -> subprocess.CompletedProcess[str]:
     """Run the repository reporter exactly as CI will invoke it."""
     return subprocess.run(
@@ -93,6 +130,18 @@ def test_reporter_exposes_exact_line_and_function_body_metrics(tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     assert "line=100.00% (6/6)" in result.stdout
     assert "function=100.00% (2/2)" in result.stdout
+
+
+def test_reporter_excludes_functions_without_measurable_body_lines(tmp_path: Path) -> None:
+    """Do not turn a docstring-only no-op into impossible function-coverage debt."""
+    source_root, coverage_json = _write_noop_fixture(tmp_path)
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 0, result.stderr
+    assert "line=100.00% (3/3)" in result.stdout
+    assert "function=100.00% (1/1)" in result.stdout
+    assert "noop" not in result.stderr
 
 
 def test_reporter_fails_closed_when_a_function_body_has_a_missing_line(
