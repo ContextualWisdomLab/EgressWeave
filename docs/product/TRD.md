@@ -28,7 +28,7 @@ This TRD turns the product requirements in [`PRD.md`](PRD.md) into verifiable te
 
 **IMPLEMENTED-ON-PROTECTED-MAIN.** Repository-local product development loads one canonical prompt from `.github/prompts/hourly-product-maintainer.md`. The workflow validates that it is a regular non-symlink file and no larger than **12 KiB**, then copies it into a private runner location before OpenCode execution. The policy is not duplicated in an inline YAML heredoc.
 
-Moving the policy out of YAML does not broaden repository-write authority, reviewer identity, tool permissions, model egress, signing, publication, release, or credential scope. The model remains denied `.github/**` edits, repository execution, `.git` mutation, branch/PR creation, merge, signing, package publication, and release operations. Modified code executes only in the later credential-free verifier.
+Moving the policy out of YAML must not broaden repository-write authority, reviewer identity, tool permissions, model egress, signing, publication, release, or credential scope. The model remains denied `.github/**` edits, repository execution, `.git` mutation, branch/PR creation, merge, signing, package publication, and release operations. Modified code executes only in the later credential-free verifier.
 
 A generic scheduled-task failure is treated as a resumable control-plane incident. The next successful invocation revalidates live repository state and may repair the same bounded prompt when evidence supports that action, but prompt repair alone is not completion and an unclassified transient error does not disable the recurring loop. External scheduler operational acceptance remains distinct from the repository-owned prompt/loader implementation.
 
