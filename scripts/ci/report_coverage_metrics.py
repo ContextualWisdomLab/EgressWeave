@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Expose exact owned-production line and function-body coverage metrics.
 
 Coverage.py remains the source of statement and branch truth. This helper reads
