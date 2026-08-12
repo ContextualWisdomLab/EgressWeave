@@ -71,7 +71,7 @@ The bounded **canonical prompt** control is also **IMPLEMENTED-ON-PROTECTED-MAIN
 
 Multiple security, release-evidence, scheduler-integration, and evidence-schema changes can exist concurrently. Their PR numbers and SHAs are deliberately not embedded as timeless architecture. Until each change reaches protected main, its implementation remains ACTIVE-PR and its prior review/check evidence must not be transferred to a different head or base.
 
-In particular, repository-local publisher removal, credentialed release handoff consumption, full release identity/digest revalidation, matching buyer-facing handoff correction, and other unmerged hardening remain ACTIVE-PR on their dependency-aware stacks. Those changes must not replace protected-main automation or release truth before integration.
+In particular, repository-local publisher removal, credentialed release handoff consumption, full release identity/digest revalidation, matching buyer-facing handoff correction, and other unmerged hardening remain ACTIVE-PR on their dependency-aware stacks. Those changes must not replace protected-main automation truth before integration and must not replace protected-main release truth before integration.
 
 ### ACCEPTED-TARGET
 
