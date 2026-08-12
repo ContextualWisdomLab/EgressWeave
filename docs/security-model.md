@@ -35,7 +35,7 @@ For a non-local target, EgressWeave:
     capability-bearing keys private while closing denied source streams; and
 16. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
-A failure is surfaced as the generic `EgressNotAllowedError` where validation or transport policy is involved so rejection details do not become a policy oracle. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
+A failure is surfaced as the generic `EgressNotAllowedError` where validation or transport policy is involved so rejection details do not become a policy oracle. Malformed request-method denials leave the method-normalization exception context before the caller-visible denial is created, so the resulting `EgressNotAllowedError` exposes neither a private cause nor a private context. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 
 ## Local-development exception
 

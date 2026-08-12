@@ -160,8 +160,13 @@ private trust store, or supply an mTLS client identity without sharing a mutable
 `EgressDecisionEvidence` is an opt-in audit artifact for an already authorized
 and revalidated destination. It contains canonical authority, authority-relevant
 method policy, aggregate address-family counts, and deterministic policy and
-decision fingerprints. Fingerprints detect configuration drift; they are not
-cryptographic proof against arbitrary in-process code execution.
+decision fingerprints. `get_decision_evidence_json_schema()` loads the detached
+JSON Schema Draft 2020-12 resource
+`egressweave/schemas/decision-evidence-v1.schema.json`; the release verifier
+requires that resource in both the wheel and source distribution. Fingerprints
+detect configuration drift; they are not cryptographic proof against arbitrary
+in-process code execution. The evidence artifact does not authorize a request
+or replace application path, credential, tenant, or destination authorization.
 
 ## Trust boundaries
 
@@ -239,6 +244,9 @@ awaited after a connection succeeds.
 - Invalid trusted configuration: `TypeError` or `ValueError` during startup.
 - Rejected or indeterminate egress decision: generic
   `EgressNotAllowedError("egress URL is not allowed")`.
+- Malformed request-method normalization failures leave the caught exception
+  scope before the generic denial is created, so the caller-visible error has
+  neither a private cause nor a private context.
 - Ordinary HTTPX/HTTPCore network failures after a permitted dispatch: mapped to
   the corresponding HTTPX transport exception.
 - Caller- or peer-controlled cleanup errors during a policy denial: suppressed
