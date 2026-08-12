@@ -33,6 +33,29 @@ class _ExplodingTimeoutMapping(Mapping[str, object]):
         return 1
 
 
+class _ExplodingExtensionsGetMapping(Mapping[str, object]):
+    """Expose safe items while making direct ``get`` dispatch attacker-controlled."""
+
+    def __getitem__(self, key: str) -> object:
+        """Return one ordinary timeout mapping through indexed access."""
+        if key == "timeout":
+            return {"connect": 1.0}
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        """Advertise the single reviewed request-extension key."""
+        return iter(("timeout",))
+
+    def __len__(self) -> int:
+        """Report the one advertised extension key."""
+        return 1
+
+    def get(self, key: str, default: object = None) -> object:
+        """Raise if production code dynamically dispatches untrusted ``get``."""
+        del key, default
+        return _raise_unexpected_protocol_failure("secret extensions get failure")
+
+
 class _ExplodingReal:
     """Behave as a registered real number whose conversion raises arbitrarily."""
 
@@ -64,6 +87,21 @@ def _assert_generic_timeout_denial(timeout_value: object) -> None:
     ) as error:
         _bind_bounded_request_timeouts(
             {"timeout": timeout_value},
+            EgressTimeoutPolicy(),
+        )
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+
+
+def test_request_extensions_get_exceptions_are_masked() -> None:
+    """Do not dispatch an untrusted outer mapping's ``get`` implementation."""
+    with pytest.raises(
+        EgressNotAllowedError,
+        match=f"^{EGRESS_NOT_ALLOWED}$",
+    ) as error:
+        _bind_bounded_request_timeouts(
+            _ExplodingExtensionsGetMapping(),
             EgressTimeoutPolicy(),
         )
 
