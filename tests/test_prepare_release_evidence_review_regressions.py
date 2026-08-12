@@ -114,7 +114,7 @@ def test_reviewed_dependency_inputs_reject_symlinks(
     tmp_path: Path,
     input_kind: str,
 ) -> None:
-    """Reject symlinked reviewed dependency inputs before generated output."""
+    """Reject symlinked reviewed dependency inputs through the generic boundary."""
     preparer = _load_preparer()
     evidence_dir = tmp_path / "evidence"
     _write_distributions(evidence_dir)
@@ -127,7 +127,7 @@ def test_reviewed_dependency_inputs_reject_symlinks(
 
     dependency_manifest = linked_input if input_kind == "dependency manifest" else MANIFEST_PATH
     runtime_lock = linked_input if input_kind == "runtime lock" else LOCK_PATH
-    with pytest.raises(SystemExit, match="missing or unsafe"):
+    with pytest.raises(SystemExit, match="reviewed input is unreadable or unsafe"):
         _prepare_with_inputs(
             preparer,
             evidence_dir,
