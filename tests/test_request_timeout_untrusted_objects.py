@@ -33,6 +33,23 @@ class _ExplodingTimeoutMapping(Mapping[str, object]):
         return 1
 
 
+class _ExplodingExtensionsCopyMapping(Mapping[str, object]):
+    """Raise while the untrusted outer request-extension mapping is detached."""
+
+    def __getitem__(self, key: str) -> object:
+        """Delegate indexed access to an unexpected secret-bearing failure."""
+        del key
+        return _raise_unexpected_protocol_failure("secret extensions copy failure")
+
+    def __iter__(self) -> Iterator[str]:
+        """Advertise one ordinary reviewed extension key."""
+        return iter(("timeout",))
+
+    def __len__(self) -> int:
+        """Report the one advertised extension key."""
+        return 1
+
+
 class _ExplodingExtensionsGetMapping(Mapping[str, object]):
     """Expose safe items while making direct ``get`` dispatch attacker-controlled."""
 
@@ -87,6 +104,21 @@ def _assert_generic_timeout_denial(timeout_value: object) -> None:
     ) as error:
         _bind_bounded_request_timeouts(
             {"timeout": timeout_value},
+            EgressTimeoutPolicy(),
+        )
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+
+
+def test_request_extension_copy_exceptions_are_masked() -> None:
+    """Mask arbitrary failures while detaching the outer extension mapping."""
+    with pytest.raises(
+        EgressNotAllowedError,
+        match=f"^{EGRESS_NOT_ALLOWED}$",
+    ) as error:
+        _bind_bounded_request_timeouts(
+            _ExplodingExtensionsCopyMapping(),
             EgressTimeoutPolicy(),
         )
 
