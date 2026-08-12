@@ -133,7 +133,7 @@ def test_manifest_rejects_checksum_mutation_after_sbom_verification(
         version: str,
         expected_digest: str,
     ) -> str:
-        """Replace SHA256SUMS only after both SBOMs and payloads were accepted."""
+        """Replace source SHA256SUMS after the private snapshot was accepted."""
         serial = original_verify(
             sbom_path,
             artifact_name=artifact_name,
@@ -147,7 +147,7 @@ def test_manifest_rejects_checksum_mutation_after_sbom_verification(
 
     monkeypatch.setattr(release_evidence, "_verify_sbom", verify_then_mutate)
 
-    with pytest.raises(SystemExit, match="SHA256SUMS changed during verification"):
+    with pytest.raises(SystemExit, match="release evidence changed during verification"):
         release_evidence.build_evidence_manifest(
             root,
             repository=REPOSITORY,
