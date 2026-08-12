@@ -120,3 +120,34 @@ def test_traceability_maps_automation_governance_to_decision_and_evidence() -> N
         "double exit sweep",
     ):
         assert required_phrase in row.lower()
+
+
+def test_protected_product_handoff_has_no_repository_local_publisher() -> None:
+    """Keep README, accepted ADR, and root architecture aligned on publisher-free handoff."""
+    readme = _read("README.md")
+    accepted_adr = _read("docs/adr/0001-security-boundaries-and-modular-integration.md")
+    architecture = _read("ARCHITECTURE.md")
+
+    readme_automation = readme.split("## Autonomous maintenance", 1)[1].split(
+        "## Version compatibility",
+        1,
+    )[0]
+    adr_automation = accepted_adr.split("### 6. Credential-separated automation", 1)[
+        1
+    ].split("## Alternatives considered", 1)[0]
+    architecture_automation = architecture.split("## Repository automation", 1)[1].split(
+        "## References",
+        1,
+    )[0]
+
+    assert "credential-free" in readme_automation
+    assert "no repository-local job obtains write authority or" in readme_automation
+
+    for section in (adr_automation, architecture_automation):
+        normalized = " ".join(section.split()).lower()
+        assert "credential-free" in normalized
+        assert "repository-local" in normalized
+        assert "pull request" in normalized
+
+    assert "publishing identity creates a normal pull request" not in adr_automation
+    assert "publication use separate runners" not in architecture_automation
