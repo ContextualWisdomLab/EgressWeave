@@ -1,10 +1,11 @@
 """Verify EgressWeave release distributions without executing package code.
 
 The verifier treats wheel and source-distribution archives as data. It confirms
-that filenames, metadata, license evidence, typed-package markers, and source
-contents match ``pyproject.toml``; optionally binds a published GitHub release
-tag to the package version and dated changelog section; and writes deterministic
-SHA-256 checksums for the credential-separated publishing job.
+that filenames, metadata, license evidence, typed-package markers, versioned
+machine-readable schema resources, and source contents match ``pyproject.toml``;
+optionally binds a published GitHub release tag to the package version and dated
+changelog section; and writes deterministic SHA-256 checksums for the
+credential-separated publishing job.
 """
 
 from __future__ import annotations
@@ -222,6 +223,7 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
     required_paths = {
         f"{DISTRIBUTION_NAME}/__init__.py",
         f"{DISTRIBUTION_NAME}/py.typed",
+        f"{DISTRIBUTION_NAME}/schemas/decision-evidence-v1.schema.json",
         f"{dist_info}/METADATA",
         f"{dist_info}/WHEEL",
         f"{dist_info}/RECORD",
@@ -268,6 +270,10 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> str:
         f"{prefix}/LICENSE",
         f"{prefix}/src/{DISTRIBUTION_NAME}/__init__.py",
         f"{prefix}/src/{DISTRIBUTION_NAME}/py.typed",
+        (
+            f"{prefix}/src/{DISTRIBUTION_NAME}/schemas/"
+            "decision-evidence-v1.schema.json"
+        ),
         f"{prefix}/tests/test_quality_contracts.py",
         f"{prefix}/docs/release.md",
     }

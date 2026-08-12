@@ -43,6 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
   without exposing request paths or resolved IP addresses.
+- Add the versioned JSON Schema Draft 2020-12 resource
+  `egressweave/schemas/decision-evidence-v1.schema.json` and the detached
+  `get_decision_evidence_json_schema()` loader. Release verification now
+  requires the schema in both the wheel and source distribution so audit
+  consumers can validate the evidence contract without a runtime schema
+  dependency.
 - Add `EgressPolicy.max_request_bytes` with a secure finite 16 MiB default,
   positive integer or ASCII decimal-string configuration, and fail-fast
   rejection of values that could silently remove the outbound resource bound.
