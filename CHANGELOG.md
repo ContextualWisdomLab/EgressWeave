@@ -38,7 +38,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Add immutable provider-neutral `TLSConfiguration` dependency injection for
   private trust stores and mutual-TLS client identities across synchronous and
   asynchronous DNS-pinned builders. TLS 1.3 is the default; explicit TLS 1.2
-  compatibility remains restricted to forward-secret ECDHE suites.
+  compatibility remains restricted to forward-secret ECDHE suites. Before
+  dispatch, builders require the exact `TLSConfiguration` type so a subclass
+  cannot replace context construction or inject subclass-controlled TLS policy.
 - Add explicit, deterministic `EgressDecisionEvidence` for successful egress
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
@@ -86,6 +88,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Require the exact `TLSConfiguration` type before TLS context creation. A
+  subclass can no longer override `create_ssl_context()` to replace the reviewed
+  immutable policy with a context that disables hostname or certificate
+  verification; private trust, mTLS, and explicit TLS 1.2 compatibility remain
+  available through the documented declarative fields.
+- Reject non-exact integer subclasses in shared policy integer fields before
+  retaining trusted configuration state. Exact built-in integers and existing
+  ASCII decimal strings remain supported, preserving defaults and ranges while
+  preventing subclass-controlled values from crossing immutable policy construction.
 - Erase private request-method normalization exception provenance from
   caller-visible policy denials.
 - Pin the credential-free verifier to a reviewed Python 3.13
