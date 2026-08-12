@@ -19,6 +19,7 @@ import httpcore
 import httpx
 from httpx._transports.default import ResponseStream, map_httpcore_exceptions
 
+from egressweave.cookie_safety import _new_explicit_cookie_jar
 from egressweave.policy import EgressPolicy, _normalize_host
 from egressweave.request_body_safety import (
     _BoundedSyncRequestStream,
@@ -294,8 +295,9 @@ class _PinnedEgressTransport(httpx.BaseTransport):
 
 
 def _build_sync_httpx_client(transport: httpx.BaseTransport) -> httpx.Client:
-    """Build a client without HTTPX's ambient hop-by-hop connection header."""
+    """Build a client with safe ambient headers and caller-owned cookie state."""
     client = httpx.Client(
+        cookies=_new_explicit_cookie_jar(),
         follow_redirects=False,
         trust_env=False,
         transport=transport,
@@ -318,6 +320,8 @@ def build_egress_sync_client(
     :class:`~egressweave.validation.EgressNotAllowedError`. The builder removes
     HTTPX's ambient ``Connection`` header so ordinary caller requests reach the
     transport's strict hop-by-hop-header policy without weakening that policy.
+    Response-provided cookies remain visible to callers but are not persisted as
+    ambient request state; callers may still supply cookie state explicitly.
     Exact outbound targets are limited by ``policy.max_request_target_bytes``.
     Final outbound fields are limited by ``policy.max_request_header_fields`` and
     ``policy.max_request_header_bytes``. Request bodies are limited to
@@ -353,14 +357,15 @@ def build_pinned_https_client(
     The supplied result is revalidated without another DNS lookup. HTTPX's
     ambient ``Connection`` header is removed at construction while any caller-
     supplied hop-by-hop field remains subject to the transport's fail-closed
-    request-header policy. Every connection is pinned to its addresses, any
-    forged result or authority change is rejected before network I/O, every
-    exact outbound target and request header section is bounded after trusted
-    rewriting, every request body is constrained by ``policy.max_request_bytes``
-    and exact declared framing, every request phase is capped by
-    ``policy.request_timeout_policy``, response metadata is bounded by the finite
-    header policy, and every identity-coded response body is constrained by
-    ``policy.max_response_bytes``.
+    request-header policy. Response cookies are observable but never promoted to
+    ambient later-request state; explicit caller-owned cookies remain available.
+    Every connection is pinned to its addresses, any forged result or authority
+    change is rejected before network I/O, every exact outbound target and
+    request header section is bounded after trusted rewriting, every request body
+    is constrained by ``policy.max_request_bytes`` and exact declared framing,
+    every request phase is capped by ``policy.request_timeout_policy``, response
+    metadata is bounded by the finite header policy, and every identity-coded
+    response body is constrained by ``policy.max_response_bytes``.
     """
     return _build_sync_httpx_client(
         _PinnedEgressTransport(
