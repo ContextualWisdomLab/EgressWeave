@@ -34,7 +34,7 @@ def _validated_result(monkeypatch):
 
 def _header_value(request, name: bytes) -> bytes | None:
     """Return one recorded HTTP core request header by lowercase name."""
-    return dict(request.headers).get(name)
+    return {key.lower(): value for key, value in request.headers}.get(name.lower())
 
 
 class _SyncCookiePool:
