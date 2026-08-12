@@ -64,15 +64,18 @@ def test_release_evidence_gate_binds_exact_integrating_pr_and_live_rules() -> No
     assert '.base.ref == "main"' in evidence_job
     assert '[[ "$pr_number" =~ ^[0-9]+$ ]]' in evidence_job
     assert '[[ "$source_head_sha" =~ ^[0-9a-f]{40}$ ]]' in evidence_job
-    assert '[[ "$author_login" =~ ^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]' in evidence_job
+    assert (
+        '[[ "$author_login" =~ '
+        '^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]'
+    ) in evidence_job
     assert "rulesets?includes_parents=true&per_page=100" in evidence_job
     assert '.enforcement == "active" and .target == "branch"' in evidence_job
     assert 'select(.type == "workflows")' in evidence_job
     assert ".parameters.workflows[]?" in evidence_job
     assert "actions/runs?head_sha=${SOURCE_HEAD_SHA}&per_page=100" in evidence_job
     assert '.head_sha == $head' in evidence_job
-    assert '$(jq -r ".status" <<<"$latest_run")" != "completed"' in evidence_job
-    assert '$(jq -r ".conclusion" <<<"$latest_run")" != "success"' in evidence_job
+    assert "[ \"$(jq -r '.status' <<<\"$latest_run\")\" != \"completed\" ]" in evidence_job
+    assert "[ \"$(jq -r '.conclusion' <<<\"$latest_run\")\" != \"success\" ]" in evidence_job
     assert 'contains("/actions/required_workflows/")' in evidence_job
 
 
@@ -117,6 +120,8 @@ def test_release_evidence_gate_rejects_wrapper_green_unavailable_strix() -> None
     assert "Require substantive Strix review evidence" in workflow
     assert ".check_run_url" in workflow
     assert "Strix job did not expose a check-run URL." in workflow
-    assert '"${STRIX_CHECK_RUN_URL}/annotations?per_page=100"' in workflow
+    assert "expected_check_run_prefix=" in workflow
+    assert 'strix_check_run_id="${STRIX_CHECK_RUN_URL#${expected_check_run_prefix}}"' in workflow
+    assert "check-runs/${strix_check_run_id}/annotations?per_page=100" in workflow
     assert '.title == "Strix backend unavailable"' in workflow
     assert "Wrapper-green Strix run reported backend-unavailable review evidence." in workflow
