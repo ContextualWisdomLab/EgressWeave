@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Document the hourly product-development maintainer's bounded root-cause
   analysis and operational feasibility loop, including canonical prompt and
   control-plane incident handling.
+- Add the commercial documentation baseline with canonical PRD, TRD, API,
+  test/operability/compliance contracts, Mermaid UML/ERD architecture views,
+  ADR governance, and centralized standards traceability.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
@@ -71,14 +74,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
-- Deduplicate overlapping same-authority DNS resolution through one live
-  in-flight `(hostname, port)` worker while preserving the finite global
-  resolver ceiling, per-caller deadlines, and caller-specific address policy.
-  Completed DNS results are never cached, later validations perform a fresh
-  lookup, and unexpected resolver failures remain behind the generic denial
-  boundary without private exception provenance. Asynchronous validation starts
-  its caller-owned deadline before executor scheduling, so `asyncio.to_thread`
-  queue delay cannot extend the configured public DNS wait budget.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
