@@ -242,6 +242,9 @@ awaited after a connection succeeds.
 - Invalid trusted configuration: `TypeError` or `ValueError` during startup.
 - Rejected or indeterminate egress decision: generic
   `EgressNotAllowedError("egress URL is not allowed")`.
+- Malformed request-method normalization failures leave the caught exception
+  scope before the generic denial is created, so the caller-visible error has
+  neither a private cause nor a private context.
 - Ordinary HTTPX/HTTPCore network failures after a permitted dispatch: mapped to
   the corresponding HTTPX transport exception.
 - Caller- or peer-controlled cleanup errors during a policy denial: suppressed

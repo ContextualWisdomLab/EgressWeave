@@ -86,6 +86,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Erase private request-method normalization exception provenance from
+  caller-visible policy denials.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
