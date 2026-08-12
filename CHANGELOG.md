@@ -116,6 +116,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Byte subclasses fail closed before field parsing or subclass-defined Python
   behavior can run, preserving the generic denial boundary before HTTPCore
   dispatch.
+- Filter dependency response extensions to exact built-in `dict` containers and
+  exact `bytes` values for the `http_version` and `reason_phrase` allowlist.
+  Capability-bearing and future keys remain private, hostile inspection failures
+  stay behind the generic denial boundary, denied streams close, and
+  process-control exceptions remain interruptible.
 - Remove the repository-write publisher from the autonomous product scheduler
   and disable hourly scheduler auto-merge. Verified model output now ends at a
   short-lived handoff; any pull-request merge remains current-head reviewed and
