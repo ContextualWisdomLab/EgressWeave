@@ -111,20 +111,20 @@ Useful incident evidence includes exact package version/source commit, policy fi
 
 ## 11. Repository automation control-plane incident runbook
 
-This section covers the **ACTIVE-PR** bounded canonical prompt and scheduler recovery contract. It does not claim that the workflow is already integrated on protected main.
+The bounded canonical prompt source, loader, **12 KiB** guard, and model/verifier authority separation are **IMPLEMENTED-ON-PROTECTED-MAIN**. This runbook separately governs external scheduler/provider/connector failure evidence; repository integration alone is not proof that an external control plane has executed successfully.
 
 When a run returns a generic scheduled-task error, misses an expected invocation, emits an empty prior response, or fails in a connector/provider path:
 
 1. Classify the event as a **control-plane incident**, not an EgressWeave runtime defect and not product completion.
 2. Record the external task identity/time and any observable connector, provider, permission, workflow, or repository evidence. The **exact hidden error code is unavailable** unless the external control plane explicitly exposes it; do not invent one.
 3. Re-fetch the current automation definition, protected main, relevant PR heads/bases, workflow runs/jobs, and active-writer evidence before trusting any prior conclusion.
-4. Verify the repository-local **canonical prompt** path `.github/prompts/hourly-product-maintainer.md`, regular-file/non-symlink status, and **12 KiB** byte budget where that ACTIVE-PR implementation is under review.
+4. Verify the repository-local **canonical prompt** path `.github/prompts/hourly-product-maintainer.md`, regular-file/non-symlink status, and **12 KiB** byte budget against the exact protected source.
 5. Verify that the workflow loads that file rather than an inline YAML heredoc and that the model still lacks repository-write, review, signing, publication, and release authority.
 6. Reproduce a repository-owned failure through machine-checkable tests when possible. Treat prompt-size reduction as a supported remediation only when evidence implicates prompt handling; do not claim it as the external scheduler's root cause merely because the prompt is large.
 7. Apply the smallest realistic correction, run exact-head CI/security/review validation, and continue another safe EgressWeave action in the same invocation. Prompt repair alone is not completion.
 8. Do not disable the recurring loop for an unclassified transient tool, provider, rate-limit, or connector failure. Disablement requires evidence that continued execution is unsafe or impossible and that no other safe EgressWeave work remains.
 
-Acceptance requires a subsequent invocation or GitHub-native workflow run to demonstrate the intended bootstrap and recovery path using the exact integrated protected source. A generic success message without repository/check evidence is not operational acceptance.
+External operational acceptance requires a subsequent invocation or GitHub-native workflow run to demonstrate the intended bootstrap/recovery path using the exact integrated protected source. A generic success message without repository/check evidence is not operational acceptance.
 
 ## 12. Upgrade and release acceptance
 
@@ -136,4 +136,4 @@ Before an upgrade:
 - validate package and supply-chain evidence required by the organization;
 - confirm monitoring and rollback readiness.
 
-The release source must satisfy [`TEST_STRATEGY.md`](TEST_STRATEGY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and the repository's protected-branch review/check policy. Automation prompt and recovery changes remain ACTIVE-PR until exact protected-main integration and operational proof exist.
+The release source must satisfy [`TEST_STRATEGY.md`](TEST_STRATEGY.md), [`COMPLIANCE_TRACEABILITY.md`](COMPLIANCE_TRACEABILITY.md), and the repository's protected-branch review/check policy. Canonical prompt loading and authority separation are **IMPLEMENTED-ON-PROTECTED-MAIN**; external scheduler recovery remains a separate operational-acceptance claim until exact protected-source execution evidence exists.
