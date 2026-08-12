@@ -94,19 +94,19 @@ def _assert_generic_timeout_denial(timeout_value: object) -> None:
     assert error.value.__context__ is None
 
 
-def test_request_extensions_get_exceptions_are_masked() -> None:
-    """Do not dispatch an untrusted outer mapping's ``get`` implementation."""
-    with pytest.raises(
-        EgressNotAllowedError,
-        match=f"^{EGRESS_NOT_ALLOWED}$",
-    ) as error:
-        _bind_bounded_request_timeouts(
-            _ExplodingExtensionsGetMapping(),
-            EgressTimeoutPolicy(),
-        )
+def test_request_extensions_get_is_not_dynamically_dispatched() -> None:
+    """Snapshot a valid outer mapping without invoking its hostile ``get`` method."""
+    bounded = _bind_bounded_request_timeouts(
+        _ExplodingExtensionsGetMapping(),
+        EgressTimeoutPolicy(),
+    )
 
-    assert error.value.__cause__ is None
-    assert error.value.__context__ is None
+    assert bounded["timeout"] == {
+        "connect": 1.0,
+        "read": 5.0,
+        "write": 5.0,
+        "pool": 5.0,
+    }
 
 
 def test_timeout_mapping_exceptions_are_masked() -> None:
