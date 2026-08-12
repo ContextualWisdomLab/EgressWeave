@@ -10,6 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Document the hourly product-development maintainer's bounded root-cause
   analysis and operational feasibility loop, including canonical prompt and
   control-plane incident handling.
+- Add the commercial documentation baseline with canonical PRD, TRD, API,
+  test/operability/compliance contracts, Mermaid UML/ERD architecture views,
+  ADR governance, and centralized standards traceability.
 - Add canonical `SOURCE_IDENTITY.json` evidence that seals the exact repository
   and 40-character protected-main source commit inside the checksummed release
   set. Handoff manifests now use format version 2 and include both source-identity
