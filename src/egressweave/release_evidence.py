@@ -281,7 +281,10 @@ def _snapshot_selected_evidence(
             snapshot_path = snapshot_root / path.name
             try:
                 with snapshot_path.open("xb") as output:
-                    for block in iter(lambda: stream.read(1_048_576), b""):
+                    while True:
+                        block = stream.read(1_048_576)
+                        if not block:
+                            break
                         total_bytes += len(block)
                         if total_bytes > maximum_bytes:
                             raise SystemExit(f"{label} exceeds the safety bound")
