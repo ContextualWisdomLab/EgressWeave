@@ -20,14 +20,16 @@ jobs:
       issues: write
       pull-requests: read
       statuses: read
-    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@5983b41ace75040c1d81818171ca7d0f3653254e
+    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@59505c1d89eb7ea816e921b6da38079c736608c2
     with:
       target_repository: ContextualWisdomLab/EgressWeave
       base_branch: main
       max_prs: "100"
       max_dispatches: "100"
       retry_hours: "1"
-    secrets: inherit
+    secrets:
+      PR_REVIEW_MERGE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN }}
+      OPENCODE_APPROVE_TOKEN: ${{ secrets.OPENCODE_APPROVE_TOKEN }}
 
   review-recheck-and-merge:
     needs: fix-review-feedback
@@ -38,7 +40,7 @@ jobs:
       contents: write
       id-token: write
       pull-requests: write
-    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@5983b41ace75040c1d81818171ca7d0f3653254e
+    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@59505c1d89eb7ea816e921b6da38079c736608c2
     with:
       base_branch: main
       max_prs: "100"
@@ -48,4 +50,6 @@ jobs:
       enable_auto_merge: false
       merge_mode: disabled
       update_branches: true
-    secrets: inherit
+    secrets:
+      PR_REVIEW_MERGE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN }}
+      OPENCODE_APPROVE_TOKEN: ${{ secrets.OPENCODE_APPROVE_TOKEN }}

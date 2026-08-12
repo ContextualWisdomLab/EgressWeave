@@ -6,14 +6,17 @@ The hourly PR-maintenance workflow calls both organization-owned schedulers by
 their full repository path and an immutable commit SHA:
 
 ```text
-ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@5983b41ace75040c1d81818171ca7d0f3653254e
-ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@5983b41ace75040c1d81818171ca7d0f3653254e
+ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@59505c1d89eb7ea816e921b6da38079c736608c2
+ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@59505c1d89eb7ea816e921b6da38079c736608c2
 ```
 
 The SHA is the dependency identity, not a new integration boundary. The
-caller still owns the same job permissions, inputs, and `secrets: inherit`
-contract. The merge job explicitly keeps `enable_auto_merge` false and
-`merge_mode` disabled, so this repair cannot grant autonomous merge authority.
+caller still owns the same job permissions and inputs. The central revision
+declares the two optional review credentials, and each caller job maps only
+`PR_REVIEW_MERGE_TOKEN` and `OPENCODE_APPROVE_TOKEN`; it does not use
+`secrets: inherit`. The merge job explicitly keeps `enable_auto_merge` false
+and `merge_mode` disabled, so this repair cannot grant autonomous merge
+authority.
 
 The regression test extracts the `jobs` mapping and compares the `uses` and
 `with` values inside the two named jobs. A repository-wide text search is not
@@ -25,9 +28,10 @@ string without changing the executed reusable workflow.
 GitHub Actions resolves a reusable workflow from the called repository and
 reference. A full commit SHA makes that reference immutable for the caller;
 the central repository remains responsible for reviewing the implementation at
-that commit. The caller must still restrict permissions and treat inherited
-secrets as a deliberate trust boundary. Pinning does not turn a workflow into a
-sandbox, add an approval, or authorize a merge.
+that commit. The caller must still restrict permissions and treat the
+explicitly mapped review credentials as a deliberate trust boundary; the
+mapping prevents unrelated secrets from being inherited. Pinning does not turn
+a workflow into a sandbox, add an approval, or authorize a merge.
 
 Post-merge acceptance should therefore inspect the completed run's
 `referenced_workflows` evidence and confirm that both calls resolve to the

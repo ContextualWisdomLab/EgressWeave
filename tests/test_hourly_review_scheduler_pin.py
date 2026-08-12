@@ -7,7 +7,8 @@ from typing import Any
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _WORKFLOW = _REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
-_PROVEN_CENTRAL_SHA = "5983b41ace75040c1d81818171ca7d0f3653254e"
+_CENTRAL_REVIEW_FIX_SHA = "59505c1d89eb7ea816e921b6da38079c736608c2"
+_PREVIOUS_CENTRAL_SHA = "5983b41ace75040c1d81818171ca7d0f3653254e"
 _OBSOLETE_DIVERGENT_SHA = "74e54255ec903e3ba5f920859b656fe2defcb057"
 
 
@@ -77,16 +78,16 @@ def test_job_parser_ignores_decoy_text_outside_actual_target_fields() -> None:
     workflow = f"""
 jobs:
   decoy:
-    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@{_PROVEN_CENTRAL_SHA}
+    uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@{_CENTRAL_REVIEW_FIX_SHA}
   fix-review-feedback:
     uses: ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@wrong
-    # ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@{_PROVEN_CENTRAL_SHA}
+    # ContextualWisdomLab/.github/.github/workflows/pr-review-fix-scheduler.yml@{_CENTRAL_REVIEW_FIX_SHA}
   review-recheck-and-merge:
     uses: ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@wrong
     with:
       enable_auto_merge: true
       merge_mode: direct
-# ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@{_PROVEN_CENTRAL_SHA}
+# ContextualWisdomLab/.github/.github/workflows/pr-review-merge-scheduler.yml@{_CENTRAL_REVIEW_FIX_SHA}
 # enable_auto_merge: false
 # merge_mode: disabled
 """
@@ -100,23 +101,36 @@ jobs:
     }
 
 
-def test_hourly_review_scheduler_uses_the_proven_central_revision() -> None:
-    """Bind both reusable calls to the protected-lineage revision proven in production."""
+def test_hourly_review_scheduler_uses_the_central_secret_contract_revision() -> None:
+    """Bind both reusable calls to the central revision with the secret contract."""
     jobs = _parse_workflow_jobs(_WORKFLOW.read_text(encoding="utf-8"))
     fix_job = jobs["fix-review-feedback"]
     merge_job = jobs["review-recheck-and-merge"]
 
     expected_fix = (
         "ContextualWisdomLab/.github/.github/workflows/"
-        f"pr-review-fix-scheduler.yml@{_PROVEN_CENTRAL_SHA}"
+        f"pr-review-fix-scheduler.yml@{_CENTRAL_REVIEW_FIX_SHA}"
     )
     expected_merge = (
         "ContextualWisdomLab/.github/.github/workflows/"
-        f"pr-review-merge-scheduler.yml@{_PROVEN_CENTRAL_SHA}"
+        f"pr-review-merge-scheduler.yml@{_CENTRAL_REVIEW_FIX_SHA}"
     )
     assert fix_job["uses"] == expected_fix
     assert merge_job["uses"] == expected_merge
+    assert _PREVIOUS_CENTRAL_SHA not in {fix_job["uses"], merge_job["uses"]}
     assert _OBSOLETE_DIVERGENT_SHA not in {fix_job["uses"], merge_job["uses"]}
+
+
+def test_hourly_review_scheduler_passes_only_named_review_secrets() -> None:
+    """Keep the caller boundary least-privilege for both reusable jobs."""
+    jobs = _parse_workflow_jobs(_WORKFLOW.read_text(encoding="utf-8"))
+    expected = {
+        "PR_REVIEW_MERGE_TOKEN": "${{ secrets.PR_REVIEW_MERGE_TOKEN }}",
+        "OPENCODE_APPROVE_TOKEN": "${{ secrets.OPENCODE_APPROVE_TOKEN }}",
+    }
+
+    assert jobs["fix-review-feedback"]["secrets"] == expected
+    assert jobs["review-recheck-and-merge"]["secrets"] == expected
 
 
 def test_hourly_review_scheduler_keeps_merge_authority_disabled() -> None:
