@@ -1,11 +1,11 @@
 """Audit GitHub Actions workflow identities without mutating repository state.
 
 GitHub keeps an Actions workflow identity independently from the workflow YAML
-that originally created it.  Removing a temporary workflow file therefore does
-not prove that the corresponding registry identity was disabled.  This module
+that originally created it. Removing a temporary workflow file therefore does
+not prove that the corresponding registry identity was disabled. This module
 builds a bounded, exact-revision audit that keeps those two authorities separate.
 
-The script is intentionally read-only.  It never disables a workflow, updates a
+The script is intentionally read-only. It never disables a workflow, updates a
 branch, comments on a pull request, or requests additional credentials.
 """
 
@@ -212,7 +212,7 @@ def build_audit(
 
     A repository workflow is an ``active_orphan`` only when its registry path is
     active, absent from the protected tree, and not reserved by an open pull
-    request.  GitHub-owned ``dynamic/...`` identities are deliberately separated
+    request. GitHub-owned ``dynamic/...`` identities are deliberately separated
     from repository workflow lifecycle state.
     """
     expected_sha = _require_sha(expected_default_sha, label="expected default branch")
@@ -313,9 +313,13 @@ def _api_url(repository: str, suffix: str, **query: object) -> str:
     return f"{base}?{encoded_query}" if encoded_query else base
 
 
-def _collect_open_pr_workflow_paths(repository: str, token: str | None) -> set[str]:
-    """Collect current workflow paths still owned by bounded open pull requests."""
-    reserved: set[str] = set()
+def _collect_open_pr_workflow_snapshot(
+    repository: str,
+    token: str | None,
+) -> tuple[tuple[int, str, tuple[str, ...]], ...]:
+    """Snapshot every open PR head and its current non-removed workflow paths."""
+    reservations: list[tuple[int, str, tuple[str, ...]]] = []
+    seen_numbers: set[int] = set()
     for pr_page in range(1, DEFAULT_MAX_PR_PAGES + 1):
         pulls = request_json(
             _api_url(repository, "pulls", state="open", per_page=100, page=pr_page),
@@ -329,6 +333,14 @@ def _collect_open_pr_workflow_paths(repository: str, token: str | None) -> set[s
             number = pull.get("number")
             if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
                 raise AuditError("pull request number is invalid")
+            if number in seen_numbers:
+                raise AuditError(f"pull request {number} appears more than once")
+            seen_numbers.add(number)
+            head = pull.get("head")
+            if not isinstance(head, Mapping):
+                raise AuditError("pull request head metadata is malformed")
+            head_sha = _require_sha(head.get("sha"), label=f"pull request {number} head")
+            workflow_paths: set[str] = set()
             exhausted_files = False
             for file_page in range(1, DEFAULT_MAX_PR_FILE_PAGES + 1):
                 files = request_json(
@@ -352,15 +364,23 @@ def _collect_open_pr_workflow_paths(repository: str, token: str | None) -> set[s
                         and status != "removed"
                         and filename.startswith(WORKFLOW_PREFIX)
                     ):
-                        reserved.add(_require_workflow_path(filename))
+                        workflow_paths.add(_require_workflow_path(filename))
                 if len(files) < 100:
                     exhausted_files = True
                     break
             if not exhausted_files:
                 raise AuditError("pull request file pagination exceeded the safety bound")
+            reservations.append((number, head_sha, tuple(sorted(workflow_paths))))
         if len(pulls) < 100:
-            return reserved
+            return tuple(sorted(reservations))
     raise AuditError("pull request pagination exceeded the safety bound")
+
+
+def _workflow_paths_from_pr_snapshot(
+    snapshot: Iterable[tuple[int, str, tuple[str, ...]]],
+) -> set[str]:
+    """Return workflow paths reserved by an exact validated open-PR snapshot."""
+    return {path for _number, _head_sha, paths in snapshot for path in paths}
 
 
 def audit_repository(
@@ -414,7 +434,11 @@ def audit_repository(
             token=token,
         )
     )
-    active_pr_paths = _collect_open_pr_workflow_paths(repository, token)
+    initial_pr_snapshot = _collect_open_pr_workflow_snapshot(repository, token)
+    active_pr_paths = _workflow_paths_from_pr_snapshot(initial_pr_snapshot)
+    final_pr_snapshot = _collect_open_pr_workflow_snapshot(repository, token)
+    if final_pr_snapshot != initial_pr_snapshot:
+        raise AuditError("pull request workflow reservations changed during audit")
 
     final_branch = request_json(
         _api_url(repository, f"branches/{encoded_branch}"),
