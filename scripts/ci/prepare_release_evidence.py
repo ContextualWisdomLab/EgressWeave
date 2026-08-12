@@ -28,6 +28,7 @@ ATTESTABLE_GENERATOR_PATH = Path(__file__).with_name(
 MAX_DISTRIBUTION_BYTES = release_evidence.MAX_ARTIFACT_BYTES
 MAX_REVIEWED_INPUT_BYTES = 1_048_576
 COPY_BLOCK_BYTES = 1_048_576
+REVIEWED_INPUT_REJECTION = "reviewed input is unreadable or unsafe"
 DistributionIdentity = tuple[int, int, int]
 
 __all__ = ["main", "prepare_release_evidence"]
@@ -164,16 +165,17 @@ def _require_reviewed_input_preflight(
     *,
     label: str,
 ) -> DistributionIdentity:
-    """Bind one reviewed dependency input to the generator's one-MiB ceiling."""
+    """Bind one reviewed input while hiding which safety rule rejected it."""
+    del label
     try:
         path_state = path.lstat()
-    except OSError as error:
-        raise SystemExit(f"{label} is unreadable or unsafe") from error
-    return _require_distribution_metadata(
-        path_state,
-        label=label,
-        max_bytes=MAX_REVIEWED_INPUT_BYTES,
-    )
+        return _require_distribution_metadata(
+            path_state,
+            label="reviewed input",
+            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+        )
+    except (OSError, SystemExit):
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
 
 
 def _snapshot_distribution(
@@ -183,6 +185,7 @@ def _snapshot_distribution(
     *,
     label: str,
     max_bytes: int = MAX_DISTRIBUTION_BYTES,
+    snapshot_name: str | None = None,
 ) -> Path:
     """Copy one accepted descriptor into a private parser-only immutable snapshot.
 
@@ -200,7 +203,7 @@ def _snapshot_distribution(
     )
     source_descriptor: int | None = None
     snapshot_descriptor: int | None = None
-    snapshot_path = snapshot_root / path.name
+    snapshot_path = snapshot_root / (snapshot_name or path.name)
     try:
         source_descriptor = os.open(path, read_flags)
         opened_identity = _require_distribution_metadata(
@@ -263,6 +266,27 @@ def _snapshot_distribution(
             os.close(snapshot_descriptor)
         if source_descriptor is not None:
             os.close(source_descriptor)
+
+
+def _snapshot_reviewed_input(
+    path: Path,
+    snapshot_root: Path,
+    accepted_identity: DistributionIdentity,
+    *,
+    snapshot_name: str,
+) -> Path:
+    """Copy one reviewed input while normalizing every rejection to one message."""
+    try:
+        return _snapshot_distribution(
+            path,
+            snapshot_root,
+            accepted_identity,
+            label="reviewed input",
+            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+            snapshot_name=snapshot_name,
+        )
+    except SystemExit:
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
 
 
 def _load_attestable_generator() -> ModuleType:
@@ -411,23 +435,22 @@ def prepare_release_evidence(
         label="release evidence input directory",
     )
     resolved_handoff = _require_handoff_outside_evidence(handoff_path, evidence_root)
-    dependency_manifest_label = "reviewed runtime dependency manifest"
-    runtime_lock_label = "hash-locked runtime requirements"
+    reviewed_input_label = "reviewed input"
     dependency_manifest = _require_canonical_file(
         dependency_manifest_path,
-        label=dependency_manifest_label,
+        label=reviewed_input_label,
     )
     runtime_lock = _require_canonical_file(
         runtime_lock_path,
-        label=runtime_lock_label,
+        label=reviewed_input_label,
     )
     dependency_manifest_identity = _require_reviewed_input_preflight(
         dependency_manifest,
-        label=dependency_manifest_label,
+        label=reviewed_input_label,
     )
     runtime_lock_identity = _require_reviewed_input_preflight(
         runtime_lock,
-        label=runtime_lock_label,
+        label=reviewed_input_label,
     )
     wheel_path, sdist_path = _select_distributions(evidence_root)
     wheel_label = f"release distribution {wheel_path.name}"
@@ -449,19 +472,17 @@ def prepare_release_evidence(
             sdist_identity,
             label=sdist_label,
         )
-        dependency_manifest_snapshot = _snapshot_distribution(
+        dependency_manifest_snapshot = _snapshot_reviewed_input(
             dependency_manifest,
             snapshot_root,
             dependency_manifest_identity,
-            label=dependency_manifest_label,
-            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+            snapshot_name="reviewed-dependency-manifest",
         )
-        runtime_lock_snapshot = _snapshot_distribution(
+        runtime_lock_snapshot = _snapshot_reviewed_input(
             runtime_lock,
             snapshot_root,
             runtime_lock_identity,
-            label=runtime_lock_label,
-            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+            snapshot_name="reviewed-runtime-lock",
         )
         generator = _load_attestable_generator()
         wheel_sbom = _strict_pretty_json_bytes(
