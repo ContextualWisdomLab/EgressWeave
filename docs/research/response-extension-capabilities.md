@@ -53,6 +53,13 @@ python scripts/ci/hourly_product_guard.py self-test
 python -m compileall -q src tests scripts
 ```
 
+After the organization-owned fail-closed dependency-review repair reaches protected
+central `main`, the unchanged exact EgressWeave head must also receive a fresh
+Security Scan in which the immutably pinned `Dependency review` action actually
+executes and succeeds. Aggregate or wrapper success is not accepted when that
+action is skipped, and queued, pending, cancelled, stale-head, predecessor-head,
+or otherwise non-current evidence is not a passing result.
+
 ## References
 
 The response-extension source review commit `c96bc71a4c4ad00066bb3dc3a1d6094646dd6047`
