@@ -20,7 +20,9 @@ cancels superseded runs for the same pull request.
 ## Pull-request loop
 
 `.github/workflows/hourly-pr-maintenance.yml` calls organization-owned reusable
-workflows from `ContextualWisdomLab/.github` at an immutable commit:
+workflows from `ContextualWisdomLab/.github` at the reviewed immutable commit
+`59505c1d89eb7ea816e921b6da38079c736608c2`, which declares the optional
+review credentials at the reusable-workflow boundary:
 
 1. `pr-review-fix-scheduler.yml` collects current-head review feedback and may
    dispatch the centrally controlled review autofix workflow.
@@ -29,10 +31,19 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    updates anything. This repository disables scheduler merges; an operator
    must perform the final normal protected merge after rechecking that evidence.
 
+The workflow contract tests the job-scoped `uses` values rather than searching
+comments or unrelated jobs. It also asserts `enable_auto_merge: false` and
+`merge_mode: disabled`, so changing the reusable-workflow identity does not
+expand the caller's merge authority. Each job passes only
+`PR_REVIEW_MERGE_TOKEN` and `OPENCODE_APPROVE_TOKEN`; the caller does not use
+`secrets: inherit`.
+
 The central workflow resolves its co-located scheduler implementation from the
-called workflow's own immutable repository and SHA. The EgressWeave product
-scheduler does not repurpose or alter that inherited review-agent credential
-contract.
+called workflow's own immutable repository and SHA. The pinned commit is the
+current head of central PR #897; after that PR is merged, refresh this pin to
+the resulting protected-main SHA if the merge method changes it before this PR
+merges. The EgressWeave product scheduler preserves the named review-agent
+credential contract without inheriting unrelated secrets.
 
 ## Zero-PR product-development loop
 

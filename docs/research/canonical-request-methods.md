@@ -43,6 +43,10 @@ The transport now:
 Any failure raises the generic `EgressNotAllowedError` before connection-pool or
 network activity.
 
+Malformed method denials are raised only after method normalization has left its
+exception context, so the caller-visible `EgressNotAllowedError` has neither a
+private cause nor a private context.
+
 ## Primary references
 
 - [RFC 9110 section 9.1: Methods—Overview](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.1)
