@@ -293,6 +293,17 @@ class _PinnedEgressTransport(httpx.BaseTransport):
         self._pool.close()
 
 
+def _build_sync_httpx_client(transport: httpx.BaseTransport) -> httpx.Client:
+    """Build a client without HTTPX's ambient hop-by-hop connection header."""
+    client = httpx.Client(
+        follow_redirects=False,
+        trust_env=False,
+        transport=transport,
+    )
+    client.headers.pop("connection", None)
+    return client
+
+
 def build_egress_sync_client(
     base_url: str | None,
     *,
@@ -304,9 +315,11 @@ def build_egress_sync_client(
     Returns ``(normalized_url, client)``. When ``base_url`` is empty or absent,
     the normalized URL is ``None`` and the returned client rejects every
     request before network I/O. A non-empty URL that violates the policy raises
-    :class:`~egressweave.validation.EgressNotAllowedError`. Exact outbound
-    targets are limited by ``policy.max_request_target_bytes``. Final outbound
-    fields are limited by ``policy.max_request_header_fields`` and
+    :class:`~egressweave.validation.EgressNotAllowedError`. The builder removes
+    HTTPX's ambient ``Connection`` header so ordinary caller requests reach the
+    transport's strict hop-by-hop-header policy without weakening that policy.
+    Exact outbound targets are limited by ``policy.max_request_target_bytes``.
+    Final outbound fields are limited by ``policy.max_request_header_fields`` and
     ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
@@ -318,22 +331,13 @@ def build_egress_sync_client(
     """
     validated = validate_egress_url_details(base_url, policy=policy)
     if validated is None:
-        return (
-            None,
-            httpx.Client(
-                follow_redirects=False,
-                trust_env=False,
-                transport=_DenyAllSyncTransport(),
-            ),
-        )
+        return None, _build_sync_httpx_client(_DenyAllSyncTransport())
     return (
         validated.normalized_url,
-        httpx.Client(
-            follow_redirects=False,
-            trust_env=False,
-            transport=_PinnedEgressTransport(
+        _build_sync_httpx_client(
+            _PinnedEgressTransport(
                 validated, policy, tls_configuration=tls_configuration
-            ),
+            )
         ),
     )
 
@@ -346,19 +350,20 @@ def build_pinned_https_client(
 ) -> httpx.Client:
     """Build a synchronous DNS-pinned HTTPX client from validated URL state.
 
-    The supplied result is revalidated without another DNS lookup. Every
-    connection is pinned to its addresses, any forged result or authority change
-    is rejected before network I/O, every exact outbound target and request
-    header section is bounded after trusted rewriting, every request body is
-    constrained by ``policy.max_request_bytes`` and exact declared framing,
-    every request phase is capped by ``policy.request_timeout_policy``, response
-    metadata is bounded by the finite header policy, and every identity-coded
-    response body is constrained by ``policy.max_response_bytes``.
+    The supplied result is revalidated without another DNS lookup. HTTPX's
+    ambient ``Connection`` header is removed at construction while any caller-
+    supplied hop-by-hop field remains subject to the transport's fail-closed
+    request-header policy. Every connection is pinned to its addresses, any
+    forged result or authority change is rejected before network I/O, every
+    exact outbound target and request header section is bounded after trusted
+    rewriting, every request body is constrained by ``policy.max_request_bytes``
+    and exact declared framing, every request phase is capped by
+    ``policy.request_timeout_policy``, response metadata is bounded by the finite
+    header policy, and every identity-coded response body is constrained by
+    ``policy.max_response_bytes``.
     """
-    return httpx.Client(
-        follow_redirects=False,
-        trust_env=False,
-        transport=_PinnedEgressTransport(
+    return _build_sync_httpx_client(
+        _PinnedEgressTransport(
             validated, policy, tls_configuration=tls_configuration
-        ),
+        )
     )
