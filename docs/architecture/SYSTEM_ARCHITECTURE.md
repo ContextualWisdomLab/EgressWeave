@@ -1,6 +1,6 @@
 # EgressWeave System Architecture Views
 
-Status: Proposed supplementary views of **IMPLEMENTED-ON-PROTECTED-MAIN** behavior plus explicitly labelled **ACTIVE-PR** automation architecture. Root [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) remains authoritative when this document and implementation disagree.
+Status: Proposed supplementary views of **IMPLEMENTED-ON-PROTECTED-MAIN** behavior plus explicitly labelled **ACTIVE-PR** architecture where noted. Root [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) remains authoritative when this document and implementation disagree.
 
 ## 1. System context
 
@@ -115,7 +115,7 @@ Repository automation is intentionally separated from runtime product authority.
 
 Automation changes that exist only on an **ACTIVE-PR** are not part of this current system architecture until protected merge and operational acceptance.
 
-### ACTIVE-PR: bounded canonical prompt data flow
+### IMPLEMENTED-ON-PROTECTED-MAIN: bounded canonical prompt data flow
 
 ```mermaid
 flowchart LR
@@ -130,9 +130,9 @@ flowchart LR
     sealed_patch -. external independent promotion only .-> protected_governance[Normal PR/review/check/merge governance]
 ```
 
-The **Canonical maintainer prompt** is `.github/prompts/hourly-product-maintainer.md`; it is copied into a private runner path only after the **12 KiB** guard. The **OpenCode** model step remains credential-bearing but non-publishing and may not execute model-modified repository code. The **Credential-free verifier** is the only stage that executes the changed repository and it ends at a sealed handoff, not a branch, PR, merge or release.
+The **Canonical maintainer prompt** is `.github/prompts/hourly-product-maintainer.md`; protected main copies it into a private runner path only after the **12 KiB** guard. The **OpenCode** model step remains credential-bearing but non-publishing and may not execute model-modified repository code. The **Credential-free verifier** is the only stage that executes the changed repository and it ends at a sealed handoff, not a branch, PR, merge or release.
 
-A generic scheduled-task failure is a resumable control-plane incident. The next invocation rebinds live repository and dependency identities, performs evidence-backed RCA, and resumes another safe EgressWeave lane. Prompt correction is not treated as product completion.
+A generic scheduled-task failure is a resumable control-plane incident. The next invocation rebinds live repository and dependency identities, performs evidence-backed RCA, and resumes another safe EgressWeave lane. Prompt correction is not treated as product completion. Whether an external scheduler/provider/connector has successfully exercised this integrated path is separate operational evidence and is not inferred from repository integration alone.
 
 ## 8. Persistence boundary
 
