@@ -20,7 +20,8 @@ cancels superseded runs for the same pull request.
 ## Pull-request loop
 
 `.github/workflows/hourly-pr-maintenance.yml` calls organization-owned reusable
-workflows from `ContextualWisdomLab/.github` at an immutable commit:
+workflows from `ContextualWisdomLab/.github` at the reviewed immutable commit
+`5983b41ace75040c1d81818171ca7d0f3653254e`:
 
 1. `pr-review-fix-scheduler.yml` collects current-head review feedback and may
    dispatch the centrally controlled review autofix workflow.
@@ -28,6 +29,12 @@ workflows from `ContextualWisdomLab/.github` at an immutable commit:
    unresolved threads, required checks, branch state, and head SHA before it
    updates anything. This repository disables scheduler merges; an operator
    must perform the final normal protected merge after rechecking that evidence.
+
+The workflow contract tests the job-scoped `uses` values rather than searching
+comments or unrelated jobs. It also asserts `enable_auto_merge: false` and
+`merge_mode: disabled`, so changing the reusable-workflow identity does not
+expand the caller's merge authority or change the inherited review-agent
+secret boundary.
 
 The central workflow resolves its co-located scheduler implementation from the
 called workflow's own immutable repository and SHA. The EgressWeave product

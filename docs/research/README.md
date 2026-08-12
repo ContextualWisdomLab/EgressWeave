@@ -203,6 +203,15 @@ unknown future extensions fail closed before pool dispatch. See
 for the architecture, compatibility impact, `NetworkStream` exposure risk, and
 APA 7th primary references.
 
+## Cross-repository workflow identity
+
+The hourly PR-maintenance caller pins both organization-owned reusable
+workflows to one reviewed commit and verifies the executed job mapping rather
+than relying on repository-wide text matches. See
+[Cross-repository reusable-workflow identity](cross-repository-reusable-workflow-identity.md)
+for the security rationale, unchanged merge/secret boundary, and APA 7th
+primary references.
+
 ## Provenance
 
 Extracted behaviour-preserving from the naruon control plane's LLM-provider
