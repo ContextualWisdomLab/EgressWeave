@@ -29,8 +29,11 @@ For a non-local target, EgressWeave:
 11. bounds connection-pool capacity and phase timeouts through immutable policy before low-level dispatch;
 12. bounds the percent-encoded request target, request-field count/bytes, and request body, including actual streamed bytes and valid declared-length agreement through `max_request_bytes` and related finite policy values;
 13. requires identity response coding for body-bearing responses, bounds response-field count/bytes, rejects unsafe declared lengths, and caps actual streamed response bytes through `max_response_bytes` before an over-budget chunk becomes caller-visible;
-14. performs best-effort cleanup after a policy denial without allowing dependency-controlled cleanup failures to replace the generic denial, while preserving separately tested interpreter/process control-flow semantics; and
-15. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
+14. performs best-effort cleanup after a policy denial without allowing dependency-controlled cleanup failures to replace the generic denial, while preserving separately tested interpreter/process control-flow semantics;
+15. filters dependency-controlled response extensions to the exact built-in
+    `dict`/`bytes` positive allowlist, keeping `network_stream` and unknown
+    capability-bearing keys private while closing denied source streams; and
+16. returns a deny-all transport when client construction receives no non-empty base URL, so missing or optional configuration cannot silently create unrestricted egress.
 
 A failure is surfaced as the generic `EgressNotAllowedError` where validation or transport policy is involved so rejection details do not become a policy oracle. Malformed request-method denials leave the method-normalization exception context before the caller-visible denial is created, so the resulting `EgressNotAllowedError` exposes neither a private cause nor a private context. Invalid trusted policy configuration raises `ValueError` or `TypeError` during construction so deterministic operator mistakes are discovered before request handling begins.
 

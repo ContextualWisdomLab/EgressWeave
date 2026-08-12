@@ -138,8 +138,10 @@ Response processing occurs before a caller-visible HTTPX response is returned:
 
 1. enforce decoded field count and byte budgets;
 2. require identity content coding for body-bearing responses;
-3. reject unsafe declared lengths; and
-4. wrap the body stream with a cumulative byte budget.
+3. reject unsafe declared lengths;
+4. copy only exact built-in response-extension metadata approved by the
+   positive `http_version` and `reason_phrase` allowlist; and
+5. wrap the body stream with a cumulative byte budget.
 
 Denied request and response streams are closed. Cleanup failures are suppressed
 behind a fresh generic policy error so attacker-controlled exception text does
