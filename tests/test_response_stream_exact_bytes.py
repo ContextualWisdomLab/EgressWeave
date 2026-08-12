@@ -75,6 +75,15 @@ def test_sync_response_rejects_bytes_subclass_before_length_accounting() -> None
     assert source.closed is True
 
 
+def test_sync_response_preserves_exact_bytes_within_budget() -> None:
+    """Keep ordinary exact byte chunks available when they satisfy the budget."""
+    source = _SyncResponseSource(b"0123")
+    stream = _BoundedSyncResponseStream(source, max_response_bytes=4)
+
+    assert list(stream) == [b"0123"]
+    assert source.closed is False
+
+
 async def test_async_response_rejects_bytes_subclass_before_length_accounting() -> None:
     """Apply exact response-chunk accounting to the asynchronous boundary."""
     source = _AsyncResponseSource(_LyingBytes(b"0123456789"))
@@ -85,3 +94,12 @@ async def test_async_response_rejects_bytes_subclass_before_length_accounting() 
 
     _assert_clean_denial(caught.value)
     assert source.closed is True
+
+
+async def test_async_response_preserves_exact_bytes_within_budget() -> None:
+    """Keep ordinary asynchronous byte chunks available within the finite limit."""
+    source = _AsyncResponseSource(b"0123")
+    stream = _BoundedAsyncResponseStream(source, max_response_bytes=4)
+
+    assert [chunk async for chunk in stream] == [b"0123"]
+    assert source.closed is False
