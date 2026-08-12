@@ -190,6 +190,22 @@ def test_request_json_fails_closed_on_permission_or_transport_http_errors(status
         auditor.request_json("https://api.github.invalid/example", opener=lambda request, timeout: Response())
 
 
+@pytest.mark.parametrize("timeout", [float("nan"), float("inf")])
+def test_request_json_rejects_non_finite_timeouts(timeout: float) -> None:
+    """Keep control-plane reads bounded by rejecting non-finite socket timeouts."""
+    auditor = _load_auditor()
+
+    def unexpected_open(*args, **kwargs):
+        pytest.fail("non-finite timeout reached the network opener")
+
+    with pytest.raises(auditor.AuditError, match="timeout is invalid"):
+        auditor.request_json(
+            "https://api.github.invalid/example",
+            opener=unexpected_open,
+            timeout=timeout,
+        )
+
+
 def test_collect_registry_pages_is_bounded_and_records_exact_page_numbers() -> None:
     """Collect every advertised workflow without silently truncating the registry."""
     auditor = _load_auditor()
