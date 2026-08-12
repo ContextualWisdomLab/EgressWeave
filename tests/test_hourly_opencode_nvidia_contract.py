@@ -160,14 +160,20 @@ def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
 
 
 def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
-    """Do not repurpose the centrally managed review-agent credential path."""
+    """Keep the centrally managed review-agent path least-privilege."""
     review_workflow = _read(REVIEW_WORKFLOW_PATH)
 
     assert "NVIDIA_NIM_API_KEY" not in review_workflow
     assert "OPENAI_API_KEY" not in review_workflow
     assert "pr-review-fix-scheduler.yml@" in review_workflow
     assert "pr-review-merge-scheduler.yml@" in review_workflow
-    assert review_workflow.count("secrets: inherit") == 2
+    assert "secrets: inherit" not in review_workflow
+    assert review_workflow.count(
+        "PR_REVIEW_MERGE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN }}"
+    ) == 2
+    assert review_workflow.count(
+        "OPENCODE_APPROVE_TOKEN: ${{ secrets.OPENCODE_APPROVE_TOKEN }}"
+    ) == 2
 
 
 def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() -> None:

@@ -43,6 +43,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decisions. Evidence revalidates signed state and records canonical authority,
   method policy, aggregate address-family counts, and correlation fingerprints
   without exposing request paths or resolved IP addresses.
+- Add the versioned JSON Schema Draft 2020-12 resource
+  `egressweave/schemas/decision-evidence-v1.schema.json` and the detached
+  `get_decision_evidence_json_schema()` loader. Release verification now
+  requires the schema in both the wheel and source distribution so audit
+  consumers can validate the evidence contract without a runtime schema
+  dependency.
 - Add `EgressPolicy.max_request_bytes` with a secure finite 16 MiB default,
   positive integer or ASCII decimal-string configuration, and fail-fast
   rejection of values that could silently remove the outbound resource bound.
@@ -61,6 +67,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Restore the hourly PR-maintenance calls to the reviewed immutable
+  `ContextualWisdomLab/.github` revision
+  `59505c1d89eb7ea816e921b6da38079c736608c2`. The regression contract now
+  checks the actual reusable-workflow jobs, passes only the named review
+  credentials, and preserves declared permissions and disabled scheduler merge
+  authority.
 - Correct the buyer-facing autonomous-maintainer identity from the retired Codex
   wording to the pinned OpenCode execution path backed by `NVIDIA_NIM_API_KEY`,
   without changing the centrally managed review-agent credential contract.
@@ -78,6 +90,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   retaining trusted configuration state. Exact built-in integers and existing
   ASCII decimal strings remain supported, preserving defaults and ranges while
   preventing subclass-controlled values from crossing immutable policy construction.
+- Erase private request-method normalization exception provenance from
+  caller-visible policy denials.
 - Pin the credential-free verifier to a reviewed Python 3.13
   `python@sha256:<64-hex>` digest, validate it before Docker execution, and
   remove mutable-tag and `RepoDigests` promotion from the verifier boundary.
