@@ -93,6 +93,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   immutable policy with a context that disables hostname or certificate
   verification; private trust, mTLS, and explicit TLS 1.2 compatibility remain
   available through the documented declarative fields.
+- Reject non-exact integer subclasses in shared policy integer fields before
+  retaining trusted configuration state. Exact built-in integers and existing
+  ASCII decimal strings remain supported, preserving defaults and ranges while
+  preventing subclass-controlled values from crossing immutable policy construction.
 - Erase private request-method normalization exception provenance from
   caller-visible policy denials.
 - Pin the credential-free verifier to a reviewed Python 3.13
