@@ -2,8 +2,14 @@
 
 This file is a compatibility entrypoint for Claude-based development tools.
 `AGENTS.md` is the authoritative agent operating contract, and
-`ARCHITECTURE.md` is the authoritative architecture and integration contract.
-Read both before editing code.
+`ARCHITECTURE.md` is the authoritative protected-main implementation and
+integration architecture. Read both before editing code.
+
+For product intent and the technical contract, also read
+[`docs/product/PRD.md`](docs/product/PRD.md) and
+[`docs/product/TRD.md`](docs/product/TRD.md). Those documents distinguish
+protected-main implementation, active pull-request work, accepted target
+architecture, and planned behavior rather than treating every design as shipped.
 
 ## Non-negotiable rules
 
@@ -23,7 +29,8 @@ Read both before editing code.
   on every shipped module, class, function, and method.
 - Keep synchronous and asynchronous security behavior in parity.
 - Update `CHANGELOG.md`, relevant APA 7th research documentation, the security
-  model, and architecture documentation whenever a boundary changes.
+  model, product/technical contract, ADRs, and architecture documentation when
+  a durable governed boundary changes.
 - Do not use `COPILOT_GITHUB_TOKEN` for autonomous product development. The
   product-development workflow uses pinned OpenCode with
   `NVIDIA_NIM_API_KEY`; the existing organization-owned review-agent identity
