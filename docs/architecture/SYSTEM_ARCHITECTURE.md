@@ -121,7 +121,7 @@ Automation changes that exist only on an **ACTIVE-PR** are not part of this curr
 flowchart LR
     checkout[Exact protected-main checkout] --> pr_gate[Paginated zero-open-PR gate]
     pr_gate --> prompt[Canonical maintainer prompt]
-    prompt --> prompt_guard[Regular file + non-symlink + 12 KiB validation]
+    prompt --> prompt_guard[Regular file + non-symlink + 12,000-byte validation]
     prompt_guard --> opencode[OpenCode with NVIDIA_NIM_API_KEY]
     opencode --> untrusted_patch[Bounded untrusted patch + NDJSON result]
     untrusted_patch --> handoff_guard[Exact-base and allowlist guard]
@@ -130,9 +130,9 @@ flowchart LR
     sealed_patch -. external independent promotion only .-> protected_governance[Normal PR/review/check/merge governance]
 ```
 
-The **Canonical maintainer prompt** is `.github/prompts/hourly-product-maintainer.md`; protected main copies it into a private runner path only after the **12 KiB** guard. The **OpenCode** model step remains credential-bearing but non-publishing and may not execute model-modified repository code. The **Credential-free verifier** is the only stage that executes the changed repository and it ends at a sealed handoff, not a branch, PR, merge or release.
+The **Canonical maintainer prompt** is `.github/prompts/hourly-product-maintainer.md`; protected main copies it into a private runner path only after the **12,000-byte** guard. The **OpenCode** model step remains credential-bearing but non-publishing and may not execute model-modified repository code. The **Credential-free verifier** is the only stage that executes the changed repository and it ends at a sealed handoff, not a branch, PR, merge or release.
 
-A generic scheduled-task failure is a resumable control-plane incident. The next invocation rebinds live repository and dependency identities, performs evidence-backed RCA, and resumes another safe EgressWeave lane. Prompt correction is not treated as product completion. Whether an external scheduler/provider/connector has successfully exercised this integrated path is separate operational evidence and is not inferred from repository integration alone.
+A generic scheduled-task failure is a resumable control-plane incident. The next invocation rebinds live repository and dependency identities, performs evidence-backed RCA, records any canonical-prompt correction as required **external maintainer** work because the model cannot edit `.github/**`, and resumes another safe EgressWeave lane. External prompt correction is not treated as product completion. Whether an external scheduler/provider/connector has successfully exercised this integrated path is separate operational evidence and is not inferred from repository integration alone.
 
 ## 8. Persistence boundary
 

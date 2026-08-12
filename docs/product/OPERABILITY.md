@@ -111,17 +111,17 @@ Useful incident evidence includes exact package version/source commit, policy fi
 
 ## 11. Repository automation control-plane incident runbook
 
-The bounded canonical prompt source, loader, **12 KiB** guard, and model/verifier authority separation are **IMPLEMENTED-ON-PROTECTED-MAIN**. This runbook separately governs external scheduler/provider/connector failure evidence; repository integration alone is not proof that an external control plane has executed successfully.
+The bounded canonical prompt source, loader, **12,000-byte** guard, and model/verifier authority separation are **IMPLEMENTED-ON-PROTECTED-MAIN**. This runbook separately governs external scheduler/provider/connector failure evidence; repository integration alone is not proof that an external control plane has executed successfully.
 
 When a run returns a generic scheduled-task error, misses an expected invocation, emits an empty prior response, or fails in a connector/provider path:
 
 1. Classify the event as a **control-plane incident**, not an EgressWeave runtime defect and not product completion.
 2. Record the external task identity/time and any observable connector, provider, permission, workflow, or repository evidence. The **exact hidden error code is unavailable** unless the external control plane explicitly exposes it; do not invent one.
 3. Re-fetch the current automation definition, protected main, relevant PR heads/bases, workflow runs/jobs, and active-writer evidence before trusting any prior conclusion.
-4. Verify the repository-local **canonical prompt** path `.github/prompts/hourly-product-maintainer.md`, regular-file/non-symlink status, and **12 KiB** byte budget against the exact protected source.
+4. Verify the repository-local **canonical prompt** path `.github/prompts/hourly-product-maintainer.md`, regular-file/non-symlink status, and **12,000-byte** budget against the exact protected source.
 5. Verify that the workflow loads that file rather than an inline YAML heredoc and that the model still lacks repository-write, review, signing, publication, and release authority.
-6. Reproduce a repository-owned failure through machine-checkable tests when possible. Treat prompt-size reduction as a supported remediation only when evidence implicates prompt handling; do not claim it as the external scheduler's root cause merely because the prompt is large.
-7. Apply the smallest realistic correction, run exact-head CI/security/review validation, and continue another safe EgressWeave action in the same invocation. Prompt repair alone is not completion.
+6. Reproduce a repository-owned failure through machine-checkable tests when possible and record the exact evidence. If the evidence implicates canonical-prompt content or another `.github/**` control, request the required **external maintainer** correction; the repository-local model workflow must not modify that control itself.
+7. Continue another safe in-scope EgressWeave action in the same invocation while the external correction is pending. External prompt repair alone is not completion, and a dependency wait does not justify unrelated queue starvation.
 8. Do not disable the recurring loop for an unclassified transient tool, provider, rate-limit, or connector failure. Disablement requires evidence that continued execution is unsafe or impossible and that no other safe EgressWeave work remains.
 
 External operational acceptance requires a subsequent invocation or GitHub-native workflow run to demonstrate the intended bootstrap/recovery path using the exact integrated protected source. A generic success message without repository/check evidence is not operational acceptance.
