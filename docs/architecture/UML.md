@@ -315,9 +315,9 @@ sequenceDiagram
 
 A dependency wait, one successful mutation, prompt repair, documentation update, queued check, provider rate limit, or other **control-plane error** is not by itself run completion. A material dependency advancement is an EgressWeave handoff trigger, not a status-only event. The work-conserving rule never grants the model reviewer identity, signing/OIDC capability, or repository-write authority outside the existing writer lease and protected repository governance.
 
-## 10. ACTIVE-PR canonical prompt bootstrap and error recovery
+## 10. IMPLEMENTED-ON-PROTECTED-MAIN canonical prompt bootstrap and error recovery
 
-This sequence describes the bounded prompt work under ADR 0004. It is not shipped until the relevant workflow branch reaches protected main and passes operational acceptance.
+The repository-owned canonical prompt source, exact 12,000-byte guard, model/verifier authority separation, and bounded handoff are implemented on protected main. Successful execution or recovery by an external scheduler/provider/connector remains a separate operational-acceptance boundary and is not inferred from repository integration alone.
 
 ```mermaid
 sequenceDiagram
@@ -327,7 +327,7 @@ sequenceDiagram
     participant Verify as Credential-free verifier
     participant Next as Next invocation
 
-    Workflow->>Prompt: validate canonical prompt is regular, non-symlink and <= 12 KiB
+    Workflow->>Prompt: validate canonical prompt is regular, non-symlink and <= 12,000 bytes
     Prompt-->>Workflow: reviewed bounded policy bytes
     Workflow->>Model: execute with NVIDIA credential and deny-by-default tools
     Model-->>Workflow: bounded patch + auditable NDJSON
@@ -337,8 +337,8 @@ sequenceDiagram
         Workflow--xModel: generic scheduled-task failure; exact hidden cause unavailable
         Next->>Workflow: re-fetch live automation and repository state
         Next->>Prompt: validate canonical prompt again
-        Next->>Next: resume repository work; prompt repair is not completion
+        Next->>Next: record required external-maintainer prompt action; resume repository work; prompt repair is not completion
     end
 ```
 
-The workflow must **validate canonical prompt** input before model execution. A **generic scheduled-task failure** is classified only as a control-plane incident until evidence supports a narrower cause. The next invocation must **resume repository work**, and **prompt repair is not completion**. Neither the prompt loader nor recovery sequence changes the model's repository-write, review, signing, publication, deployment, or release authority.
+The workflow must **validate canonical prompt** input before model execution. A **generic scheduled-task failure** is classified only as a control-plane incident until evidence supports a narrower cause. The repository-local model workflow must not modify `.github/**`; evidence-backed canonical-prompt correction requires an external maintainer under normal repository governance. The next invocation must **resume repository work**, and **prompt repair is not completion**. Neither the prompt loader nor recovery sequence changes the model's repository-write, review, signing, publication, deployment, or release authority.
