@@ -235,6 +235,10 @@ def _snapshot_selected_evidence(
 ]:
     """Copy one descriptor-bound evidence authority into a private finite snapshot."""
     canonical_root = _require_canonical_evidence_root(evidence_dir)
+    try:
+        canonical_snapshot_root = snapshot_root.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise SystemExit("release evidence snapshot directory is unavailable") from error
     root_identity = _evidence_root_identity(canonical_root)
     original_paths = _select_evidence_paths(canonical_root)
     maximums = (
@@ -279,7 +283,7 @@ def _snapshot_selected_evidence(
         for path, stream, maximum_bytes, label in opened:
             digest = hashlib.sha256()
             total_bytes = 0
-            snapshot_path = snapshot_root / path.name
+            snapshot_path = canonical_snapshot_root / path.name
             try:
                 with snapshot_path.open("xb") as output:
                     while True:
@@ -295,7 +299,7 @@ def _snapshot_selected_evidence(
                 raise SystemExit(f"{label} cannot be snapshotted safely") from error
             source_digests[path.name] = digest.hexdigest()
 
-    snapshot_paths = _select_evidence_paths(snapshot_root)
+    snapshot_paths = _select_evidence_paths(canonical_snapshot_root)
     return snapshot_paths, original_paths, root_identity, source_digests
 
 
