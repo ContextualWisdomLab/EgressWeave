@@ -272,6 +272,7 @@ def _snapshot_selected_evidence(
 
         if _evidence_root_identity(canonical_root) != root_identity:
             raise SystemExit("release evidence directory changed")
+        _select_evidence_paths(canonical_root)
         for path, stream, _, label in opened:
             _require_open_regular_file(path, stream, label=label)
 
@@ -665,6 +666,7 @@ def build_evidence_manifest(
         canonical_original_root = _require_canonical_evidence_root(evidence_dir)
         if _evidence_root_identity(canonical_original_root) != root_identity:
             raise SystemExit("release evidence directory changed")
+        _select_evidence_paths(canonical_original_root)
         original_maximums = (
             MAX_ARTIFACT_BYTES,
             MAX_ARTIFACT_BYTES,
