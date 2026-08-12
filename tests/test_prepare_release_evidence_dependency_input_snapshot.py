@@ -236,3 +236,66 @@ def test_reviewed_input_growth_after_preflight_is_generically_rejected(
 
     assert mutated
     assert str(rejected.value) == "reviewed input is unreadable or unsafe"
+
+
+def test_missing_reviewed_input_is_generically_rejected_before_generator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hide whether a reviewed dependency input is missing before parser loading."""
+    preparer = _load_preparer()
+    dependency_manifest = tmp_path / "missing-reviewed-runtime-dependencies.json"
+    runtime_lock = tmp_path / "reviewed-runtime-lock.txt"
+    shutil.copyfile(LOCK_PATH, runtime_lock)
+    generator_loaded = False
+
+    def fail_if_loaded() -> None:
+        nonlocal generator_loaded
+        generator_loaded = True
+        raise AssertionError("generator loaded after missing reviewed input")
+
+    monkeypatch.setattr(preparer, "_load_attestable_generator", fail_if_loaded)
+
+    with pytest.raises(SystemExit) as rejected:
+        _prepare_with_reviewed_inputs(
+            preparer,
+            tmp_path,
+            dependency_manifest,
+            runtime_lock,
+        )
+
+    assert str(rejected.value) == "reviewed input is unreadable or unsafe"
+    assert not generator_loaded
+
+
+def test_symlinked_reviewed_input_is_generically_rejected_before_generator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hide whether a reviewed dependency input was rejected for being a symlink."""
+    preparer = _load_preparer()
+    dependency_manifest = tmp_path / "reviewed-runtime-dependencies.json"
+    lock_target = tmp_path / "runtime-lock-target.txt"
+    runtime_lock = tmp_path / "reviewed-runtime-lock.txt"
+    shutil.copyfile(MANIFEST_PATH, dependency_manifest)
+    shutil.copyfile(LOCK_PATH, lock_target)
+    runtime_lock.symlink_to(lock_target)
+    generator_loaded = False
+
+    def fail_if_loaded() -> None:
+        nonlocal generator_loaded
+        generator_loaded = True
+        raise AssertionError("generator loaded after symlinked reviewed input")
+
+    monkeypatch.setattr(preparer, "_load_attestable_generator", fail_if_loaded)
+
+    with pytest.raises(SystemExit) as rejected:
+        _prepare_with_reviewed_inputs(
+            preparer,
+            tmp_path,
+            dependency_manifest,
+            runtime_lock,
+        )
+
+    assert str(rejected.value) == "reviewed input is unreadable or unsafe"
+    assert not generator_loaded
