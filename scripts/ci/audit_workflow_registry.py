@@ -133,6 +133,7 @@ def request_json(
     if token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(url, headers=headers, method="GET")
+    failure_message: str | None = None
     try:
         with opener(request, timeout=canonical_timeout) as response:
             status = _request_status(response)
@@ -142,14 +143,16 @@ def request_json(
     except AuditError:
         raise
     except urllib.error.HTTPError as exc:
-        raise AuditError(f"GitHub API returned HTTP {exc.code}") from None
+        failure_message = f"GitHub API returned HTTP {exc.code}"
     except (
         http.client.IncompleteRead,
         urllib.error.URLError,
         TimeoutError,
         OSError,
     ):
-        raise AuditError("GitHub API request failed") from None
+        failure_message = "GitHub API request failed"
+    if failure_message is not None:
+        raise AuditError(failure_message) from None
     if len(payload) > MAX_RESPONSE_BYTES:
         raise AuditError("GitHub API response exceeds the audit safety bound")
     try:
