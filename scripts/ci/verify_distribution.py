@@ -37,10 +37,13 @@ MAX_DISTRIBUTION_BYTES = 256 * 1024 * 1024
 MAX_SDIST_MEMBERS = 4096
 MAX_WHEEL_MEMBERS = 4096
 ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
+ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
 ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
 ZIP64_EOCD_LOCATOR_SIZE = 20
 ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
 ZIP_EOCD = struct.Struct("<4s4H2LH")
+ZIP64_EOCD_LOCATOR = struct.Struct("<4sLQL")
+ZIP64_EOCD_PREFIX = struct.Struct("<4sQ")
 ZIP_CENTRAL_HEADER = struct.Struct("<4s6H3L5H2L")
 CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
@@ -299,8 +302,39 @@ def _wheel_tail_before(stream: BinaryIO, offset: int, size: int) -> bytes:
     )
 
 
-def _preflight_wheel_members(stream: BinaryIO) -> None:
-    """Bound canonical ZIP entries before ``ZipFile`` allocates ``ZipInfo`` objects."""
+def _wheel_zip64_locator_is_structural(stream: BinaryIO, eocd_offset: int) -> bool:
+    """Recognize a ZIP64 locator only when its pointer frames a ZIP64 end record."""
+    if eocd_offset < ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    locator = _wheel_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+    if len(locator) != ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    signature, disk_number, zip64_offset, total_disks = ZIP64_EOCD_LOCATOR.unpack(locator)
+    if (
+        signature != ZIP64_EOCD_LOCATOR_SIGNATURE
+        or disk_number != 0
+        or total_disks != 1
+    ):
+        return False
+    locator_offset = eocd_offset - ZIP64_EOCD_LOCATOR_SIZE
+    if zip64_offset > locator_offset - ZIP64_EOCD_PREFIX.size:
+        return False
+    stream.seek(zip64_offset)
+    prefix = _read_exact(
+        stream,
+        ZIP64_EOCD_PREFIX.size,
+        "wheel is not a valid ZIP archive",
+    )
+    record_signature, record_size = ZIP64_EOCD_PREFIX.unpack(prefix)
+    return (
+        record_signature == ZIP64_EOCD_SIGNATURE
+        and record_size >= 44
+        and zip64_offset + ZIP64_EOCD_PREFIX.size + record_size == locator_offset
+    )
+
+
+def _preflight_wheel_members(stream: BinaryIO) -> int | None:
+    """Bound ZIP entries and return a safe stdlib-locator mask offset if needed."""
     invalid = "wheel is not a valid ZIP archive"
     eocd_offset, fields = _find_wheel_eocd(stream)
     disk_number, directory_disk, disk_entries, total_entries, size, offset, _ = fields
@@ -308,11 +342,7 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
         disk_number != 0
         or directory_disk != 0
         or disk_entries != total_entries
-        or _wheel_tail_before(
-            stream,
-            eocd_offset,
-            ZIP64_EOCD_LOCATOR_SIZE,
-        ).startswith(ZIP64_EOCD_LOCATOR_SIGNATURE)
+        or _wheel_zip64_locator_is_structural(stream, eocd_offset)
     ):
         raise SystemExit(invalid)
     if (
@@ -328,6 +358,7 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
     stream.seek(offset)
     consumed = 0
     actual_entries = 0
+    locator_comment_offset: int | None = None
     while consumed < size:
         fixed = _read_exact(stream, ZIP_CENTRAL_HEADER.size, invalid)
         consumed += len(fixed)
@@ -351,12 +382,43 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
             or _wheel_extra_uses_zip64(extra)
         ):
             raise SystemExit(invalid)
+        if (
+            consumed == size
+            and comment_size >= ZIP64_EOCD_LOCATOR_SIZE
+            and variable[-ZIP64_EOCD_LOCATOR_SIZE:].startswith(
+                ZIP64_EOCD_LOCATOR_SIGNATURE
+            )
+        ):
+            locator_comment_offset = eocd_offset - ZIP64_EOCD_LOCATOR_SIZE
         actual_entries += 1
         if actual_entries > MAX_WHEEL_MEMBERS:
             raise SystemExit("wheel member limit exceeded")
     if consumed != size or actual_entries != total_entries:
         raise SystemExit(invalid)
     stream.seek(0)
+    return locator_comment_offset
+
+
+def _wheel_zipfile_compatible_snapshot(stream: BinaryIO, offset: int) -> BinaryIO:
+    """Mask one validated member-comment signature only in the stdlib parser view."""
+    invalid = "wheel is not a valid ZIP archive"
+    parser_snapshot = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115
+    try:
+        stream.seek(0)
+        while block := stream.read(HASH_CHUNK_SIZE):
+            parser_snapshot.write(block)
+        parser_snapshot.seek(offset)
+        if _read_exact(parser_snapshot, 4, invalid) != ZIP64_EOCD_LOCATOR_SIGNATURE:
+            raise SystemExit(invalid)
+        parser_snapshot.seek(offset)
+        parser_snapshot.write(b"EW64")
+        parser_snapshot.seek(0)
+        return parser_snapshot
+    except BaseException:
+        parser_snapshot.close()
+        raise
+    finally:
+        stream.seek(0)
 
 
 def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
@@ -376,15 +438,27 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
     with _open_stable_distribution(wheel_path) as wheel_file:
         wheel_digest = _sha256_stream(wheel_file)
         wheel_file.seek(0)
-        _preflight_wheel_members(wheel_file)
-        with zipfile.ZipFile(wheel_file) as wheel_archive:
-            names = _safe_archive_names(wheel_archive.namelist())
-            missing = required_paths - names
-            if missing:
-                raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
-            metadata = BytesParser(policy=default).parsebytes(
-                wheel_archive.read(f"{dist_info}/METADATA")
+        locator_comment_offset = _preflight_wheel_members(wheel_file)
+        parser_snapshot: BinaryIO | None = None
+        parser_stream = wheel_file
+        if locator_comment_offset is not None:
+            parser_snapshot = _wheel_zipfile_compatible_snapshot(
+                wheel_file,
+                locator_comment_offset,
             )
+            parser_stream = parser_snapshot
+        try:
+            with zipfile.ZipFile(parser_stream) as wheel_archive:
+                names = _safe_archive_names(wheel_archive.namelist())
+                missing = required_paths - names
+                if missing:
+                    raise SystemExit(f"wheel is missing required files: {sorted(missing)}")
+                metadata = BytesParser(policy=default).parsebytes(
+                    wheel_archive.read(f"{dist_info}/METADATA")
+                )
+        finally:
+            if parser_snapshot is not None:
+                parser_snapshot.close()
 
     expected_metadata = {
         "Name": str(project["name"]),
