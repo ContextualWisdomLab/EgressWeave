@@ -40,15 +40,22 @@ that mutable object would make the transport's security properties depend on
 external object lifetime and mutation order.
 
 `TLSConfiguration` instead stores declarative inputs in a frozen value object.
-Path-like values are normalized to deterministic text without expanding or
-resolving them, and filesystem or certificate parsing is deferred to context
-construction. Secret-bearing client-key passwords are excluded from
-representations and equality comparisons. Mutable password bytearrays are copied
-to immutable bytes at construction so later caller mutation cannot change the
-identity used to build a transport. A zero-argument callback remains an explicit
-trusted integration point for deferred secret retrieval. Every transport owns
-the fresh context that results, eliminating post-validation caller mutation as
-an authority channel.
+Path-like values are observed through `os.fspath()` exactly once and accepted
+only when the result is the exact built-in `str` type; ordinary `pathlib.Path`
+values therefore remain supported without retaining a polymorphic text object.
+Inline `ca_data` is likewise restricted to exact built-in PEM text or DER bytes
+before emptiness checks or retention. These scalar requirements prevent
+subclass-defined text normalization or byte-length behavior from participating
+in trusted TLS state while deliberately avoiding path expansion, resolution, or
+filesystem access during construction.
+
+Secret-bearing client-key passwords are excluded from representations and
+equality comparisons. Mutable password bytearrays are copied to immutable bytes
+at construction so later caller mutation cannot change the identity used to
+build a transport. A zero-argument callback remains an explicit trusted
+integration point for deferred secret retrieval. Every transport owns the fresh
+context that results, eliminating post-validation caller mutation as an
+authority channel.
 
 The public context helper accepts only the exact `TLSConfiguration` type before
 it invokes `create_ssl_context()`. Subclassing this security value object is not
@@ -71,10 +78,13 @@ ignoring environment-controlled certificate configuration:
   `ssl.create_default_context(cafile=..., capath=..., cadata=...)` path with only
   the explicit custom CA source and requires at least one such source.
 
-Empty, binary path, malformed type, and ambiguous custom-only configurations
-fail at startup. Trust configuration is provider-neutral and can be injected by
-a standalone application, naruon adapter, or another CWL service without
-embedding provider-specific certificate logic in the transport.
+Exact text paths, standard path-like objects that yield exact text, and exact
+PEM text or DER bytes remain supported. Empty values, binary paths, built-in
+subclasses, malformed types, and ambiguous custom-only configurations fail at
+startup before subclass-controlled scalar behavior can enter frozen trust state.
+Trust configuration is provider-neutral and can be injected by a standalone
+application, naruon adapter, or another CWL service without embedding
+provider-specific certificate logic in the transport.
 
 ## Service identity binding
 
@@ -113,10 +123,12 @@ default. An existing endpoint that cannot yet negotiate TLS 1.3 can opt into
 `minimum_version=ssl.TLSVersion.TLSv1_2`; this is an explicit compatibility
 exception that should be inventoried and removed after the peer is upgraded.
 
-Applications that previously subclassed `TLSConfiguration` must migrate to an
-exact instance using the documented declarative fields. Private trust roots,
-mutual-TLS identities, deferred private-key passwords, and the explicit TLS 1.2
-compatibility floor remain supported without subclassing.
+Applications that previously supplied `str` or `bytes` subclasses for trust or
+identity scalars must migrate to exact built-in values. Standard `pathlib.Path`
+objects, exact private trust roots, mutual-TLS identities, deferred private-key
+passwords, and the explicit TLS 1.2 compatibility floor remain supported.
+Applications that previously subclassed `TLSConfiguration` must likewise use an
+exact instance with the documented declarative fields.
 
 The configuration is threaded through both public builders and both
 already-validated pinned-client builders. It changes only TLS trust and client
