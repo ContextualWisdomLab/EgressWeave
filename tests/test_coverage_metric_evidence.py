@@ -301,6 +301,27 @@ def test_reporter_rejects_owned_source_symlinks_without_path_disclosure(
     assert "Traceback" not in result.stderr
 
 
+def test_reporter_rejects_line_numbers_beyond_owned_source(tmp_path: Path) -> None:
+    """Fabricated line evidence outside the source file must fail closed."""
+    source_root, coverage_json = _write_fixture(
+        tmp_path,
+        executed_lines=[1, 2, 3, 4, 7, 8],
+        missing_lines=[],
+    )
+    payload = json.loads(coverage_json.read_text(encoding="utf-8"))
+    record = next(iter(payload["files"].values()))
+    record["executed_lines"].append(999)
+    record["summary"]["covered_lines"] += 1
+    record["summary"]["num_statements"] += 1
+    coverage_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 2
+    assert "coverage data line number exceeds owned source file" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_ci_exposes_the_exact_metrics_after_coverage_collection() -> None:
     """The hosted matrix must publish the reporter output on every exact head."""
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
