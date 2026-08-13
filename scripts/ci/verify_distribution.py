@@ -33,6 +33,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
 DISTRIBUTION_NAME = "egressweave"
 HASH_CHUNK_SIZE = 1024 * 1024
 MAX_DISTRIBUTION_BYTES = 256 * 1024 * 1024
+MAX_SDIST_MEMBERS = 4096
 CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
     flags=re.MULTILINE,
@@ -199,20 +200,25 @@ def _select_archives(dist_dir: Path, name: str, version: str) -> tuple[Path, Pat
     return wheel_path, sdist_path
 
 
+def _admit_archive_name(name: str, seen: set[str]) -> None:
+    """Validate and retain one archive path without building an unbounded name list."""
+    pure_path = PurePosixPath(name)
+    if (
+        not name
+        or "\\" in name
+        or pure_path.is_absolute()
+        or any(part in {"", ".", ".."} for part in pure_path.parts)
+        or name in seen
+    ):
+        raise SystemExit(f"distribution contains an unsafe archive path: {name!r}")
+    seen.add(name)
+
+
 def _safe_archive_names(names: list[str]) -> set[str]:
     """Reject absolute, parent-traversing, duplicate, or backslash archive paths."""
     seen: set[str] = set()
     for name in names:
-        pure_path = PurePosixPath(name)
-        if (
-            not name
-            or "\\" in name
-            or pure_path.is_absolute()
-            or any(part in {"", ".", ".."} for part in pure_path.parts)
-            or name in seen
-        ):
-            raise SystemExit(f"distribution contains an unsafe archive path: {name!r}")
-        seen.add(name)
+        _admit_archive_name(name, seen)
     return seen
 
 
@@ -260,7 +266,7 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
 
 
 def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> str:
-    """Verify source-distribution paths and return its parsed snapshot digest."""
+    """Verify source-distribution paths with bounded streaming member admission."""
     version = str(project["version"])
     prefix = f"{DISTRIBUTION_NAME}-{version}"
     required_paths = {
@@ -281,11 +287,17 @@ def _verify_sdist(sdist_path: Path, project: dict[str, object]) -> str:
     with _open_stable_distribution(sdist_path) as sdist_file:
         sdist_digest = _sha256_stream(sdist_file)
         sdist_file.seek(0)
-        with tarfile.open(fileobj=sdist_file, mode="r:gz") as sdist_archive:
-            members = sdist_archive.getmembers()
-            names = _safe_archive_names([member.name for member in members])
-            if any(member.issym() or member.islnk() or member.isdev() for member in members):
-                raise SystemExit("source distribution contains a link or device entry")
+        names: set[str] = set()
+        with tarfile.open(fileobj=sdist_file, mode="r|gz") as sdist_archive:
+            for member_count, member in enumerate(sdist_archive, start=1):
+                if member_count > MAX_SDIST_MEMBERS:
+                    raise SystemExit("source distribution member limit exceeded")
+                _admit_archive_name(member.name, names)
+                if member.issym() or member.islnk() or member.isdev():
+                    raise SystemExit("source distribution contains a link or device entry")
+                # Python 3.10-3.14 retain yielded TarInfo objects in this public list.
+                # Links are rejected above, so no later member may need that cache.
+                sdist_archive.members.clear()
 
     missing = required_paths - names
     if missing:
