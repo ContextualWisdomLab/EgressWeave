@@ -57,6 +57,18 @@ def _write_wheel(path: Path, extra_member_count: int = 0) -> None:
             archive.writestr(f"egressweave/bounded-member-{index:04d}.txt", b"")
 
 
+def _write_wheel_with_member_comment(path: Path) -> None:
+    """Write a standard non-ZIP64 wheel whose final member has a ZIP-signature comment."""
+    entries = list(REQUIRED_WHEEL_PATHS.items())
+    with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        for name, payload in entries[:-1]:
+            archive.writestr(name, payload)
+        name, payload = entries[-1]
+        member = zipfile.ZipInfo(name)
+        member.comment = b"comment-PK\x06\x07-tail"
+        archive.writestr(member, payload)
+
+
 def test_wheel_verifier_preflights_member_budget_before_zipfile_materialization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -106,6 +118,19 @@ def test_wheel_verifier_rejects_over_budget_central_directory(tmp_path: Path) ->
 
     with pytest.raises(SystemExit, match="wheel member limit"):
         verifier._verify_wheel(wheel_path, PROJECT)
+
+
+def test_wheel_verifier_allows_zip64_signature_bytes_inside_member_comment(
+    tmp_path: Path,
+) -> None:
+    """Treat ZIP64 locator bytes as structure only at the locator's exact position."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / f"egressweave-{VERSION}-py3-none-any.whl"
+    _write_wheel_with_member_comment(wheel_path)
+
+    digest = verifier._verify_wheel(wheel_path, PROJECT)
+
+    assert len(digest) == 64
 
 
 def test_wheel_member_budget_is_explicit_and_reviewable() -> None:
