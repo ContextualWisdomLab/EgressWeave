@@ -26,6 +26,22 @@ class _HostileBytes(bytes):
         raise AssertionError("TLS configuration invoked hostile byte length")
 
 
+class _HostilePasswordText(str):
+    """Represent executable behavior hidden inside password text."""
+
+
+class _HostilePasswordBytes(bytes):
+    """Represent executable behavior hidden inside password bytes."""
+
+
+class _HostilePasswordBuffer(bytearray):
+    """Expose conversion of a mutable password subclass before retention."""
+
+    def __bytes__(self) -> bytes:
+        """Fail if trusted construction converts a polymorphic buffer."""
+        raise AssertionError("TLS configuration invoked hostile password conversion")
+
+
 class _HostileTextPath:
     """Return a non-exact text path from the standard path protocol."""
 
@@ -81,15 +97,48 @@ def test_ca_data_rejects_builtin_subclasses_before_inspection(ca_data: object) -
         TLSConfiguration(ca_data=ca_data)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "password",
+    [
+        _HostilePasswordText("secret"),
+        _HostilePasswordBytes(b"secret"),
+        _HostilePasswordBuffer(b"secret"),
+    ],
+)
+def test_private_key_password_rejects_builtin_subclasses_before_retention(
+    password: object,
+) -> None:
+    """Keep polymorphic secret scalars outside immutable TLS identity state."""
+    with pytest.raises(TypeError, match="client_private_key_password"):
+        TLSConfiguration(
+            client_certificate_file="identity/client.pem",
+            client_private_key_password=password,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("password", ["secret", b"secret", bytearray(b"secret")])
+def test_exact_private_key_password_scalars_remain_supported(password: object) -> None:
+    """Preserve Python TLS loader password shapes while freezing bytearrays."""
+    configuration = TLSConfiguration(
+        client_certificate_file="identity/client.pem",
+        client_private_key_password=password,  # type: ignore[arg-type]
+    )
+
+    expected = bytes(password) if type(password) is bytearray else password
+    assert configuration.client_private_key_password == expected
+    assert type(configuration.client_private_key_password) is type(expected)
+
+
 def test_exact_tls_scalar_values_and_standard_paths_remain_supported() -> None:
     """Preserve reviewed exact values and ordinary pathlib integration."""
+    password_callback = lambda: "secret"
     configuration = TLSConfiguration(
         ca_file=Path("trust/roots.pem"),
         ca_path="trust/roots",
         ca_data=b"deferred-der-certificate",
         client_certificate_file=Path("identity/client.pem"),
         client_private_key_file="identity/client.key",
-        client_private_key_password=lambda: "secret",
+        client_private_key_password=password_callback,
     )
 
     assert configuration.ca_file == "trust/roots.pem"
@@ -97,3 +146,4 @@ def test_exact_tls_scalar_values_and_standard_paths_remain_supported() -> None:
     assert configuration.ca_data == b"deferred-der-certificate"
     assert configuration.client_certificate_file == "identity/client.pem"
     assert configuration.client_private_key_file == "identity/client.key"
+    assert configuration.client_private_key_password is password_callback
