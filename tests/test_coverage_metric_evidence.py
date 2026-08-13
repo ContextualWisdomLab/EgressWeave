@@ -135,6 +135,41 @@ def _write_nested_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return source_root, coverage_json
 
 
+def _write_single_line_nested_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a nested function whose definition and body share one trace line."""
+    source_root = tmp_path / "src" / "egressweave"
+    source_root.mkdir(parents=True)
+    source_file = source_root / "sample.py"
+    source_file.write_text(
+        "def outer() -> int:\n"
+        "    def inner() -> int: return 2\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    coverage_json = tmp_path / "coverage.json"
+    coverage_json.write_text(
+        json.dumps(
+            {
+                "meta": {"branch_coverage": True, "version": "fixture"},
+                "files": {
+                    str(source_file): {
+                        "executed_lines": [1, 2, 3],
+                        "missing_lines": [],
+                        "excluded_lines": [],
+                        "summary": {
+                            "covered_lines": 3,
+                            "num_statements": 3,
+                            "missing_lines": 0,
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return source_root, coverage_json
+
+
 def _run_reporter(source_root: Path, coverage_json: Path) -> subprocess.CompletedProcess[str]:
     """Run the repository reporter exactly as CI will invoke it."""
     return subprocess.run(
@@ -193,6 +228,19 @@ def test_reporter_counts_nested_function_bodies_only_for_the_nested_function(
     assert "function=50.00% (1/2)" in result.stdout
     assert "sample.py:inner" in result.stderr
     assert "sample.py:outer" not in result.stderr
+
+
+def test_reporter_excludes_single_line_bodies_without_distinct_trace_evidence(
+    tmp_path: Path,
+) -> None:
+    """Definition-line execution alone must not claim an uncalled body is covered."""
+    source_root, coverage_json = _write_single_line_nested_fixture(tmp_path)
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 0, result.stderr
+    assert "line=100.00% (3/3)" in result.stdout
+    assert "function=100.00% (1/1)" in result.stdout
 
 
 def test_reporter_fails_closed_when_a_function_body_has_a_missing_line(
