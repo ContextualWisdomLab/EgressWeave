@@ -99,6 +99,42 @@ def _write_noop_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return source_root, coverage_json
 
 
+def _write_nested_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a covered outer function whose uncalled nested function is missing."""
+    source_root = tmp_path / "src" / "egressweave"
+    source_root.mkdir(parents=True)
+    source_file = source_root / "sample.py"
+    source_file.write_text(
+        "def outer() -> int:\n"
+        "    def inner() -> int:\n"
+        "        return 2\n"
+        "    return 1\n",
+        encoding="utf-8",
+    )
+    coverage_json = tmp_path / "coverage.json"
+    coverage_json.write_text(
+        json.dumps(
+            {
+                "meta": {"branch_coverage": True, "version": "fixture"},
+                "files": {
+                    str(source_file): {
+                        "executed_lines": [1, 2, 4],
+                        "missing_lines": [3],
+                        "excluded_lines": [],
+                        "summary": {
+                            "covered_lines": 3,
+                            "num_statements": 4,
+                            "missing_lines": 1,
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return source_root, coverage_json
+
+
 def _run_reporter(source_root: Path, coverage_json: Path) -> subprocess.CompletedProcess[str]:
     """Run the repository reporter exactly as CI will invoke it."""
     return subprocess.run(
@@ -144,6 +180,21 @@ def test_reporter_excludes_functions_without_measurable_body_lines(tmp_path: Pat
     assert "noop" not in result.stderr
 
 
+def test_reporter_counts_nested_function_bodies_only_for_the_nested_function(
+    tmp_path: Path,
+) -> None:
+    """An uncalled inner body must not make its fully covered outer body missing."""
+    source_root, coverage_json = _write_nested_fixture(tmp_path)
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 1
+    assert "line=75.00% (3/4)" in result.stdout
+    assert "function=50.00% (1/2)" in result.stdout
+    assert "sample.py:inner" in result.stderr
+    assert "sample.py:outer" not in result.stderr
+
+
 def test_reporter_fails_closed_when_a_function_body_has_a_missing_line(
     tmp_path: Path,
 ) -> None:
@@ -169,7 +220,10 @@ def test_reporter_rejects_incomplete_owned_source_coverage(tmp_path: Path) -> No
         executed_lines=[1, 2, 3, 4, 7, 8],
         missing_lines=[],
     )
-    (source_root / "unreported.py").write_text("def hidden() -> int:\n    return 1\n", encoding="utf-8")
+    (source_root / "unreported.py").write_text(
+        "def hidden() -> int:\n    return 1\n",
+        encoding="utf-8",
+    )
 
     result = _run_reporter(source_root, coverage_json)
 
