@@ -128,6 +128,22 @@ def _function_body_lines(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[
     return start, end
 
 
+def _nested_function_body_lines(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> set[int]:
+    """Return body lines owned by nested functions rather than their enclosing one."""
+    nested_lines: set[int] = set()
+    for child in ast.walk(node):
+        if child is node or not isinstance(
+            child,
+            (ast.FunctionDef, ast.AsyncFunctionDef),
+        ):
+            continue
+        start, end = _function_body_lines(child)
+        nested_lines.update(range(start, end + 1))
+    return nested_lines
+
+
 def _analyse_source(
     path: Path,
     record: dict[str, Any],
@@ -161,7 +177,12 @@ def _analyse_source(
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         start, end = _function_body_lines(node)
-        measured_body = {line for line in measured if start <= line <= end}
+        nested_body_lines = _nested_function_body_lines(node)
+        measured_body = {
+            line
+            for line in measured
+            if start <= line <= end and line not in nested_body_lines
+        }
         if not measured_body:
             continue
         function_total += 1
