@@ -40,10 +40,13 @@ MAX_EXPANDED_TAR_BYTES = 512 * 1024 * 1024
 MAX_TAR_EXTENSION_BYTES = 1 * 1024 * 1024
 DIRECT_ARTIFACT_REJECTION = "release artifact failed verification"
 ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
+ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
 ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
 ZIP64_EOCD_LOCATOR_SIZE = 20
 ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
 ZIP_EOCD = struct.Struct("<4s4H2LH")
+ZIP64_EOCD_LOCATOR = struct.Struct("<4sLQL")
+ZIP64_EOCD_PREFIX = struct.Struct("<4sQ")
 ZIP_CENTRAL_HEADER = struct.Struct("<4s6H3L5H2L")
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -325,8 +328,39 @@ def _zip_extra_uses_zip64(extra: bytes) -> bool:
     return False
 
 
-def _preflight_wheel_members(stream: BinaryIO) -> None:
-    """Count canonical ZIP members before ``ZipFile`` allocates ``ZipInfo`` objects."""
+def _zip64_locator_is_structural(stream: BinaryIO, eocd_offset: int) -> bool:
+    """Recognize a ZIP64 locator only when its pointer frames a ZIP64 end record."""
+    if eocd_offset < ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    locator = _zip_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+    if len(locator) != ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    signature, disk_number, zip64_offset, total_disks = ZIP64_EOCD_LOCATOR.unpack(locator)
+    if (
+        signature != ZIP64_EOCD_LOCATOR_SIGNATURE
+        or disk_number != 0
+        or total_disks != 1
+    ):
+        return False
+    locator_offset = eocd_offset - ZIP64_EOCD_LOCATOR_SIZE
+    if zip64_offset > locator_offset - ZIP64_EOCD_PREFIX.size:
+        return False
+    stream.seek(zip64_offset)
+    prefix = _read_exact(
+        stream,
+        ZIP64_EOCD_PREFIX.size,
+        "release wheel is not a valid ZIP archive",
+    )
+    record_signature, record_size = ZIP64_EOCD_PREFIX.unpack(prefix)
+    return (
+        record_signature == ZIP64_EOCD_SIGNATURE
+        and record_size >= 44
+        and zip64_offset + ZIP64_EOCD_PREFIX.size + record_size == locator_offset
+    )
+
+
+def _preflight_wheel_members(stream: BinaryIO) -> int | None:
+    """Validate ZIP members and return a safe stdlib-locator mask offset if needed."""
     invalid = "release wheel is not a valid ZIP archive"
     eocd_offset, fields = _find_zip_eocd(stream)
     disk_number, directory_disk, disk_entries, total_entries, size, offset, _ = fields
@@ -334,8 +368,7 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
         disk_number != 0
         or directory_disk != 0
         or disk_entries != total_entries
-        or ZIP64_EOCD_LOCATOR_SIGNATURE
-        in _zip_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+        or _zip64_locator_is_structural(stream, eocd_offset)
     ):
         raise SystemExit(invalid)
     if (
@@ -351,6 +384,7 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
     stream.seek(offset)
     consumed = 0
     actual_entries = 0
+    locator_comment_offset: int | None = None
     while consumed < size:
         fixed = _read_exact(stream, ZIP_CENTRAL_HEADER.size, invalid)
         consumed += len(fixed)
@@ -374,12 +408,21 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
             or _zip_extra_uses_zip64(extra)
         ):
             raise SystemExit(invalid)
+        if (
+            consumed == size
+            and comment_size >= ZIP64_EOCD_LOCATOR_SIZE
+            and variable[-ZIP64_EOCD_LOCATOR_SIZE:].startswith(
+                ZIP64_EOCD_LOCATOR_SIGNATURE
+            )
+        ):
+            locator_comment_offset = eocd_offset - ZIP64_EOCD_LOCATOR_SIZE
         actual_entries += 1
         if actual_entries > MAX_ARCHIVE_MEMBERS:
             raise SystemExit("wheel exceeds the archive-member safety bound")
     if consumed != size or actual_entries != total_entries:
         raise SystemExit(invalid)
     stream.seek(0)
+    return locator_comment_offset
 
 
 def _zip_tail_before(stream: BinaryIO, offset: int, size: int) -> bytes:
@@ -391,6 +434,28 @@ def _zip_tail_before(stream: BinaryIO, offset: int, size: int) -> bytes:
         offset - start,
         "release wheel is not a valid ZIP archive",
     )
+
+
+def _zipfile_comment_compatible_snapshot(stream: BinaryIO, offset: int) -> BinaryIO:
+    """Mask one validated member-comment signature only in the stdlib parser view."""
+    invalid = "release wheel is not a valid ZIP archive"
+    parser_snapshot = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115
+    try:
+        stream.seek(0)
+        while block := stream.read(1_048_576):
+            parser_snapshot.write(block)
+        parser_snapshot.seek(offset)
+        if _read_exact(parser_snapshot, 4, invalid) != ZIP64_EOCD_LOCATOR_SIGNATURE:
+            raise SystemExit(invalid)
+        parser_snapshot.seek(offset)
+        parser_snapshot.write(b"EW64")
+        parser_snapshot.seek(0)
+        return parser_snapshot
+    except BaseException:
+        parser_snapshot.close()
+        raise
+    finally:
+        stream.seek(0)
 
 
 def _tar_number(field: bytes) -> int:
@@ -530,9 +595,17 @@ def _preflight_sdist_members(stream: BinaryIO) -> BinaryIO:
 
 def _wheel_metadata(stream: BinaryIO) -> Message:
     """Read the sole bounded wheel METADATA member from the bound archive."""
-    _preflight_wheel_members(stream)
+    locator_comment_offset = _preflight_wheel_members(stream)
+    parser_snapshot: BinaryIO | None = None
+    parser_stream = stream
+    if locator_comment_offset is not None:
+        parser_snapshot = _zipfile_comment_compatible_snapshot(
+            stream,
+            locator_comment_offset,
+        )
+        parser_stream = parser_snapshot
     try:
-        with zipfile.ZipFile(stream) as archive:
+        with zipfile.ZipFile(parser_stream) as archive:
             members = archive.infolist()
             _check_archive_names([item.filename for item in members], "wheel")
             selected = [
@@ -545,6 +618,9 @@ def _wheel_metadata(stream: BinaryIO) -> Message:
             return _parse_metadata(archive.read(selected[0]), "wheel")
     except zipfile.BadZipFile as error:
         raise SystemExit("release wheel is not a valid ZIP archive") from error
+    finally:
+        if parser_snapshot is not None:
+            parser_snapshot.close()
 
 
 def _sdist_metadata_detailed(stream: BinaryIO) -> Message:
