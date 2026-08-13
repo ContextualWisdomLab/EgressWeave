@@ -280,6 +280,27 @@ def test_reporter_rejects_incomplete_owned_source_coverage(tmp_path: Path) -> No
     assert "unreported.py" in result.stderr
 
 
+def test_reporter_rejects_owned_source_symlinks_without_path_disclosure(
+    tmp_path: Path,
+) -> None:
+    """Do not follow a source-tree symlink or leak its external resolved target."""
+    source_root, coverage_json = _write_fixture(
+        tmp_path,
+        executed_lines=[1, 2, 3, 4, 7, 8],
+        missing_lines=[],
+    )
+    external_source = tmp_path / "external-secret-name.py"
+    external_source.write_text("def outside() -> int:\n    return 1\n", encoding="utf-8")
+    (source_root / "linked.py").symlink_to(external_source)
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 2
+    assert "owned source tree contains a symbolic link" in result.stderr
+    assert str(external_source) not in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_ci_exposes_the_exact_metrics_after_coverage_collection() -> None:
     """The hosted matrix must publish the reporter output on every exact head."""
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
