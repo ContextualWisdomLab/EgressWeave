@@ -95,7 +95,25 @@ def _owned_coverage_records(
             raise CoverageEvidenceError("coverage JSON aliases one owned source file twice")
         records[resolved] = raw_record
 
-    owned_files = {path.resolve() for path in source_root.rglob("*.py") if path.is_file()}
+    owned_files: set[Path] = set()
+    for path in source_root.rglob("*.py"):
+        relative = path.relative_to(source_root)
+        if path.is_symlink():
+            raise CoverageEvidenceError(
+                f"owned source tree contains a symbolic link: {relative}"
+            )
+        if not path.is_file():
+            continue
+        resolved = path.resolve(strict=True)
+        if not _is_within(resolved, source_root):
+            raise CoverageEvidenceError(
+                f"owned source path escapes source root: {relative}"
+            )
+        if resolved in owned_files:
+            raise CoverageEvidenceError(
+                "owned source tree aliases one Python source file twice"
+            )
+        owned_files.add(resolved)
     if not owned_files:
         raise CoverageEvidenceError("source root contains no owned Python source files")
 
