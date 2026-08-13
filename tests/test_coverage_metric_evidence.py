@@ -322,6 +322,27 @@ def test_reporter_rejects_line_numbers_beyond_owned_source(tmp_path: Path) -> No
     assert "Traceback" not in result.stderr
 
 
+def test_reporter_rejects_invalid_coverage_path_without_traceback(
+    tmp_path: Path,
+) -> None:
+    """Malformed file-record paths must remain inside the generic evidence error."""
+    source_root, coverage_json = _write_fixture(
+        tmp_path,
+        executed_lines=[1, 2, 3, 4, 7, 8],
+        missing_lines=[],
+    )
+    payload = json.loads(coverage_json.read_text(encoding="utf-8"))
+    record = next(iter(payload["files"].values()))
+    payload["files"] = {"\u0000": record}
+    coverage_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = _run_reporter(source_root, coverage_json)
+
+    assert result.returncode == 2
+    assert "coverage file path is invalid" in result.stderr
+    assert "Traceback" not in result.stderr
+
+
 def test_ci_exposes_the_exact_metrics_after_coverage_collection() -> None:
     """The hosted matrix must publish the reporter output on every exact head."""
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
