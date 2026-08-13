@@ -57,15 +57,18 @@ def _write_wheel(path: Path, extra_member_count: int = 0) -> None:
             archive.writestr(f"egressweave/bounded-member-{index:04d}.txt", b"")
 
 
-def _write_wheel_with_member_comment(path: Path) -> None:
-    """Write a standard non-ZIP64 wheel whose final member has a ZIP-signature comment."""
+def _write_wheel_with_member_comment(
+    path: Path,
+    comment: bytes = b"comment-PK\x06\x07-tail",
+) -> None:
+    """Write a standard non-ZIP64 wheel with one chosen final-member comment."""
     entries = list(REQUIRED_WHEEL_PATHS.items())
     with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_STORED) as archive:
         for name, payload in entries[:-1]:
             archive.writestr(name, payload)
         name, payload = entries[-1]
         member = zipfile.ZipInfo(name)
-        member.comment = b"comment-PK\x06\x07-tail"
+        member.comment = comment
         archive.writestr(member, payload)
 
 
@@ -127,6 +130,21 @@ def test_wheel_verifier_allows_zip64_signature_bytes_inside_member_comment(
     verifier = _load_verifier()
     wheel_path = tmp_path / f"egressweave-{VERSION}-py3-none-any.whl"
     _write_wheel_with_member_comment(wheel_path)
+
+    digest = verifier._verify_wheel(wheel_path, PROJECT)
+
+    assert len(digest) == 64
+
+
+def test_wheel_verifier_allows_locator_shaped_exact_slot_member_comment(
+    tmp_path: Path,
+) -> None:
+    """Do not confuse one exact-length final member comment with a ZIP64 locator."""
+    verifier = _load_verifier()
+    wheel_path = tmp_path / f"egressweave-{VERSION}-py3-none-any.whl"
+    locator_shaped_comment = b"PK\x06\x07" + (b"x" * 16)
+    assert len(locator_shaped_comment) == 20
+    _write_wheel_with_member_comment(wheel_path, locator_shaped_comment)
 
     digest = verifier._verify_wheel(wheel_path, PROJECT)
 
