@@ -190,6 +190,13 @@ def _analyse_source(
             f"owned source file is unreadable or syntactically invalid: {path.relative_to(source_root)}"
         ) from exc
 
+    source_line_count = len(source.splitlines())
+    if any(line > source_line_count for line in measured):
+        raise CoverageEvidenceError(
+            "coverage data line number exceeds owned source file: "
+            f"{path.relative_to(source_root)}"
+        )
+
     function_total = 0
     function_covered = 0
     uncovered: list[str] = []
