@@ -15,6 +15,7 @@ import hashlib
 import os
 import re
 import stat
+import struct
 import tarfile
 import tempfile
 import zipfile
@@ -34,6 +35,13 @@ DISTRIBUTION_NAME = "egressweave"
 HASH_CHUNK_SIZE = 1024 * 1024
 MAX_DISTRIBUTION_BYTES = 256 * 1024 * 1024
 MAX_SDIST_MEMBERS = 4096
+MAX_WHEEL_MEMBERS = 4096
+ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
+ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
+ZIP64_EOCD_LOCATOR_SIZE = 20
+ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
+ZIP_EOCD = struct.Struct("<4s4H2LH")
+ZIP_CENTRAL_HEADER = struct.Struct("<4s6H3L5H2L")
 CHANGELOG_RELEASE_PATTERN = re.compile(
     r"^## \[(?P<version>\d+\.\d+\.\d+)\] - (?P<date>\d{4}-\d{2}-\d{2})$",
     flags=re.MULTILINE,
@@ -222,8 +230,134 @@ def _safe_archive_names(names: list[str]) -> set[str]:
     return seen
 
 
+def _read_exact(stream: BinaryIO, size: int, error_message: str) -> bytes:
+    """Read exactly ``size`` stable-snapshot bytes or fail closed on truncation."""
+    payload = stream.read(size)
+    if len(payload) != size:
+        raise SystemExit(error_message)
+    return payload
+
+
+def _wheel_snapshot_size(stream: BinaryIO) -> int:
+    """Return one finite stable wheel snapshot size without reopening its path."""
+    try:
+        size = stream.seek(0, os.SEEK_END)
+    except OSError:
+        raise SystemExit("wheel is not a valid ZIP archive") from None
+    if (
+        isinstance(size, bool)
+        or not isinstance(size, int)
+        or size < 0
+        or size > MAX_DISTRIBUTION_BYTES
+    ):
+        raise SystemExit("wheel is not a valid ZIP archive")
+    return size
+
+
+def _find_wheel_eocd(stream: BinaryIO) -> tuple[int, tuple[int, ...]]:
+    """Locate one canonical single-disk ZIP end record with a bounded tail read."""
+    invalid = "wheel is not a valid ZIP archive"
+    archive_size = _wheel_snapshot_size(stream)
+    tail_size = min(archive_size, ZIP_EOCD.size + 65_535)
+    stream.seek(archive_size - tail_size)
+    tail = _read_exact(stream, tail_size, invalid)
+    candidate = tail.rfind(ZIP_EOCD_SIGNATURE)
+    while candidate >= 0:
+        if candidate + ZIP_EOCD.size <= len(tail):
+            record = ZIP_EOCD.unpack_from(tail, candidate)
+            if candidate + ZIP_EOCD.size + record[-1] == len(tail):
+                return archive_size - tail_size + candidate, record[1:]
+        candidate = tail.rfind(ZIP_EOCD_SIGNATURE, 0, candidate)
+    raise SystemExit(invalid)
+
+
+def _wheel_extra_uses_zip64(extra: bytes) -> bool:
+    """Return whether a central-directory extra field declares ZIP64 data."""
+    invalid = "wheel is not a valid ZIP archive"
+    cursor = 0
+    while cursor < len(extra):
+        if cursor + 4 > len(extra):
+            raise SystemExit(invalid)
+        field_id, field_size = struct.unpack_from("<HH", extra, cursor)
+        cursor += 4
+        if cursor + field_size > len(extra):
+            raise SystemExit(invalid)
+        if field_id == 0x0001:
+            return True
+        cursor += field_size
+    return False
+
+
+def _wheel_tail_before(stream: BinaryIO, offset: int, size: int) -> bytes:
+    """Read at most ``size`` bytes immediately before one ZIP structure."""
+    start = max(0, offset - size)
+    stream.seek(start)
+    return _read_exact(
+        stream,
+        offset - start,
+        "wheel is not a valid ZIP archive",
+    )
+
+
+def _preflight_wheel_members(stream: BinaryIO) -> None:
+    """Bound canonical ZIP entries before ``ZipFile`` allocates ``ZipInfo`` objects."""
+    invalid = "wheel is not a valid ZIP archive"
+    eocd_offset, fields = _find_wheel_eocd(stream)
+    disk_number, directory_disk, disk_entries, total_entries, size, offset, _ = fields
+    if (
+        disk_number != 0
+        or directory_disk != 0
+        or disk_entries != total_entries
+        or ZIP64_EOCD_LOCATOR_SIGNATURE
+        in _wheel_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+    ):
+        raise SystemExit(invalid)
+    if (
+        total_entries == 0xFFFF
+        or size == 0xFFFFFFFF
+        or offset == 0xFFFFFFFF
+        or offset + size != eocd_offset
+    ):
+        raise SystemExit(invalid)
+    if total_entries > MAX_WHEEL_MEMBERS:
+        raise SystemExit("wheel member limit exceeded")
+
+    stream.seek(offset)
+    consumed = 0
+    actual_entries = 0
+    while consumed < size:
+        fixed = _read_exact(stream, ZIP_CENTRAL_HEADER.size, invalid)
+        consumed += len(fixed)
+        values = ZIP_CENTRAL_HEADER.unpack(fixed)
+        if values[0] != ZIP_CENTRAL_SIGNATURE:
+            raise SystemExit(invalid)
+        compressed_size, uncompressed_size = values[8], values[9]
+        name_size, extra_size, comment_size = values[10], values[11], values[12]
+        start_disk, local_offset = values[13], values[16]
+        variable_size = name_size + extra_size + comment_size
+        if consumed + variable_size > size:
+            raise SystemExit(invalid)
+        variable = _read_exact(stream, variable_size, invalid)
+        consumed += variable_size
+        extra = variable[name_size : name_size + extra_size]
+        if (
+            start_disk != 0
+            or compressed_size == 0xFFFFFFFF
+            or uncompressed_size == 0xFFFFFFFF
+            or local_offset == 0xFFFFFFFF
+            or _wheel_extra_uses_zip64(extra)
+        ):
+            raise SystemExit(invalid)
+        actual_entries += 1
+        if actual_entries > MAX_WHEEL_MEMBERS:
+            raise SystemExit("wheel member limit exceeded")
+    if consumed != size or actual_entries != total_entries:
+        raise SystemExit(invalid)
+    stream.seek(0)
+
+
 def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
-    """Verify wheel contents and return the digest of the exact parsed snapshot."""
+    """Verify wheel contents after bounded central-directory member admission."""
     version = str(project["version"])
     dist_info = f"{DISTRIBUTION_NAME}-{version}.dist-info"
     required_paths = {
@@ -239,6 +373,7 @@ def _verify_wheel(wheel_path: Path, project: dict[str, object]) -> str:
     with _open_stable_distribution(wheel_path) as wheel_file:
         wheel_digest = _sha256_stream(wheel_file)
         wheel_file.seek(0)
+        _preflight_wheel_members(wheel_file)
         with zipfile.ZipFile(wheel_file) as wheel_archive:
             names = _safe_archive_names(wheel_archive.namelist())
             missing = required_paths - names
