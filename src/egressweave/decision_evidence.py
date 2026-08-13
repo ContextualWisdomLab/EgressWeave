@@ -91,14 +91,15 @@ def _policy_fingerprint(policy: EgressPolicy) -> str:
     return _sha256_canonical_json(payload)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class EgressDecisionEvidence:
     """Immutable audit evidence for one successfully authorized authority.
 
-    The record intentionally omits the request path and every resolved address.
-    Fingerprints are deterministic correlation values, not signatures or message
-    authentication codes, and must not be treated as proof against a process
-    that can execute arbitrary Python code.
+    The supported issuance path is :func:`build_egress_decision_evidence`, which
+    revalidates signed URL state before creating a record. The record deliberately
+    omits the request path and every resolved address. Fingerprints are deterministic
+    correlation values, not signatures or message authentication codes, and must not
+    be treated as proof against a process that can execute arbitrary Python code.
     """
 
     schema_version: str
@@ -109,6 +110,22 @@ class EgressDecisionEvidence:
     ipv6_address_count: int
     policy_fingerprint: str
     decision_fingerprint: str
+
+    def __init__(
+        self,
+        schema_version: str,
+        authority: str,
+        allowed_methods: tuple[str, ...],
+        address_count: int,
+        ipv4_address_count: int,
+        ipv6_address_count: int,
+        policy_fingerprint: str,
+        decision_fingerprint: str,
+    ) -> None:
+        """Reject direct construction so only the validating builder issues records."""
+        raise TypeError(
+            "EgressDecisionEvidence objects must come from the evidence builder"
+        )
 
     def as_dict(self) -> dict[str, object]:
         """Return a detached JSON-compatible representation of this evidence."""
@@ -122,6 +139,30 @@ class EgressDecisionEvidence:
             "policy_fingerprint": self.policy_fingerprint,
             "decision_fingerprint": self.decision_fingerprint,
         }
+
+
+def _make_egress_decision_evidence(
+    *,
+    schema_version: str,
+    authority: str,
+    allowed_methods: tuple[str, ...],
+    address_count: int,
+    ipv4_address_count: int,
+    ipv6_address_count: int,
+    policy_fingerprint: str,
+    decision_fingerprint: str,
+) -> EgressDecisionEvidence:
+    """Create one record only after the public builder completes revalidation."""
+    evidence = object.__new__(EgressDecisionEvidence)
+    object.__setattr__(evidence, "schema_version", schema_version)
+    object.__setattr__(evidence, "authority", authority)
+    object.__setattr__(evidence, "allowed_methods", allowed_methods)
+    object.__setattr__(evidence, "address_count", address_count)
+    object.__setattr__(evidence, "ipv4_address_count", ipv4_address_count)
+    object.__setattr__(evidence, "ipv6_address_count", ipv6_address_count)
+    object.__setattr__(evidence, "policy_fingerprint", policy_fingerprint)
+    object.__setattr__(evidence, "decision_fingerprint", decision_fingerprint)
+    return evidence
 
 
 def build_egress_decision_evidence(
@@ -151,7 +192,7 @@ def build_egress_decision_evidence(
         "policy_fingerprint": policy_digest,
     }
     decision_digest = _sha256_canonical_json(evidence_payload)
-    return EgressDecisionEvidence(
+    return _make_egress_decision_evidence(
         schema_version=DECISION_EVIDENCE_SCHEMA_VERSION,
         authority=str(evidence_payload["authority"]),
         allowed_methods=tuple(sorted(policy.allowed_methods)),
