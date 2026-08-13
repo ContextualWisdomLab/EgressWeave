@@ -140,7 +140,9 @@ def _nested_function_body_lines(
         ):
             continue
         start, end = _function_body_lines(child)
-        nested_lines.update(range(start, end + 1))
+        nested_lines.update(
+            line for line in range(start, end + 1) if line > child.lineno
+        )
     return nested_lines
 
 
@@ -181,7 +183,9 @@ def _analyse_source(
         measured_body = {
             line
             for line in measured
-            if start <= line <= end and line not in nested_body_lines
+            if start <= line <= end
+            and line > node.lineno
+            and line not in nested_body_lines
         }
         if not measured_body:
             continue
