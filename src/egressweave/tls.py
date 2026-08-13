@@ -40,33 +40,39 @@ def _normalize_path(
     field_name: str,
     value: str | os.PathLike[str] | None,
 ) -> str | None:
-    """Return one non-empty text path without expanding or resolving it."""
+    """Return one non-empty exact text path without expanding or resolving it.
+
+    ``os.fspath`` is observed exactly once so ordinary ``pathlib.Path`` values
+    remain supported. Its result must be the exact built-in ``str`` type before
+    text inspection or retention; a text subclass is executable behavior rather
+    than an immutable declarative path value.
+    """
     if value is None:
         return None
     try:
         normalized = os.fspath(value)
     except TypeError as exc:
         raise TypeError(f"{field_name} must be a string or path-like object") from exc
-    if not isinstance(normalized, str):
-        raise TypeError(f"{field_name} must resolve to a text path")
+    if type(normalized) is not str:
+        raise TypeError(f"{field_name} must resolve to an exact text path")
     if not normalized.strip():
         raise ValueError(f"{field_name} must not be empty")
     return normalized
 
 
 def _normalize_ca_data(value: str | bytes | None) -> str | bytes | None:
-    """Return non-empty PEM text or DER bytes for a custom trust anchor."""
+    """Return exact non-empty PEM text or DER bytes for a custom trust anchor."""
     if value is None:
         return None
-    if isinstance(value, str):
+    if type(value) is str:
         if not value.strip():
             raise ValueError("ca_data must not be empty")
         return value
-    if isinstance(value, bytes):
+    if type(value) is bytes:
         if not value:
             raise ValueError("ca_data must not be empty")
         return value
-    raise TypeError("ca_data must be PEM text or DER bytes")
+    raise TypeError("ca_data must be exact PEM text or DER bytes")
 
 
 def _validate_private_key_password(password: _PrivateKeyPassword) -> None:
