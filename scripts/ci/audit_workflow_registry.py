@@ -12,6 +12,7 @@ branch, comments on a pull request, or requests additional credentials.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import math
 import os
@@ -142,7 +143,12 @@ def request_json(
         raise
     except urllib.error.HTTPError as exc:
         raise AuditError(f"GitHub API returned HTTP {exc.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (
+        http.client.IncompleteRead,
+        urllib.error.URLError,
+        TimeoutError,
+        OSError,
+    ):
         raise AuditError("GitHub API request failed") from None
     if len(payload) > MAX_RESPONSE_BYTES:
         raise AuditError("GitHub API response exceeds the audit safety bound")
