@@ -67,6 +67,32 @@ def test_sdist_verifier_never_materializes_the_complete_member_list(
     assert len(digest) == 64
 
 
+def test_sdist_verifier_does_not_accumulate_tarinfo_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep tarfile's internal metadata cache bounded during streaming admission."""
+    verifier = _load_verifier()
+    sdist_path = tmp_path / f"egressweave-{VERSION}.tar.gz"
+    extra_paths = tuple(f"{PREFIX}/cache-probe-{index:02d}.txt" for index in range(32))
+    _write_sdist(sdist_path, extra_paths)
+    original_next = tarfile.TarFile.next
+    max_cached_members = 0
+
+    def recording_next(self: tarfile.TarFile):
+        nonlocal max_cached_members
+        max_cached_members = max(max_cached_members, len(self.members))
+        member = original_next(self)
+        max_cached_members = max(max_cached_members, len(self.members))
+        return member
+
+    monkeypatch.setattr(tarfile.TarFile, "next", recording_next)
+
+    verifier._verify_sdist(sdist_path, {"version": VERSION})
+
+    assert max_cached_members <= 1
+
+
 def test_sdist_verifier_rejects_the_first_member_beyond_the_finite_budget(
     tmp_path: Path,
 ) -> None:
