@@ -308,8 +308,11 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
         disk_number != 0
         or directory_disk != 0
         or disk_entries != total_entries
-        or ZIP64_EOCD_LOCATOR_SIGNATURE
-        in _wheel_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+        or _wheel_tail_before(
+            stream,
+            eocd_offset,
+            ZIP64_EOCD_LOCATOR_SIZE,
+        ).startswith(ZIP64_EOCD_LOCATOR_SIGNATURE)
     ):
         raise SystemExit(invalid)
     if (
