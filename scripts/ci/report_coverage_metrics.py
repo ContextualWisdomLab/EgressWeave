@@ -85,10 +85,13 @@ def _owned_coverage_records(
     for raw_path, raw_record in files.items():
         if type(raw_path) is not str or type(raw_record) is not dict:
             raise CoverageEvidenceError("coverage file records must map strings to objects")
-        candidate = Path(raw_path)
-        if not candidate.is_absolute():
-            candidate = Path.cwd() / candidate
-        resolved = candidate.resolve(strict=False)
+        try:
+            candidate = Path(raw_path)
+            if not candidate.is_absolute():
+                candidate = Path.cwd() / candidate
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError, UnicodeError, ValueError):
+            raise CoverageEvidenceError("coverage file path is invalid") from None
         if not _is_within(resolved, source_root):
             continue
         if resolved in records:
