@@ -40,10 +40,13 @@ MAX_EXPANDED_TAR_BYTES = 512 * 1024 * 1024
 MAX_TAR_EXTENSION_BYTES = 1 * 1024 * 1024
 DIRECT_ARTIFACT_REJECTION = "release artifact failed verification"
 ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
+ZIP64_EOCD_SIGNATURE = b"PK\x06\x06"
 ZIP64_EOCD_LOCATOR_SIGNATURE = b"PK\x06\x07"
 ZIP64_EOCD_LOCATOR_SIZE = 20
 ZIP_CENTRAL_SIGNATURE = b"PK\x01\x02"
 ZIP_EOCD = struct.Struct("<4s4H2LH")
+ZIP64_EOCD_LOCATOR = struct.Struct("<4sLQL")
+ZIP64_EOCD_PREFIX = struct.Struct("<4sQ")
 ZIP_CENTRAL_HEADER = struct.Struct("<4s6H3L5H2L")
 NAME_SEPARATORS = re.compile(r"[-_.]+")
 SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -325,6 +328,37 @@ def _zip_extra_uses_zip64(extra: bytes) -> bool:
     return False
 
 
+def _zip64_locator_is_structural(stream: BinaryIO, eocd_offset: int) -> bool:
+    """Recognize a ZIP64 locator only when its pointer frames a ZIP64 end record."""
+    if eocd_offset < ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    locator = _zip_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+    if len(locator) != ZIP64_EOCD_LOCATOR_SIZE:
+        return False
+    signature, disk_number, zip64_offset, total_disks = ZIP64_EOCD_LOCATOR.unpack(locator)
+    if (
+        signature != ZIP64_EOCD_LOCATOR_SIGNATURE
+        or disk_number != 0
+        or total_disks != 1
+    ):
+        return False
+    locator_offset = eocd_offset - ZIP64_EOCD_LOCATOR_SIZE
+    if zip64_offset > locator_offset - ZIP64_EOCD_PREFIX.size:
+        return False
+    stream.seek(zip64_offset)
+    prefix = _read_exact(
+        stream,
+        ZIP64_EOCD_PREFIX.size,
+        "release wheel is not a valid ZIP archive",
+    )
+    record_signature, record_size = ZIP64_EOCD_PREFIX.unpack(prefix)
+    return (
+        record_signature == ZIP64_EOCD_SIGNATURE
+        and record_size >= 44
+        and zip64_offset + ZIP64_EOCD_PREFIX.size + record_size == locator_offset
+    )
+
+
 def _preflight_wheel_members(stream: BinaryIO) -> None:
     """Count canonical ZIP members before ``ZipFile`` allocates ``ZipInfo`` objects."""
     invalid = "release wheel is not a valid ZIP archive"
@@ -334,8 +368,7 @@ def _preflight_wheel_members(stream: BinaryIO) -> None:
         disk_number != 0
         or directory_disk != 0
         or disk_entries != total_entries
-        or ZIP64_EOCD_LOCATOR_SIGNATURE
-        in _zip_tail_before(stream, eocd_offset, ZIP64_EOCD_LOCATOR_SIZE)
+        or _zip64_locator_is_structural(stream, eocd_offset)
     ):
         raise SystemExit(invalid)
     if (
