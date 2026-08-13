@@ -40,15 +40,25 @@ that mutable object would make the transport's security properties depend on
 external object lifetime and mutation order.
 
 `TLSConfiguration` instead stores declarative inputs in a frozen value object.
-Path-like values are normalized to deterministic text without expanding or
-resolving them, and filesystem or certificate parsing is deferred to context
-construction. Secret-bearing client-key passwords are excluded from
-representations and equality comparisons. Mutable password bytearrays are copied
-to immutable bytes at construction so later caller mutation cannot change the
-identity used to build a transport. A zero-argument callback remains an explicit
-trusted integration point for deferred secret retrieval. Every transport owns
-the fresh context that results, eliminating post-validation caller mutation as
-an authority channel.
+Path-like values are observed through `os.fspath()` exactly once and accepted
+only when the result is the exact built-in `str` type; ordinary `pathlib.Path`
+values therefore remain supported without retaining a polymorphic text object.
+Inline `ca_data` is likewise restricted to exact built-in PEM text or DER bytes
+before emptiness checks or retention. Direct private-key passwords must be exact
+built-in text, bytes, or bytearray values; an exact bytearray is copied to bytes
+before retention. These scalar requirements prevent subclass-defined text
+normalization, byte-length, or conversion behavior from participating in trusted
+TLS state while deliberately avoiding path expansion, resolution, or filesystem
+access during construction.
+
+Secret-bearing client-key passwords are excluded from representations and
+equality comparisons. Built-in subclasses are rejected from the direct password
+path, and an exact mutable password bytearray is copied to immutable bytes at
+construction so later caller mutation cannot change the identity used to build a
+transport. A zero-argument callback remains an explicit trusted integration
+point for deferred secret retrieval and may execute only when Python's TLS
+loader requests the password. Every transport owns the fresh context that
+results, eliminating post-validation caller mutation as an authority channel.
 
 The public context helper accepts only the exact `TLSConfiguration` type before
 it invokes `create_ssl_context()`. Subclassing this security value object is not
@@ -71,10 +81,13 @@ ignoring environment-controlled certificate configuration:
   `ssl.create_default_context(cafile=..., capath=..., cadata=...)` path with only
   the explicit custom CA source and requires at least one such source.
 
-Empty, binary path, malformed type, and ambiguous custom-only configurations
-fail at startup. Trust configuration is provider-neutral and can be injected by
-a standalone application, naruon adapter, or another CWL service without
-embedding provider-specific certificate logic in the transport.
+Exact text paths, standard path-like objects that yield exact text, and exact
+PEM text or DER bytes remain supported. Empty values, binary paths, built-in
+subclasses, malformed types, and ambiguous custom-only configurations fail at
+startup before subclass-controlled scalar behavior can enter frozen trust state.
+Trust configuration is provider-neutral and can be injected by a standalone
+application, naruon adapter, or another CWL service without embedding
+provider-specific certificate logic in the transport.
 
 ## Service identity binding
 
@@ -93,10 +106,11 @@ URL policy or DNS-pinned transport.
 
 `client_certificate_file` enables a client certificate identity. The private key
 may be contained in the same PEM file or supplied through
-`client_private_key_file`. `client_private_key_password` accepts the same secret
-shapes supported by Python's certificate loader, including a zero-argument
-callable for deferred secret retrieval. A supplied bytearray is copied to bytes
-before it is retained.
+`client_private_key_file`. A direct `client_private_key_password` must be exact
+built-in text, bytes, or bytearray; the bytearray form is copied to immutable
+bytes before retention. A zero-argument callable remains a separately explicit
+trusted contract for deferred secret retrieval by Python's certificate loader.
+Built-in subclasses are not accepted as direct password scalars.
 
 A private key or password without a certificate is rejected before filesystem
 access. Certificate and key loading errors remain startup/operator errors rather
@@ -113,10 +127,13 @@ default. An existing endpoint that cannot yet negotiate TLS 1.3 can opt into
 `minimum_version=ssl.TLSVersion.TLSv1_2`; this is an explicit compatibility
 exception that should be inventoried and removed after the peer is upgraded.
 
-Applications that previously subclassed `TLSConfiguration` must migrate to an
-exact instance using the documented declarative fields. Private trust roots,
-mutual-TLS identities, deferred private-key passwords, and the explicit TLS 1.2
-compatibility floor remain supported without subclassing.
+Applications that previously supplied `str`, `bytes`, or `bytearray` subclasses
+for trust, identity, or direct private-key password scalars must migrate to exact
+built-in values. Standard `pathlib.Path` objects, exact private trust roots,
+mutual-TLS identities, exact direct passwords, explicit deferred password
+callbacks, and the TLS 1.2 compatibility floor remain supported. Applications
+that previously subclassed `TLSConfiguration` must likewise use an exact
+instance with the documented declarative fields.
 
 The configuration is threaded through both public builders and both
 already-validated pinned-client builders. It changes only TLS trust and client
