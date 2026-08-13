@@ -79,3 +79,16 @@ def test_snapshot_accepts_private_root_through_symlinked_parent(tmp_path: Path) 
 
     canonical_snapshot_root = snapshot_root.resolve(strict=True)
     assert {path.parent for path in snapshot_paths} == {canonical_snapshot_root}
+
+
+def test_snapshot_rejects_unavailable_private_root(tmp_path: Path) -> None:
+    """Fail closed when the private snapshot root cannot be resolved strictly."""
+    root = tmp_path / "evidence"
+    _minimal_evidence(root)
+    missing_snapshot_root = tmp_path / "missing-snapshot"
+
+    with pytest.raises(
+        SystemExit,
+        match="release evidence snapshot directory is unavailable",
+    ):
+        release_evidence._snapshot_selected_evidence(root, missing_snapshot_root)
