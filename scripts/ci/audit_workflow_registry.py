@@ -36,6 +36,15 @@ DEFAULT_MAX_PR_PAGES = 10
 DEFAULT_MAX_PR_FILE_PAGES = 10
 _REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_WORKFLOW_STATES = frozenset(
+    {
+        "active",
+        "deleted",
+        "disabled_fork",
+        "disabled_inactivity",
+        "disabled_manually",
+    }
+)
 
 
 class AuditError(RuntimeError):
@@ -83,6 +92,13 @@ def _require_workflow_id(value: object) -> int:
     """Return a positive GitHub workflow ID without accepting booleans."""
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise AuditError("workflow id is invalid")
+    return value
+
+
+def _require_workflow_state(value: object) -> str:
+    """Return one exact documented GitHub workflow lifecycle state."""
+    if type(value) is not str or value not in _WORKFLOW_STATES:
+        raise AuditError("workflow state is invalid")
     return value
 
 
@@ -271,9 +287,7 @@ def build_audit(
                 raise AuditError("workflow registry item is malformed")
             workflow_id = _require_workflow_id(workflow.get("id"))
             path = _require_workflow_path(workflow.get("path"))
-            state = workflow.get("state")
-            if not isinstance(state, str) or not state:
-                raise AuditError("workflow state is invalid")
+            state = _require_workflow_state(workflow.get("state"))
             prior = seen_ids.get(workflow_id)
             identity = (path, state)
             if prior is not None:
@@ -337,9 +351,7 @@ def _workflow_registry_snapshot(
             raise AuditError("workflow registry snapshot is malformed")
         workflow_id = _require_workflow_id(record.get("workflow_id"))
         path = _require_workflow_path(record.get("path"))
-        state = record.get("state")
-        if not isinstance(state, str) or not state:
-            raise AuditError("workflow registry snapshot is malformed")
+        state = _require_workflow_state(record.get("state"))
         snapshot.append((workflow_id, path, state))
     return tuple(snapshot)
 
