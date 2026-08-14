@@ -35,7 +35,7 @@ def test_documented_compatibility_ranges_match_source_controlled_overlay() -> No
     guide = GUIDE.read_text(encoding="utf-8")
     source = VALIDATION.read_text(encoding="utf-8")
 
-    for network in (
+    source_controlled_networks = (
         "192.0.0.0/24",
         "192.0.0.9/32",
         "192.0.0.10/32",
@@ -49,10 +49,15 @@ def test_documented_compatibility_ranges_match_source_controlled_overlay() -> No
         "2001:4:112::/48",
         "2001:20::/28",
         "2001:30::/28",
-        "2001:2::/48",
         "2002::/16",
         "3fff::/20",
         "5f00::/16",
-    ):
+    )
+    for network in source_controlled_networks:
         assert network in guide
         assert network in source
+
+    # The guide calls out this IANA child allocation explicitly, while the
+    # implementation denies it through the reviewed broader 2001::/23 parent.
+    assert "2001:2::/48" in guide
+    assert "2001::/23" in source
