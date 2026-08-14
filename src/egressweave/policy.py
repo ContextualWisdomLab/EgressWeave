@@ -178,7 +178,7 @@ class EgressPolicy:
         """Validate and canonicalize every immutable policy field."""
         if not isinstance(self.allow_local, bool):
             raise TypeError("allow_local must be a boolean")
-        if not isinstance(self.request_timeout_policy, EgressTimeoutPolicy):
+        if type(self.request_timeout_policy) is not EgressTimeoutPolicy:
             raise TypeError(
                 "request_timeout_policy must be an EgressTimeoutPolicy"
             )
