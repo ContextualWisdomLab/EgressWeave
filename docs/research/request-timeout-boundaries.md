@@ -14,6 +14,16 @@ HTTPX timeout extension immediately before HTTPCore dispatch:
 - malformed maps, unknown keys, booleans, negative values, and non-finite
   numbers fail through the generic `EgressNotAllowedError` boundary.
 
+The trusted policy-construction boundary accepts only the exact
+`EgressTimeoutPolicy` type. Subclass polymorphism is not a supported extension
+mechanism because transport binding later invokes `as_httpcore_timeout()`: a
+subclass could otherwise replace that reviewed export path after startup
+validation. Applications that supplied an `EgressTimeoutPolicy` subclass must
+migrate to an exact instance configured through the documented immutable timeout
+fields. This secure-default boundary keeps declarative values authoritative; it
+does not claim to sandbox arbitrary trusted Python code executing in the host
+process.
+
 Policy maxima must be greater than zero. A request may still choose zero as an
 immediate, stricter timeout. The sanitized mapping is detached from caller-owned
 state and preserves unrelated safe extensions, including the validated TLS
@@ -49,6 +59,8 @@ response data.
 
 ## Security properties
 
+- **Exact trusted policy type:** construction rejects timeout-policy subclasses
+  before any later transport export can dynamically dispatch subclass code.
 - **No timeout disablement:** missing and `None` phase values become finite.
 - **No weaker override:** a request cannot exceed the immutable policy cap.
 - **Stricter caller control:** non-negative values below the cap are retained.
