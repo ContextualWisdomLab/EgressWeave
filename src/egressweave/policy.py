@@ -182,9 +182,7 @@ class EgressPolicy:
             raise TypeError(
                 "request_timeout_policy must be an EgressTimeoutPolicy"
             )
-        if not isinstance(
-            self.connection_pool_policy, EgressConnectionPoolPolicy
-        ):
+        if type(self.connection_pool_policy) is not EgressConnectionPoolPolicy:
             raise TypeError(
                 "connection_pool_policy must be an EgressConnectionPoolPolicy"
             )
