@@ -111,18 +111,9 @@ class EgressDecisionEvidence:
     policy_fingerprint: str
     decision_fingerprint: str
 
-    def __init__(
-        self,
-        schema_version: str,
-        authority: str,
-        allowed_methods: tuple[str, ...],
-        address_count: int,
-        ipv4_address_count: int,
-        ipv6_address_count: int,
-        policy_fingerprint: str,
-        decision_fingerprint: str,
-    ) -> None:
-        """Reject direct construction so only the validating builder issues records."""
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Reject every direct construction shape in favor of the validating builder."""
+        del args, kwargs
         raise TypeError(
             "EgressDecisionEvidence objects must come from the evidence builder"
         )
