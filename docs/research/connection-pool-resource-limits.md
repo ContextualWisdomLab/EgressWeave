@@ -18,13 +18,17 @@ an exact `EgressConnectionPoolPolicy` with different documented field values
 instead. This boundary does not claim EgressWeave sandboxes arbitrary Python
 code already executing inside the embedding process.
 
-`max_connections` must be a positive integer or ASCII decimal string.
-`max_keepalive_connections` may be zero to retain no idle connections but must
-not exceed total capacity. `keepalive_expiry_seconds` must be a finite
-non-negative real number and may be zero for immediate expiry. Booleans,
-fractional counts, signed or non-ASCII count text, negative values, non-finite
-expiry values, unrelated objects, and contradictory capacities fail during
-trusted policy construction.
+`max_connections` must be an exact built-in `int` greater than zero or an ASCII
+decimal string. `max_keepalive_connections` accepts the same reviewed forms,
+may be zero to retain no idle connections, and must not exceed total capacity.
+Integer subclasses are rejected before normalization so caller-defined numeric
+behavior cannot cross the trusted configuration boundary. A caller using an
+integer subclass must migrate by converting its validated value to an exact
+built-in integer or an approved ASCII decimal string before constructing the
+policy. `keepalive_expiry_seconds` must be a finite non-negative real number and
+may be zero for immediate expiry. Booleans, fractional counts, signed or
+non-ASCII count text, negative values, non-finite expiry values, unrelated
+objects, and contradictory capacities fail during trusted policy construction.
 
 ## Standards basis
 
@@ -54,18 +58,21 @@ and portable across standalone and modular integrations.
 1. Both public `EgressPolicy` constructors accept the same immutable pool policy.
 2. Trusted construction accepts only the exact `EgressConnectionPoolPolicy`
    type; subclasses are rejected before transport pool values are read.
-3. Total connection capacity is always positive and finite.
-4. Idle capacity is finite, may be zero, and cannot exceed total capacity.
-5. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
-6. Synchronous and asynchronous HTTPCore pools receive the exact normalized
+3. Count fields accept only exact built-in integers or reviewed ASCII decimal
+   strings; integer subclasses and booleans are rejected.
+4. Total connection capacity is always positive and finite.
+5. Idle capacity is finite, may be zero, and cannot exceed total capacity.
+6. Idle expiry is finite and non-negative; `None` cannot disable reclamation.
+7. Synchronous and asynchronous HTTPCore pools receive the exact normalized
    values from the policy.
-7. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
-8. The normalized pool policy participates in deterministic policy and decision
+8. No transport imports HTTPX's private `DEFAULT_LIMITS` object.
+9. The normalized pool policy participates in deterministic policy and decision
    fingerprints without recording live connection state.
-9. Defaults, valid environment-style count text, invalid configuration,
-   relational invariants, exact policy-type enforcement, sync/async delegation,
-   public API exposure, and fingerprint drift are covered by offline regression
-   tests with complete production statement and branch coverage.
+10. Defaults, valid environment-style count text, invalid configuration,
+    relational invariants, exact policy-type and count-type enforcement,
+    sync/async delegation, public API exposure, and fingerprint drift are covered
+    by offline regression tests with complete production statement and branch
+    coverage.
 
 ## Operational guidance
 
@@ -80,7 +87,9 @@ assuming it is universally safer.
 
 Applications that previously subclassed `EgressConnectionPoolPolicy` must
 migrate to an exact instance and configure the supported finite fields directly.
-The exact-type check runs during trusted startup, before a pool or request can
+Applications that supplied integer subclasses for either count must convert the
+validated count to an exact built-in `int` or an approved ASCII decimal string.
+Both exact-type checks run during trusted startup, before a pool or request can
 consume those values.
 
 ## References
