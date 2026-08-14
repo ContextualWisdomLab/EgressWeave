@@ -6,7 +6,6 @@ import pytest
 
 from egressweave import EgressDecisionEvidence
 
-
 _DIRECT_CONSTRUCTION_ERROR = (
     "EgressDecisionEvidence objects must come from the evidence builder"
 )
