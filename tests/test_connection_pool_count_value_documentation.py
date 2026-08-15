@@ -16,8 +16,9 @@ def test_connection_pool_guide_documents_exact_builtin_count_values() -> None:
 
     for fragment in (
         "exact built-in `int`",
-        "Integer subclasses are rejected",
+        "exact built-in `str`",
+        "Integer and string subclasses are rejected",
         "must migrate",
-        "approved ASCII decimal string",
+        "exact built-in ASCII decimal `str`",
     ):
         assert fragment in guide
