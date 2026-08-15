@@ -24,14 +24,15 @@ The v1 contract requires every emitted field, including the non-empty
 `address_count` total and its IPv4/IPv6 family counts. Its `authority` field is a
 bounded canonical lowercase ASCII hostname plus TCP port, matching the runtime
 comparison form after IDNA processing. The schema rejects URL syntax,
-credentials, paths, IP literals, non-canonical hostname spellings, DNS names
-beyond the runtime length ceiling, and ports outside `1..65535` rather than
-accepting sensitive or impossible authority shapes that runtime evidence cannot
-emit. `allowed_methods` may be an intentionally empty deny-all set, but any
-method token must already be an uppercase normalized token and `CONNECT` is
-never accepted. These checks describe evidence for a decision that was already
-authorized; the artifact is subject to purpose limitation and does not authorize
-a request, path, credential, tenant, or destination by itself.
+credentials, paths, IP literals and legacy numeric spellings—including dotted
+hexadecimal forms—non-canonical hostname spellings, DNS names beyond the runtime
+length ceiling, and ports outside `1..65535` rather than accepting sensitive or
+impossible authority shapes that runtime evidence cannot emit. `allowed_methods`
+may be an intentionally empty deny-all set, but any method token must already be
+an uppercase normalized token and `CONNECT` is never accepted. These checks
+describe evidence for a decision that was already authorized; the artifact is
+subject to purpose limitation and does not authorize a request, path, credential,
+tenant, or destination by itself.
 
 ## Data minimization
 
