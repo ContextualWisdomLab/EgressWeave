@@ -54,6 +54,8 @@ def test_authority_schema_rejects_non_runtime_and_sensitive_shapes() -> None:
         "api.example.com-:443",
         "127.0.0.1:443",
         "0x7f000001:443",
+        "0x7f.0.0.1:443",
+        "0.x7f:443",
         "[2001:db8::1]:443",
         "api.example.com:0",
         "api.example.com:65536",
