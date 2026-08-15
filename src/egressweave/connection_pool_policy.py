@@ -22,9 +22,9 @@ def _normalize_connection_count(
     """Return one exact ASCII-compatible connection-count limit."""
     if isinstance(value, bool):
         raise TypeError(f"{field_name} must be an integer or ASCII decimal string")
-    if isinstance(value, int):
+    if type(value) is int:
         normalized = value
-    elif isinstance(value, str):
+    elif type(value) is str:
         if not value or not value.isascii() or not value.isdecimal():
             raise ValueError(f"{field_name} must be an ASCII decimal string")
         normalized = int(value, 10)
@@ -56,10 +56,10 @@ class EgressConnectionPoolPolicy:
     ``max_connections`` is the maximum number of concurrent TCP connections the
     pool may own. ``max_keepalive_connections`` limits the subset retained while
     idle and may be zero to disable idle retention. Both count fields accept
-    exact integers or ASCII decimal strings for environment-derived settings.
-    ``keepalive_expiry_seconds`` limits how long an idle connection remains
-    reusable and may be zero for immediate expiry. The defaults preserve HTTPX's
-    documented finite baseline without importing HTTPX's private
+    exact integers or exact ASCII decimal strings for environment-derived
+    settings. ``keepalive_expiry_seconds`` limits how long an idle connection
+    remains reusable and may be zero for immediate expiry. The defaults preserve
+    HTTPX's documented finite baseline without importing HTTPX's private
     ``DEFAULT_LIMITS`` object.
     """
 
