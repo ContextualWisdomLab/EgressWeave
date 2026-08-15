@@ -11,6 +11,14 @@ class _ConnectionCountSubclass(int):
     """Represent an unreviewed integer subclass crossing trusted configuration."""
 
 
+class _ExplodingCountString(str):
+    """Expose polymorphic string inspection in trusted count normalization."""
+
+    def isascii(self) -> bool:
+        """Fail if normalization invokes a subclass-controlled text method."""
+        raise AssertionError("string subclass isascii executed")
+
+
 @pytest.mark.parametrize(
     "field_name",
     ["max_connections", "max_keepalive_connections"],
@@ -20,6 +28,20 @@ def test_connection_pool_policy_rejects_integer_subclasses(field_name: str) -> N
     with pytest.raises(TypeError, match=field_name):
         EgressConnectionPoolPolicy(
             **{field_name: _ConnectionCountSubclass(1)}  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["max_connections", "max_keepalive_connections"],
+)
+def test_connection_pool_policy_rejects_string_subclasses_before_inspection(
+    field_name: str,
+) -> None:
+    """Reject non-exact strings before invoking their text protocol methods."""
+    with pytest.raises(TypeError, match=field_name):
+        EgressConnectionPoolPolicy(
+            **{field_name: _ExplodingCountString("1")}  # type: ignore[arg-type]
         )
 
 
