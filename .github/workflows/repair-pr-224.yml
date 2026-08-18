@@ -3,7 +3,7 @@ name: Repair PR 224 multi-hash lock evidence
 on:
   push:
     branches:
-      - dependabot/pip/ruff-0.16.3
+      - repair/ruff-0.16.3-multihash-lock
     paths:
       - .github/workflows/repair-pr-224.yml
 
@@ -18,12 +18,12 @@ jobs:
   repair:
     if: >-
       github.repository == 'ContextualWisdomLab/EgressWeave' &&
-      github.ref == 'refs/heads/dependabot/pip/ruff-0.16.3'
+      github.ref == 'refs/heads/repair/ruff-0.16.3-multihash-lock'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      EXPECTED_PARENT_SHA: 006161e9530ae081623f81b6cf4d32bce6a55bcc
-      TARGET_BRANCH: dependabot/pip/ruff-0.16.3
+      EXPECTED_PARENT_SHA: 6ebfe145363229f06ee34898c75bd9ede2c6c6ac
+      TARGET_BRANCH: repair/ruff-0.16.3-multihash-lock
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -196,11 +196,11 @@ jobs:
                       generator = _load_generator()
                       lock_text = LOCK_PATH.read_text(encoding="utf-8")
                       needle = (
-                          "anyio==4.14.2 \\\\n"
+                          "anyio==4.14.2 \\\n"
                           "    --hash=sha256:"
                           "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
                       )
-                      replacement = needle + " \\\\n    --hash=sha256:" + ("f" * 64)
+                      replacement = needle + " \\\n    --hash=sha256:" + ("f" * 64)
                       assert lock_text.count(needle) == 1
                       portable_lock = tmp_path / "requirements-ci.txt"
                       portable_lock.write_text(
