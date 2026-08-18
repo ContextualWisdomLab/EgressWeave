@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      EXPECTED_PARENT_SHA: 0cac905538aa51831157626d026146bd97236db0
+      EXPECTED_PARENT_SHA: 006161e9530ae081623f81b6cf4d32bce6a55bcc
       TARGET_BRANCH: dependabot/pip/ruff-0.16.3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,111 +37,58 @@ jobs:
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$(git branch --show-current)" = "$TARGET_BRANCH"
-      - name: Apply minimal multi-hash parser correction and RED regressions
+      - name: Apply minimal multi-hash parser correction and regressions
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
+          from textwrap import dedent
 
           script_path = Path("scripts/ci/generate_release_sbom.py")
           script = script_path.read_text(encoding="utf-8")
-          old_loader = '''def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:
-              """Load exact package versions, markers, and hashes from the CI lock."""
-              try:
-                  if path.stat().st_size > MAX_MANIFEST_BYTES:
-                      raise SystemExit("runtime lock exceeds the safety bound")
-                  content = path.read_text(encoding="utf-8")
-              except (OSError, UnicodeError) as error:
-                  raise SystemExit("runtime lock is unreadable") from error
-              entries: dict[str, dict[str, str | None]] = {}
-              for raw_line in content.replace("\\\\\\n", " ").splitlines():
-                  line = raw_line.strip()
-                  if not line or line.startswith("#"):
-                      continue
-                  if line.count("--hash=sha256:") != 1:
+
+          replacements = [
+              (
+                  "def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:\n",
+                  "def _load_runtime_lock(\n"
+                  "    path: Path,\n"
+                  ") -> dict[str, dict[str, str | tuple[str, ...] | None]]:\n",
+              ),
+              (
+                  '    """Load exact package versions, markers, and hashes from the CI lock."""\n',
+                  '    """Load exact package versions, markers, and allowed hashes from the CI lock."""\n',
+              ),
+              (
+                  "    entries: dict[str, dict[str, str | None]] = {}\n",
+                  "    entries: dict[\n"
+                  "        str, dict[str, str | tuple[str, ...] | None]\n"
+                  "    ] = {}\n",
+              ),
+              (
+                  '''        if line.count("--hash=sha256:") != 1:
                       raise SystemExit("runtime lock entries require exactly one SHA-256 hash")
                   requirement_text, digest = line.split("--hash=sha256:", 1)
                   digest = digest.strip()
                   if SHA256.fullmatch(digest) is None:
                       raise SystemExit("runtime lock contains a noncanonical SHA-256 hash")
-                  try:
-                      requirement = Requirement(requirement_text.strip())
-                  except InvalidRequirement as error:
-                      raise SystemExit("runtime lock contains an invalid requirement") from error
-                  if requirement.extras:
-                      raise SystemExit("runtime lock requirements must not use extras")
-                  name = _name(requirement.name)
-                  if name in entries:
-                      raise SystemExit(f"runtime lock duplicates package {name!r}")
-                  specifiers = list(requirement.specifier)
-                  version = (
-                      specifiers[0].version
-                      if requirement.url is None
-                      and len(specifiers) == 1
-                      and specifiers[0].operator == "=="
-                      else None
-                  )
-                  entries[name] = {
-                      "version": version,
-                      "sha256": digest,
-                      "marker": str(requirement.marker) if requirement.marker is not None else None,
-                  }
-              return entries
-          '''
-          new_loader = '''def _load_runtime_lock(
-              path: Path,
-          ) -> dict[str, dict[str, str | tuple[str, ...] | None]]:
-              """Load exact package versions, markers, and allowed hashes from the CI lock."""
-              try:
-                  if path.stat().st_size > MAX_MANIFEST_BYTES:
-                      raise SystemExit("runtime lock exceeds the safety bound")
-                  content = path.read_text(encoding="utf-8")
-              except (OSError, UnicodeError) as error:
-                  raise SystemExit("runtime lock is unreadable") from error
-              entries: dict[str, dict[str, str | tuple[str, ...] | None]] = {}
-              for raw_line in content.replace("\\\\\\n", " ").splitlines():
-                  line = raw_line.strip()
-                  if not line or line.startswith("#"):
-                      continue
-                  segments = line.split("--hash=sha256:")
+          ''',
+                  '''        segments = line.split("--hash=sha256:")
                   if len(segments) < 2:
-                      raise SystemExit("runtime lock entries require at least one SHA-256 hash")
+                      raise SystemExit(
+                          "runtime lock entries require at least one SHA-256 hash"
+                      )
                   requirement_text = segments[0]
                   digests = tuple(segment.strip() for segment in segments[1:])
                   if any(SHA256.fullmatch(digest) is None for digest in digests):
                       raise SystemExit("runtime lock contains a noncanonical SHA-256 hash")
                   if len(set(digests)) != len(digests):
                       raise SystemExit("runtime lock contains a duplicate SHA-256 hash")
-                  try:
-                      requirement = Requirement(requirement_text.strip())
-                  except InvalidRequirement as error:
-                      raise SystemExit("runtime lock contains an invalid requirement") from error
-                  if requirement.extras:
-                      raise SystemExit("runtime lock requirements must not use extras")
-                  name = _name(requirement.name)
-                  if name in entries:
-                      raise SystemExit(f"runtime lock duplicates package {name!r}")
-                  specifiers = list(requirement.specifier)
-                  version = (
-                      specifiers[0].version
-                      if requirement.url is None
-                      and len(specifiers) == 1
-                      and specifiers[0].operator == "=="
-                      else None
-                  )
-                  entries[name] = {
-                      "version": version,
-                      "sha256": digests,
-                      "marker": str(requirement.marker) if requirement.marker is not None else None,
-                  }
-              return entries
-          '''
-          if script.count(old_loader) != 1:
-              raise SystemExit("runtime-lock loader boundary drifted")
-          script = script.replace(old_loader, new_loader, 1)
-
-          old_validator = '''    for name, component in components.items():
+          ''',
+              ),
+              ('            "sha256": digest,\n', '            "sha256": digests,\n'),
+              (
+                  '''    for name, component in components.items():
                   locked = lock_entries.get(name)
                   expected = {
                       "version": component["version"],
@@ -152,8 +99,8 @@ jobs:
                       raise SystemExit(
                           f"component {name!r} does not match the hash-locked runtime subset"
                       )
-          '''
-          new_validator = '''    for name, component in components.items():
+          ''',
+                  '''    for name, component in components.items():
                   locked = lock_entries.get(name)
                   expected_marker = _canonical_marker(
                       component["marker"], f"component {name}"
@@ -167,102 +114,103 @@ jobs:
                       raise SystemExit(
                           f"component {name!r} does not match the hash-locked runtime subset"
                       )
-          '''
-          if script.count(old_validator) != 1:
-              raise SystemExit("runtime-lock validation boundary drifted")
-          script_path.write_text(
-              script.replace(old_validator, new_validator, 1),
-              encoding="utf-8",
-          )
+          ''',
+              ),
+          ]
+          for old, new in replacements:
+              if script.count(old) != 1:
+                  raise SystemExit(f"runtime-lock repair boundary drifted: {old[:60]!r}")
+              script = script.replace(old, new, 1)
+          script_path.write_text(script, encoding="utf-8")
 
           Path("tests/test_release_lock_hash_sets.py").write_text(
-              '''"""Regression contracts for portable multi-artifact hash locks."""
+              dedent(
+                  '''\
+                  """Regression contracts for portable multi-artifact hash locks."""
 
-          from __future__ import annotations
+                  from __future__ import annotations
 
-          import importlib.util
-          from pathlib import Path
+                  import importlib.util
+                  from pathlib import Path
 
-          import pytest
+                  import pytest
 
-          REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-          GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
-          MANIFEST_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "release_runtime_dependencies.json"
-          LOCK_PATH = REPOSITORY_ROOT / "requirements-ci.txt"
-
-
-          def _load_generator():
-              """Load the repository SBOM generator without packaging it."""
-              specification = importlib.util.spec_from_file_location(
-                  "egressweave_release_lock_hash_sets",
-                  GENERATOR_PATH,
-              )
-              assert specification is not None and specification.loader is not None
-              module = importlib.util.module_from_spec(specification)
-              specification.loader.exec_module(module)
-              return module
+                  REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+                  GENERATOR_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "generate_release_sbom.py"
+                  MANIFEST_PATH = REPOSITORY_ROOT / "scripts" / "ci" / "release_runtime_dependencies.json"
+                  LOCK_PATH = REPOSITORY_ROOT / "requirements-ci.txt"
 
 
-          def test_runtime_lock_accepts_distinct_platform_hashes(tmp_path: Path) -> None:
-              """Preserve every exact artifact hash attached to one pinned version."""
-              generator = _load_generator()
-              first_digest = "a" * 64
-              second_digest = "b" * 64
-              lock_path = tmp_path / "requirements-ci.txt"
-              lock_path.write_text(
-                  "tool==1.2.3 \\\\n"
-                  f"    --hash=sha256:{first_digest} \\\\n"
-                  f"    --hash=sha256:{second_digest}\\n",
-                  encoding="utf-8",
-              )
-
-              assert generator._load_runtime_lock(lock_path) == {
-                  "tool": {
-                      "version": "1.2.3",
-                      "sha256": (first_digest, second_digest),
-                      "marker": None,
-                  }
-              }
+                  def _load_generator():
+                      """Load the repository SBOM generator without packaging it."""
+                      specification = importlib.util.spec_from_file_location(
+                          "egressweave_release_lock_hash_sets",
+                          GENERATOR_PATH,
+                      )
+                      assert specification is not None and specification.loader is not None
+                      module = importlib.util.module_from_spec(specification)
+                      specification.loader.exec_module(module)
+                      return module
 
 
-          def test_runtime_lock_rejects_duplicate_artifact_hashes(tmp_path: Path) -> None:
-              """Reject ambiguous duplicate evidence within one package entry."""
-              generator = _load_generator()
-              digest = "a" * 64
-              lock_path = tmp_path / "requirements-ci.txt"
-              lock_path.write_text(
-                  f"tool==1.2.3 --hash=sha256:{digest} --hash=sha256:{digest}\\n",
-                  encoding="utf-8",
-              )
+                  def test_runtime_lock_accepts_distinct_platform_hashes(tmp_path: Path) -> None:
+                      """Preserve every exact artifact hash attached to one pinned version."""
+                      generator = _load_generator()
+                      first_digest = "a" * 64
+                      second_digest = "b" * 64
+                      lock_path = tmp_path / "requirements-ci.txt"
+                      lock_path.write_text(
+                          "tool==1.2.3 "
+                          f"--hash=sha256:{first_digest} "
+                          f"--hash=sha256:{second_digest}\\n",
+                          encoding="utf-8",
+                      )
 
-              with pytest.raises(SystemExit, match="duplicate SHA-256"):
-                  generator._load_runtime_lock(lock_path)
+                      assert generator._load_runtime_lock(lock_path) == {
+                          "tool": {
+                              "version": "1.2.3",
+                              "sha256": (first_digest, second_digest),
+                              "marker": None,
+                          }
+                      }
 
 
-          def test_runtime_manifest_accepts_its_digest_among_platform_hashes(
-              tmp_path: Path,
-          ) -> None:
-              """Bind runtime evidence to one reviewed digest in a portable hash set."""
-              generator = _load_generator()
-              lock_text = LOCK_PATH.read_text(encoding="utf-8")
-              marker = "anyio==4.14.2 \\\\n    --hash=sha256:"
-              assert lock_text.count(marker) == 1
-              prefix, suffix = lock_text.split(marker, 1)
-              digest, remainder = suffix.split("\\n", 1)
-              portable_lock = tmp_path / "requirements-ci.txt"
-              portable_lock.write_text(
-                  prefix
-                  + marker
-                  + digest
-                  + " \\\\n    --hash=sha256:"
-                  + ("f" * 64)
-                  + "\\n"
-                  + remainder,
-                  encoding="utf-8",
-              )
+                  def test_runtime_lock_rejects_duplicate_artifact_hashes(tmp_path: Path) -> None:
+                      """Reject ambiguous duplicate evidence within one package entry."""
+                      generator = _load_generator()
+                      digest = "a" * 64
+                      lock_path = tmp_path / "requirements-ci.txt"
+                      lock_path.write_text(
+                          f"tool==1.2.3 --hash=sha256:{digest} --hash=sha256:{digest}\\n",
+                          encoding="utf-8",
+                      )
 
-              generator.validate_runtime_lock(MANIFEST_PATH, portable_lock)
-          ''',
+                      with pytest.raises(SystemExit, match="duplicate SHA-256"):
+                          generator._load_runtime_lock(lock_path)
+
+
+                  def test_runtime_manifest_accepts_its_digest_among_platform_hashes(
+                      tmp_path: Path,
+                  ) -> None:
+                      """Bind runtime evidence to one reviewed digest in a portable hash set."""
+                      generator = _load_generator()
+                      lock_text = LOCK_PATH.read_text(encoding="utf-8")
+                      needle = (
+                          "anyio==4.14.2 \\\\n"
+                          "    --hash=sha256:"
+                          "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
+                      )
+                      replacement = needle + " \\\\n    --hash=sha256:" + ("f" * 64)
+                      assert lock_text.count(needle) == 1
+                      portable_lock = tmp_path / "requirements-ci.txt"
+                      portable_lock.write_text(
+                          lock_text.replace(needle, replacement, 1),
+                          encoding="utf-8",
+                      )
+
+                      generator.validate_runtime_lock(MANIFEST_PATH, portable_lock)
+                  '''
+              ),
               encoding="utf-8",
           )
 
