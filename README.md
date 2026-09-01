@@ -1,5 +1,7 @@
 # egressweave
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/EgressWeave)
+
 **SSRF- and DNS-rebinding-safe outbound HTTP for Python.**
 
 `egressweave` validates an outbound URL against exact host-and-port
