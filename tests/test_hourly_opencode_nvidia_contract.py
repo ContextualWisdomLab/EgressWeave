@@ -17,7 +17,6 @@ REVIEW_WORKFLOW_PATH = (
 MAINTENANCE_DOCUMENTATION_PATH = (
     REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
 )
-README_PATH = REPOSITORY_ROOT / "README.md"
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
@@ -197,14 +196,14 @@ def test_operator_documentation_forbids_repository_local_patch_publication() -> 
     assert "reconstruct and verify the exact tree" in documentation
 
 
-def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
-    """Keep the public execution identity aligned with the audited workflow."""
-    readme = _read(README_PATH)
+def test_operator_documentation_identifies_the_opencode_nvidia_maintainer() -> None:
+    """Keep audited maintainer identity in the operator surface, not buyer copy."""
+    documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
 
-    assert "bounded Codex maintainer" not in readme
-    assert "bounded OpenCode maintainer" in readme
-    assert "`NVIDIA_NIM_API_KEY`" in readme
-    assert "COPILOT_GITHUB_TOKEN" not in readme
+    assert "bounded Codex maintainer" not in documentation
+    assert "bounded OpenCode maintainer" in documentation
+    assert "`NVIDIA_NIM_API_KEY`" in documentation
+    assert "COPILOT_GITHUB_TOKEN" not in documentation
 
 
 def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
