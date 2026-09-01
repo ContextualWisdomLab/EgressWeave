@@ -88,6 +88,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Require exact built-in `bytes` from synchronous and asynchronous dependency
+  response streams before body-length accounting. Polymorphic chunks can no
+  longer under-report their payload through subclass-defined `__len__`; rejected
+  streams close deterministically and callers retain the generic non-leaking
+  policy denial.
 - Harden release publication evidence with validated integrating-PR identity,
   cross-repository required-workflow source checks, and Strix check-run
   annotations without adding an elevated release credential.

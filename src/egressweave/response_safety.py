@@ -6,8 +6,11 @@ field section or body and exhaust process memory, disk-backed buffers, or worker
 capacity. EgressWeave bounds decoded response-header fields and their name/value
 bytes, requests identity coding, rejects a body-bearing response that nevertheless
 applies a content coding, rejects unsafe declared lengths before caller-visible
-delivery, and counts every transfer-decoded body byte while it is consumed. The
-identity-coding invariant prevents decompression expansion outside the byte budget.
+delivery, and counts every transfer-decoded body byte while it is consumed. Only
+exact built-in ``bytes`` chunks are accepted before that accounting, so a private
+dependency shape cannot under-report body size through polymorphic length behavior.
+The identity-coding invariant prevents decompression expansion outside the byte
+budget.
 """
 
 from __future__ import annotations
@@ -228,7 +231,7 @@ def _enforce_declared_response_size(
 
 
 class _BoundedSyncResponseStream(httpx.SyncByteStream):
-    """Count identity-coded sync response bytes and close on first overrun."""
+    """Count exact identity-coded sync response bytes and close on denial."""
 
     def __init__(
         self, stream: httpx.SyncByteStream, max_response_bytes: int
@@ -238,9 +241,12 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     def __iter__(self) -> Iterator[bytes]:
-        """Yield chunks until the next complete chunk exceeds the budget."""
+        """Yield exact chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         for chunk in self._stream:
+            if type(chunk) is not bytes:
+                _close_sync_response_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             consumed_bytes += len(chunk)
             if consumed_bytes > self._max_response_bytes:
                 try:
@@ -255,7 +261,7 @@ class _BoundedSyncResponseStream(httpx.SyncByteStream):
 
 
 class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
-    """Count identity-coded async response bytes and close on first overrun."""
+    """Count exact identity-coded async response bytes and close on denial."""
 
     def __init__(
         self, stream: httpx.AsyncByteStream, max_response_bytes: int
@@ -265,9 +271,12 @@ class _BoundedAsyncResponseStream(httpx.AsyncByteStream):
         self._max_response_bytes = max_response_bytes
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
-        """Yield chunks until the next complete chunk exceeds the budget."""
+        """Yield exact chunks until the next complete chunk exceeds the budget."""
         consumed_bytes = 0
         async for chunk in self._stream:
+            if type(chunk) is not bytes:
+                await _close_async_response_after_policy_denial(self._stream)
+                raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
             consumed_bytes += len(chunk)
             if consumed_bytes > self._max_response_bytes:
                 try:
