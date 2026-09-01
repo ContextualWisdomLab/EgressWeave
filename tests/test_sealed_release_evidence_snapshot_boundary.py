@@ -85,13 +85,18 @@ def _source_identity() -> bytes:
     ).encode("utf-8")
 
 
-def _evidence(root: Path) -> dict[str, Path]:
+def _evidence(
+    root: Path,
+    *,
+    wheel_bytes: bytes = b"wheel",
+    sdist_bytes: bytes = b"sdist",
+) -> dict[str, Path]:
     """Create one complete valid six-file release evidence set."""
     root.mkdir()
     wheel = root / f"egressweave-{VERSION}-py3-none-any.whl"
     sdist = root / f"egressweave-{VERSION}.tar.gz"
-    wheel.write_bytes(b"wheel")
-    sdist.write_bytes(b"sdist")
+    wheel.write_bytes(wheel_bytes)
+    sdist.write_bytes(sdist_bytes)
     wheel_sbom = root / f"{wheel.name}.cdx.json"
     sdist_sbom = root / f"{sdist.name}.cdx.json"
     wheel_sbom.write_text(
@@ -140,6 +145,19 @@ def test_hashing_rejects_a_symlink_even_when_target_bytes_are_valid(
         )
 
 
+def test_hashing_enforces_the_configured_safety_bound(tmp_path: Path) -> None:
+    """Fail closed before hashing bytes beyond a caller-selected finite bound."""
+    path = tmp_path / "payload"
+    path.write_bytes(b"too large")
+
+    with pytest.raises(SystemExit, match="safety bound"):
+        release_evidence._sha256_file(
+            path,
+            maximum_bytes=1,
+            label="payload",
+        )
+
+
 def test_descriptor_identity_error_is_masked_as_unsafe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -167,6 +185,27 @@ def test_descriptor_identity_error_is_masked_as_unsafe(
         )
 
 
+def test_root_identity_error_is_normalized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normalize root metadata loss at the snapshot admission boundary."""
+    root = tmp_path / "evidence"
+    root.mkdir()
+    original_lstat = Path.lstat
+
+    def fail_root_lstat(candidate: Path):
+        """Model the evidence root disappearing during identity capture."""
+        if candidate == root:
+            raise OSError("gone")
+        return original_lstat(candidate)
+
+    monkeypatch.setattr(Path, "lstat", fail_root_lstat)
+
+    with pytest.raises(SystemExit, match="release evidence directory changed"):
+        release_evidence._evidence_root_identity(root)
+
+
 @pytest.mark.parametrize("mismatch", ["before", "after"])
 def test_stable_read_rejects_each_digest_mismatch(mismatch: str) -> None:
     """Reject either a stale pre-read digest or a changed post-read digest."""
@@ -185,11 +224,190 @@ def test_stable_read_rejects_each_digest_mismatch(mismatch: str) -> None:
         )
 
 
+def test_snapshot_rejects_source_open_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed when an admitted direct child cannot be descriptor-opened."""
+    root = tmp_path / "evidence"
+    snapshot_root = tmp_path / "snapshot"
+    paths = _evidence(root)
+    snapshot_root.mkdir()
+    original_open = Path.open
+
+    def fail_wheel_open(candidate: Path, *args, **kwargs):
+        """Model one source file becoming unreadable after path selection."""
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if candidate == paths["wheel"] and mode == "rb":
+            raise OSError("unreadable")
+        return original_open(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_wheel_open)
+
+    with pytest.raises(SystemExit, match="wheel is unreadable"):
+        release_evidence._snapshot_selected_evidence(root, snapshot_root)
+
+
+def test_snapshot_rejects_root_identity_change_after_opening_children(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject a root identity change after all direct children have opened."""
+    root = tmp_path / "evidence"
+    snapshot_root = tmp_path / "snapshot"
+    _evidence(root)
+    snapshot_root.mkdir()
+    original_identity = release_evidence._evidence_root_identity
+    root_calls = 0
+
+    def change_second_root_identity(candidate: Path) -> tuple[int, int]:
+        """Return a distinct identity at the post-open root checkpoint."""
+        nonlocal root_calls
+        identity = original_identity(candidate)
+        if candidate == root:
+            root_calls += 1
+            if root_calls == 2:
+                return identity[0], identity[1] + 1
+        return identity
+
+    monkeypatch.setattr(
+        release_evidence,
+        "_evidence_root_identity",
+        change_second_root_identity,
+    )
+
+    with pytest.raises(SystemExit, match="release evidence directory changed"):
+        release_evidence._snapshot_selected_evidence(root, snapshot_root)
+
+
+def test_snapshot_rejects_private_copy_creation_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed when the verifier cannot create its private finite snapshot."""
+    root = tmp_path / "evidence"
+    snapshot_root = tmp_path / "snapshot"
+    _evidence(root)
+    snapshot_root.mkdir()
+    original_open = Path.open
+
+    def fail_snapshot_open(candidate: Path, *args, **kwargs):
+        """Model local snapshot storage becoming unavailable at first write."""
+        mode = args[0] if args else kwargs.get("mode", "r")
+        if candidate.parent == snapshot_root and mode == "xb":
+            raise OSError("snapshot unavailable")
+        return original_open(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_snapshot_open)
+
+    with pytest.raises(SystemExit, match="cannot be snapshotted safely"):
+        release_evidence._snapshot_selected_evidence(root, snapshot_root)
+
+
+def test_manifest_rejects_release_root_replacement_after_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a whole-directory replacement outside the sealed-evidence boundary."""
+    root = tmp_path / "evidence"
+    parked_root = tmp_path / "evidence-original"
+    replacement_root = tmp_path / "evidence-replacement"
+    _evidence(root)
+    _evidence(
+        replacement_root,
+        wheel_bytes=b"replacement wheel bytes",
+        sdist_bytes=b"replacement sdist bytes",
+    )
+    original_load_checksums = release_evidence._load_checksums
+
+    def replace_root_then_load(
+        checksum_path: Path,
+        expected_names: set[str],
+    ) -> tuple[dict[str, str], str]:
+        """Replace the already-selected evidence directory before first hashing."""
+        root.rename(parked_root)
+        replacement_root.rename(root)
+        return original_load_checksums(checksum_path, expected_names)
+
+    monkeypatch.setattr(release_evidence, "_load_checksums", replace_root_then_load)
+
+    with pytest.raises(SystemExit, match="release evidence directory changed"):
+        release_evidence.build_evidence_manifest(
+            root,
+            repository=REPOSITORY,
+            source_sha=SOURCE_SHA,
+        )
+
+
+def test_manifest_keeps_original_root_authority_across_transient_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Do not let replace-then-restore redirect one verification decision."""
+    root = tmp_path / "evidence"
+    parked_root = tmp_path / "evidence-original"
+    replacement_root = tmp_path / "evidence-replacement"
+    original_paths = _evidence(root)
+    _evidence(
+        replacement_root,
+        wheel_bytes=b"replacement wheel bytes",
+        sdist_bytes=b"replacement sdist bytes",
+    )
+    original_load_checksums = release_evidence._load_checksums
+    original_sha256_file = release_evidence._sha256_file
+    checksum_hash_count = 0
+
+    def replace_root_then_load(
+        checksum_path: Path,
+        expected_names: set[str],
+    ) -> tuple[dict[str, str], str]:
+        """Redirect later path opens to a self-consistent replacement root."""
+        root.rename(parked_root)
+        replacement_root.rename(root)
+        return original_load_checksums(checksum_path, expected_names)
+
+    def hash_then_restore_root(
+        path: Path,
+        *,
+        maximum_bytes: int,
+        label: str,
+    ) -> str:
+        """Restore the original pathname only after replacement verification."""
+        nonlocal checksum_hash_count
+        digest = original_sha256_file(
+            path,
+            maximum_bytes=maximum_bytes,
+            label=label,
+        )
+        if label == "SHA256SUMS":
+            checksum_hash_count += 1
+            if checksum_hash_count == 3:
+                root.rename(replacement_root)
+                parked_root.rename(root)
+        return digest
+
+    monkeypatch.setattr(release_evidence, "_load_checksums", replace_root_then_load)
+    monkeypatch.setattr(release_evidence, "_sha256_file", hash_then_restore_root)
+
+    manifest = release_evidence.build_evidence_manifest(
+        root,
+        repository=REPOSITORY,
+        source_sha=SOURCE_SHA,
+    )
+    artifact_digests = {
+        item["kind"]: item["artifactSha256"] for item in manifest["artifacts"]
+    }
+    assert artifact_digests == {
+        "sdist": _digest(original_paths["sdist"]),
+        "wheel": _digest(original_paths["wheel"]),
+    }
+
+
 def test_manifest_rejects_payload_mutation_during_sbom_verification(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Do not issue a manifest after verified payload bytes have changed."""
+    """Do not issue a manifest after verified source payload bytes have changed."""
     root = tmp_path / "evidence"
     paths = _evidence(root)
     original_verify = release_evidence._verify_sbom
@@ -202,7 +420,7 @@ def test_manifest_rejects_payload_mutation_during_sbom_verification(
         version: str,
         expected_digest: str,
     ) -> str:
-        """Change the wheel only after the verifier captured all initial digests."""
+        """Change the source wheel after the verifier captured all initial digests."""
         serial = original_verify(
             sbom_path,
             artifact_name=artifact_name,
@@ -217,6 +435,97 @@ def test_manifest_rejects_payload_mutation_during_sbom_verification(
     monkeypatch.setattr(release_evidence, "_verify_sbom", verify_then_mutate)
 
     with pytest.raises(SystemExit, match="changed during verification"):
+        release_evidence.build_evidence_manifest(
+            root,
+            repository=REPOSITORY,
+            source_sha=SOURCE_SHA,
+        )
+
+
+def test_manifest_rejects_private_snapshot_payload_corruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed if local snapshot storage changes after semantic verification."""
+    root = tmp_path / "evidence"
+    _evidence(root)
+    original_verify = release_evidence._verify_sbom
+
+    def verify_then_corrupt_snapshot(
+        sbom_path: Path,
+        *,
+        artifact_name: str,
+        artifact_digest: str,
+        version: str,
+        expected_digest: str,
+    ) -> str:
+        """Corrupt a previously verified snapshot artifact after the final SBOM."""
+        serial = original_verify(
+            sbom_path,
+            artifact_name=artifact_name,
+            artifact_digest=artifact_digest,
+            version=version,
+            expected_digest=expected_digest,
+        )
+        if artifact_name.endswith(".whl"):
+            (sbom_path.parent / f"egressweave-{VERSION}.tar.gz").write_bytes(
+                b"local snapshot corruption"
+            )
+        return serial
+
+    monkeypatch.setattr(
+        release_evidence,
+        "_verify_sbom",
+        verify_then_corrupt_snapshot,
+    )
+
+    with pytest.raises(SystemExit, match="release evidence changed during verification"):
+        release_evidence.build_evidence_manifest(
+            root,
+            repository=REPOSITORY,
+            source_sha=SOURCE_SHA,
+        )
+
+
+def test_manifest_rejects_private_snapshot_checksum_corruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail closed if the private checksum snapshot changes before handoff."""
+    root = tmp_path / "evidence"
+    _evidence(root)
+    original_verify = release_evidence._verify_sbom
+
+    def verify_then_corrupt_checksum(
+        sbom_path: Path,
+        *,
+        artifact_name: str,
+        artifact_digest: str,
+        version: str,
+        expected_digest: str,
+    ) -> str:
+        """Corrupt snapshot SHA256SUMS only after both SBOMs were accepted."""
+        serial = original_verify(
+            sbom_path,
+            artifact_name=artifact_name,
+            artifact_digest=artifact_digest,
+            version=version,
+            expected_digest=expected_digest,
+        )
+        if artifact_name.endswith(".whl"):
+            (sbom_path.parent / "SHA256SUMS").write_text(
+                "local snapshot corruption\n",
+                encoding="ascii",
+            )
+        return serial
+
+    monkeypatch.setattr(
+        release_evidence,
+        "_verify_sbom",
+        verify_then_corrupt_checksum,
+    )
+
+    with pytest.raises(SystemExit, match="SHA256SUMS changed during verification"):
         release_evidence.build_evidence_manifest(
             root,
             repository=REPOSITORY,
