@@ -91,7 +91,7 @@ The protected implementation includes these control families:
 - **TLS identity preservation:** validated address pinning does not replace the approved hostname used for TLS server identity and HTTP authority.
 - **Request bounds:** request target, headers, body framing, actual streamed bytes, declared length and per-phase timeouts are finite and checked before or during dispatch.
 - **Response bounds:** response headers, declared length, content coding and actual streamed bytes are bounded; guarded clients request identity encoding to avoid unbounded decompression through the normal path.
-- **Connection-pool bounds:** pool fanout and acquisition behavior are explicitly bounded through `EgressConnectionPoolPolicy` rather than inherited from ambient client defaults.
+- **Connection-pool bounds:** pool fanout and idle retention are explicitly bounded through `EgressConnectionPoolPolicy`, while acquisition waits are bounded through `EgressTimeoutPolicy`.
 - **Stable denial semantics:** rejected operations raise the public policy error rather than exposing dependency-private failure details as an oracle.
 - **Bounded decision evidence:** accepted decisions can be projected into versioned evidence without treating payloads, credentials, paths, or resolved IP addresses as routine audit output.
 - **Deny-all optional configuration:** a missing or blank optional base URL produces a client that cannot perform network I/O instead of silently falling back to unrestricted HTTP.
@@ -130,6 +130,7 @@ from egressweave import EgressPolicy, TLSConfiguration, build_egress_sync_client
 
 tls = TLSConfiguration(
     ca_file="/etc/company/private-ca.pem",
+    include_default_trust_store=False,
     client_certificate_file="/etc/company/client.pem",
     client_private_key_file="/etc/company/client.key",
 )
@@ -169,8 +170,8 @@ The library does not own a durable database. It does not infer which provider or
 | Symbol | Purpose |
 | --- | --- |
 | `EgressPolicy` | Immutable destination, method, DNS and resource policy |
-| `EgressTimeoutPolicy` | Finite connect/read/write/pool timeout ceilings |
-| `EgressConnectionPoolPolicy` | Finite connection-pool capacity and acquisition policy |
+| `EgressTimeoutPolicy` | Finite connect/read/write/pool timeout ceilings, including pool-acquisition wait |
+| `EgressConnectionPoolPolicy` | Finite total/keep-alive connection capacity and keep-alive expiry |
 | `TLSConfiguration` | Immutable trust-store and optional mutual-TLS configuration |
 | `validate_egress_url(...)` / `validate_egress_url_details(...)` | Synchronously validate a URL and its pinnable address candidates |
 | `validate_egress_url_async(...)` / `validate_egress_url_details_async(...)` | Asynchronously validate a URL and its pinnable address candidates |
