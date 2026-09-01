@@ -19,11 +19,17 @@ It is a library, not a firewall or service mesh. Use it inside an application to
 | Keep failures safe to expose | Policy denials use a stable public error contract instead of leaking resolver or transport internals |
 | Support ordinary Python services | Synchronous and asynchronous clients with the same core security invariants |
 
-The protected implementation currently supports Python 3.10–3.14 and uses pinned `httpx`, `httpcore`, and `idna` runtime dependencies. The package metadata version is `0.3.0`; this repository currently has no GitHub release, so do not infer public artifact availability from the source version alone.
+The protected implementation currently supports Python 3.10–3.14 and uses pinned `httpx`, `httpcore`, and `idna` runtime dependencies.
+
+## Publication status
+
+The package metadata version is `0.3.0`, but this repository currently has no GitHub release. Release automation and package acceptance can establish that source is ready to publish; they do not establish that an artifact is already available.
+
+A bare `pip install egressweave` command is authoritative only after the exact target version appears on a verified package-index project with its expected distributions and publication/provenance evidence. Until then, install from a reviewed source checkout and preserve the repository's hash-locked verification before promoting the package into another system.
 
 ## Quickstart
 
-Install from a reviewed checkout until the target package release has independent publication evidence:
+Install from a reviewed checkout before independently verified artifact publication:
 
 ```bash
 python -m pip install .
@@ -85,7 +91,9 @@ The protected implementation includes these control families:
 - **TLS identity preservation:** validated address pinning does not replace the approved hostname used for TLS server identity and HTTP authority.
 - **Request bounds:** request target, headers, body framing, actual streamed bytes, declared length and per-phase timeouts are finite and checked before or during dispatch.
 - **Response bounds:** response headers, declared length, content coding and actual streamed bytes are bounded; guarded clients request identity encoding to avoid unbounded decompression through the normal path.
+- **Connection-pool bounds:** pool fanout and acquisition behavior are explicitly bounded through `EgressConnectionPoolPolicy` rather than inherited from ambient client defaults.
 - **Stable denial semantics:** rejected operations raise the public policy error rather than exposing dependency-private failure details as an oracle.
+- **Bounded decision evidence:** accepted decisions can be projected into versioned evidence without treating payloads, credentials, paths, or resolved IP addresses as routine audit output.
 - **Deny-all optional configuration:** a missing or blank optional base URL produces a client that cannot perform network I/O instead of silently falling back to unrestricted HTTP.
 
 EgressWeave complements, rather than replaces, firewall/service-mesh egress policy, sandboxing, application authorization, OAuth/API-key scope, tenant policy, malware inspection, job-level cancellation and service-level operations.
@@ -137,7 +145,7 @@ Local development requires explicit opt-in to both local addressing and the exac
 
 ## Product boundary
 
-EgressWeave owns the reusable in-process policy, validation, TLS and pinned-transport contracts. A host such as `naruon` owns provider configuration, credentials, tenancy, business authorization, persistence, audit retention, deployment, and the adapter that translates host settings into an EgressWeave policy.
+EgressWeave owns the reusable in-process policy, validation, TLS, connection-pool, pinned-transport, and bounded decision-evidence contracts. A host such as `naruon` owns provider configuration, credentials, tenancy, business authorization, persistence, audit retention, deployment, and the adapter that translates host settings into an EgressWeave policy.
 
 ```text
 Host application
@@ -146,8 +154,9 @@ Host application
 EgressWeave
     ├─ URL / authority / method validation
     ├─ bounded DNS resolution + address validation
-    ├─ TLS / transport policy
-    └─ bounded sync or async HTTPX client
+    ├─ TLS / pool / transport policy
+    ├─ bounded sync or async HTTPX client
+    └─ bounded decision-evidence projection
     │
     ▼
 Approved remote service
@@ -161,12 +170,16 @@ The library does not own a durable database. It does not infer which provider or
 | --- | --- |
 | `EgressPolicy` | Immutable destination, method, DNS and resource policy |
 | `EgressTimeoutPolicy` | Finite connect/read/write/pool timeout ceilings |
+| `EgressConnectionPoolPolicy` | Finite connection-pool capacity and acquisition policy |
 | `TLSConfiguration` | Immutable trust-store and optional mutual-TLS configuration |
-| `validate_egress_url(...)` / `validate_egress_url_details(...)` | Validate a URL and its pinnable address candidates |
+| `validate_egress_url(...)` / `validate_egress_url_details(...)` | Synchronously validate a URL and its pinnable address candidates |
+| `validate_egress_url_async(...)` / `validate_egress_url_details_async(...)` | Asynchronously validate a URL and its pinnable address candidates |
 | `build_egress_sync_client(...)` | Build a synchronous guarded HTTPX client |
 | `build_egress_http_client(...)` | Build an asynchronous guarded HTTPX client |
 | `build_pinned_https_client(...)` / `build_pinned_https_async_client(...)` | Build from an already validated destination |
 | `ValidatedEgressURL` | Integrity-bound validated destination state |
+| `EgressDecisionEvidence` / `build_egress_decision_evidence(...)` | Produce bounded, versioned accepted-decision evidence |
+| `get_decision_evidence_json_schema()` / `DECISION_EVIDENCE_SCHEMA_VERSION` | Expose the machine-readable decision-evidence contract |
 | `EgressNotAllowedError` | Stable public policy-denial error |
 
 For exact arguments, invariants and pre-1.0 compatibility rules, use [`docs/product/API_CONTRACT.md`](docs/product/API_CONTRACT.md) rather than copying implementation details into a host integration.
@@ -203,7 +216,7 @@ Release readiness and package-build evidence are not the same as publication evi
 - [Standards and research](docs/doctoring/REFERENCES.md)
 - [Documentation home](docs/index.md)
 
-Repository-maintenance automation is documented in the operations documentation; it is not part of the customer-facing runtime contract.
+Repository-maintenance automation is documented in [`docs/hourly-autonomous-maintenance.md`](docs/hourly-autonomous-maintenance.md); it is not part of the customer-facing runtime contract.
 
 ## Contributing and support
 
