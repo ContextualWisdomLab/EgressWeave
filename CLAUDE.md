@@ -32,9 +32,12 @@ architecture, and planned behavior rather than treating every design as shipped.
   model, product/technical contract, ADRs, and architecture documentation when
   a durable governed boundary changes.
 - Do not use `COPILOT_GITHUB_TOKEN` for autonomous product development. The
-  product-development workflow uses pinned OpenCode with
-  `NVIDIA_NIM_API_KEY`; the existing organization-owned review-agent identity
-  and inherited secret contract must not be repurposed.
+  product-development workflow uses pinned OpenCode through the org's governed
+  contextual-orchestrator gateway, pinned to `orchestrator/free`
+  (bootstrap-only `BYTEZ_API_KEY`, `NVIDIA_NIM_API_KEY`,
+  `NVIDIA_NIM_API_KEY_SUB`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`); the
+  existing organization-owned review-agent write identity and inherited
+  secret contract must not be repurposed.
 - Do not treat queued, pending, cancelled, stale-head, or previous-head checks as
   successful evidence.
 

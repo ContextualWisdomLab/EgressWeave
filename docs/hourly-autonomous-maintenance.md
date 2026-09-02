@@ -72,14 +72,44 @@ request is open. It installs the trusted base toolchain, creates a root-owned
 read-only baseline outside the model workspace, and then runs OpenCode 1.18.13
 from the official Linux x64 release asset only after verifying SHA-256
 `8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937`.
-The repository secret `NVIDIA_NIM_API_KEY` is exposed only to that process
-through OpenCode's documented `NVIDIA_API_KEY` provider variable. The explicit
-model is `nvidia/nemotron-3-super-120b-a12b`.
+
+Model access is not a direct provider call. The job vendors
+`scripts/ci/contextual_orchestrator_review_sidecar.sh` from
+`ContextualWisdomLab/.github` at the pinned immutable commit
+`6958918beaad96d0a67ce264706c828bb7f3f000` (cloned outside `$GITHUB_WORKSPACE`
+so the vendored tree cannot be swept into the model's own patch), which starts
+the org's governed contextual-orchestrator gateway as a loopback sidecar. The
+bootstrap-only provider secrets `BYTEZ_API_KEY`, `NVIDIA_NIM_API_KEY`,
+`NVIDIA_NIM_API_KEY_SUB`, `OPENROUTER_API_KEY`, and `OPENAI_API_KEY` (each
+optional; at least one is required) are registered once into the sidecar
+process's own in-memory KV and are never read again from the environment.
+OpenCode itself never sees any of those five keys: its provider `apiKey` is an
+ephemeral, per-run `CONTEXTUAL_ORCHESTRATOR_TOKEN` bearer scoped to the
+sidecar's loopback port, loaded from an owner/mode-validated file
+(`scripts/ci/load_contextual_orchestrator_token.sh`) so the raw value never
+crosses a step boundary in the runner's rendered environment. The explicit
+model is `contextual-orchestrator/orchestrator/free`, the same fail-closed,
+ZDR-first, zero-cost pool identifier
+[ContextualWisdomLab/.github](https://github.com/ContextualWisdomLab/.github)
+already pins for its own OpenCode Review and Strix jobs — which of the five
+registered providers actually serves a given hourly run is decided by the
+gateway's own live discovery and routing, not fixed in this workflow.
+As with the PR-maintenance loop's own reusable-workflow pin, refresh
+`TRUSTED_GATEWAY_SOURCE_SHA` to a later reviewed `ContextualWisdomLab/.github`
+commit through an ordinary reviewed repository change whenever the sidecar or
+token-loader scripts materially change there; nothing here re-resolves that
+pin automatically.
 
 The model execution boundary provides:
 
-- block-mode runner egress restricted to reviewed package sources, GitHub, and
-  `integrate.api.nvidia.com:443`;
+- audit-mode (not block-mode) runner egress: the gateway sidecar's live
+  multi-provider discovery (including a `https://models.dev` metadata fetch to
+  determine free-tier pricing) has no fixed host set to pin, and no consumer of
+  this exact sidecar anywhere in the org runs it under a block-mode allowlist
+  today — this matches the only production precedent (`.github`'s
+  `pr-review-autofix.yml` and `strix.yml`), not a downgrade invented here. The
+  behavioral boundary against a prompt-injected model is the deny-by-default
+  OpenCode permission block below, which this setting does not affect;
 - deny-by-default OpenCode permissions, with edits limited to the bounded source,
   test, documentation, README, and CHANGELOG paths;
 - an isolated empty `HOME` and XDG configuration/data/cache roots, plus
@@ -198,16 +228,22 @@ larger than 1,000 changed lines.
 
 The scheduled product-development workflow requires:
 
-- `NVIDIA_NIM_API_KEY`, mapped only to OpenCode's `NVIDIA_API_KEY`
-  environment variable for the NVIDIA NIM endpoint;
+- at least one of `BYTEZ_API_KEY`, `NVIDIA_NIM_API_KEY`,
+  `NVIDIA_NIM_API_KEY_SUB`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY` — the
+  bootstrap-only credentials the contextual-orchestrator gateway sidecar
+  registers into its own in-memory KV before OpenCode ever starts; a missing
+  individual secret only narrows the sidecar's discovered pool, and OpenCode
+  itself receives none of them (only the sidecar's own ephemeral
+  `CONTEXTUAL_ORCHESTRATOR_TOKEN` bearer);
 - the standard Docker installation available on GitHub-hosted Ubuntu runners;
 - one explicitly reviewed Docker Official Image `python@sha256:<64-hex>` verifier
   base committed in the workflow.
 
-The workflow fails closed when the model credential, protected base identity,
-reviewed verifier-base digest, immutable built verifier image, container
-isolation, or patch identity is unavailable. It has no fallback repository-write
-identity and does not reuse review-agent, release, package, attestation, or ref
+The workflow fails closed when every gateway provider credential, the vendored
+sidecar's pinned-commit checkout, protected base identity, reviewed
+verifier-base digest, immutable built verifier image, container isolation, or
+patch identity is unavailable. It has no fallback repository-write identity
+and does not reuse review-agent, release, package, attestation, or ref
 credentials.
 
 ## Manual operation
@@ -223,8 +259,11 @@ condition or turn the verified handoff into a repository write.
 Anomaly. (2026). *OpenCode CLI documentation*.
 https://opencode.ai/docs/cli/
 
-Anomaly. (2026). *OpenCode providers: NVIDIA*.
+Anomaly. (2026). *OpenCode providers: OpenAI-compatible*.
 https://opencode.ai/docs/providers/
+
+ContextualWisdomLab. (2026). *contextual-orchestrator: the org's governed LLM
+gateway*. https://github.com/ContextualWisdomLab/contextual-orchestrator
 
 Docker, Inc. (n.d.). *Building best practices*. Docker Docs.
 https://docs.docker.com/build/building/best-practices/
@@ -234,6 +273,3 @@ https://docs.docker.com/dhi/explore/security-concepts/digests/
 
 Docker, Inc. (n.d.). *Validating image inputs*. Docker Docs.
 https://docs.docker.com/build/policies/validate-images/
-
-NVIDIA Corporation. (2026). *NVIDIA Nemotron 3 Super 120B A12B model card*.
-https://build.nvidia.com/nvidia/nemotron-3-super-120b-a12b/modelcard

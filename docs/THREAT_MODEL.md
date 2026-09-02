@@ -105,7 +105,7 @@ EgressWeave does not solve privacy by transforming or blanket-masking applicatio
 Repository automation is a separate authority boundary from runtime egress policy.
 
 - Automated model output is untrusted proposed change material, not review, security-scan, merge or release authority.
-- Product-development model access uses the reviewed OpenCode/NVIDIA path; reviewer identity and credentials remain separate.
+- Product-development model access uses the reviewed OpenCode/contextual-orchestrator gateway path (`orchestrator/free`); reviewer identity and credentials remain separate.
 - Exact-head CI/security evidence is not transferable after a head/base change.
 - A green aggregate workflow does not prove a required inner security action executed when that action was skipped.
 - Repository-local product development must not regain publisher credentials merely to make autonomous output easier to merge.

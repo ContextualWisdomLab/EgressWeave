@@ -1,4 +1,4 @@
-"""Contracts for the NVIDIA-backed OpenCode autonomous development scheduler."""
+"""Contracts for the gateway-backed OpenCode autonomous development scheduler."""
 
 from __future__ import annotations
 
@@ -22,9 +22,15 @@ OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
     "8d500b20fed2d26e537e221895b1a575476571b4f0089bb29fb13eeb8eb9e937"
 )
-NVIDIA_MODEL = "nvidia/nemotron-3-super-120b-a12b"
-NVIDIA_API_HOST_LABELS = ("integrate", "api", "nvidia", "com")
-NVIDIA_API_ENDPOINT = f"{'.'.join(NVIDIA_API_HOST_LABELS)}:443"
+GATEWAY_MODEL = "contextual-orchestrator/orchestrator/free"
+GATEWAY_PROVIDER_SECRETS = (
+    "BYTEZ_API_KEY",
+    "NVIDIA_NIM_API_KEY",
+    "NVIDIA_NIM_API_KEY_SUB",
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+)
+TRUSTED_GATEWAY_SOURCE_SHA = "6958918beaad96d0a67ce264706c828bb7f3f000"
 
 
 def _read(path: Path) -> str:
@@ -32,13 +38,14 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_product_scheduler_uses_pinned_opencode_with_nvidia_nim() -> None:
+def test_product_scheduler_uses_pinned_opencode_through_the_governed_gateway() -> None:
     """Replace the Codex scheduler model step without mutable agent tooling."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
 
     assert "openai/codex-action@" not in workflow
-    assert "OPENAI_API_KEY" not in workflow
-    assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}" in workflow
+    assert "codex run" not in workflow
+    for secret_name in GATEWAY_PROVIDER_SECRETS:
+        assert f"{secret_name}: ${{{{ secrets.{secret_name} }}}}" in workflow
     assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in workflow
     assert f'OPENCODE_SHA256: "{OPENCODE_LINUX_X64_SHA256}"' in workflow
     assert (
@@ -47,15 +54,52 @@ def test_product_scheduler_uses_pinned_opencode_with_nvidia_nim() -> None:
     ) in workflow
     assert "sha256sum --check" in workflow
     assert "opencode run --auto" in workflow
-    assert f'OPENCODE_MODEL: "{NVIDIA_MODEL}"' in workflow
+    assert f'OPENCODE_MODEL: "{GATEWAY_MODEL}"' in workflow
+    assert f'"model":"{GATEWAY_MODEL}"' in workflow
+    assert f'"small_model":"{GATEWAY_MODEL}"' in workflow
+
+
+def test_gateway_sidecar_is_vendored_at_a_pinned_immutable_commit() -> None:
+    """Fetch the reviewed org sidecar by exact SHA, never a floating ref."""
+    workflow = _read(PRODUCT_WORKFLOW_PATH)
+
+    assert f'TRUSTED_GATEWAY_SOURCE_SHA: "{TRUSTED_GATEWAY_SOURCE_SHA}"' in workflow
+    assert (
+        "git clone --quiet https://github.com/ContextualWisdomLab/.github.git"
+        in workflow
+    )
+    assert (
+        'git -C "$source_dir" -c advice.detachedHead=false checkout --quiet '
+        '"$TRUSTED_GATEWAY_SOURCE_SHA"'
+    ) in workflow
+    assert 'checked_out="$(git -C "$source_dir" rev-parse HEAD)"' in workflow
+    assert '[ "$checked_out" != "$TRUSTED_GATEWAY_SOURCE_SHA" ]' in workflow
+    assert (
+        'bash "${TRUSTED_GATEWAY_SOURCE}/scripts/ci/contextual_orchestrator_review_sidecar.sh"'
+        in workflow
+    )
+    assert (
+        'source "${TRUSTED_GATEWAY_SOURCE}/scripts/ci/load_contextual_orchestrator_token.sh"'
+        in workflow
+    )
+    # Vendored outside $GITHUB_WORKSPACE: the sidecar's own checkout must never
+    # land inside the git repository the patch-capture guard diffs against the
+    # pristine baseline.
+    assert 'source_dir="${RUNNER_TEMP}/trusted-gateway-source"' in workflow
+    assert 'echo "TRUSTED_GATEWAY_SOURCE=$source_dir" >>"$GITHUB_ENV"' in workflow
 
 
 def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() -> None:
-    """Deny unneeded tools and reject model output containing its credential."""
+    """Deny unneeded tools and reject model output containing a credential."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
 
-    assert "egress-policy: block" in workflow
-    assert NVIDIA_API_ENDPOINT in {line.strip() for line in workflow.splitlines()}
+    # Runner-network egress is audit-mode, matching the only production
+    # precedent for this exact sidecar anywhere in the org (ContextualWisdomLab
+    # /.github's pr-review-autofix.yml and strix.yml); the sidecar's live
+    # multi-provider discovery has no fixed host set for a block-mode
+    # allowlist to pin. See the "Harden runner" step's own comment.
+    assert "egress-policy: audit" in workflow
+    assert "egress-policy: block" not in workflow
     assert 'OPENCODE_DISABLE_AUTOUPDATE: "true"' in workflow
     assert 'OPENCODE_DISABLE_MODELS_FETCH: "true"' in workflow
     assert 'OPENCODE_DISABLE_DEFAULT_PLUGINS: "true"' in workflow
@@ -70,8 +114,9 @@ def test_model_execution_keeps_a_fail_closed_permission_and_secret_boundary() ->
     assert '"task":"deny"' in workflow
     assert '"skill":"deny"' in workflow
     assert "Reject model credential disclosure" in workflow
-    assert 'grep -R -F -l -- "$NVIDIA_API_KEY"' in workflow
-    assert 'grep -R -F -- "$NVIDIA_API_KEY"' not in workflow
+    assert 'grep -R -F -l -- "$value"' in workflow
+    assert 'grep -R -F -- "$value"' not in workflow
+    assert "CONTEXTUAL_ORCHESTRATOR_TOKEN" in workflow
 
 
 def test_credentialed_model_runner_never_executes_model_modified_code() -> None:
@@ -176,15 +221,17 @@ def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
     ) == 2
 
 
-def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() -> None:
+def test_operator_documentation_records_the_pinned_agent_and_gateway_mapping() -> None:
     """Make the autonomous execution supply chain understandable to operators."""
     documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
 
     assert f"OpenCode {OPENCODE_VERSION}" in documentation
-    assert "`NVIDIA_NIM_API_KEY`" in documentation
-    assert "`NVIDIA_API_KEY`" in documentation
-    assert NVIDIA_MODEL in documentation
+    for secret_name in GATEWAY_PROVIDER_SECRETS:
+        assert f"`{secret_name}`" in documentation
+    assert f"`{GATEWAY_MODEL}`" in documentation
+    assert "`CONTEXTUAL_ORCHESTRATOR_TOKEN`" in documentation
     assert OPENCODE_LINUX_X64_SHA256 in documentation
+    assert TRUSTED_GATEWAY_SOURCE_SHA in documentation
     assert "OpenAI Codex Action" not in documentation
 
 
@@ -197,12 +244,13 @@ def test_operator_documentation_forbids_repository_local_patch_publication() -> 
     assert "reconstruct and verify the exact tree" in documentation
 
 
-def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
+def test_buyer_readme_identifies_the_opencode_gateway_maintainer() -> None:
     """Keep the public execution identity aligned with the audited workflow."""
     readme = _read(README_PATH)
 
     assert "bounded Codex maintainer" not in readme
     assert "bounded OpenCode maintainer" in readme
+    assert "contextual-orchestrator gateway" in readme
     assert "`NVIDIA_NIM_API_KEY`" in readme
     assert "COPILOT_GITHUB_TOKEN" not in readme
 
@@ -258,3 +306,10 @@ def test_offline_verifier_materializes_the_complete_repository_contract() -> Non
     assert verifier.index(root_loop) < verifier.index("ruff check .")
     assert verifier.index(root_copy) < verifier.index("pytest -q")
     assert verifier.index(root_copy) < verifier.index(compileall)
+
+
+def test_gateway_evidence_directory_is_excluded_from_the_captured_patch() -> None:
+    """Keep the sidecar's own strix_runs/ evidence out of the model's diff."""
+    gitignore = _read(REPOSITORY_ROOT / ".gitignore")
+
+    assert "strix_runs/" in gitignore

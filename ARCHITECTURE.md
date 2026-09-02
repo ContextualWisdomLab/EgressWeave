@@ -279,7 +279,8 @@ publication before the GitHub Release is made public.
   and guarded direct or automatic merge. The existing review-agent identity and
   inherited secret contract are preserved.
 - At minute `37` each hour, product development runs only when no pull request is
-  open. It uses a pinned OpenCode CLI with `NVIDIA_NIM_API_KEY`, not
+  open. It uses a pinned OpenCode CLI through the org's governed
+  contextual-orchestrator gateway, pinned to `orchestrator/free`, not
   `COPILOT_GITHUB_TOKEN`. Model execution and credential-free reverification use
   separate runners and permissions. The verifier emits only a short-lived
   digest-bound handoff; no repository-local product-development job obtains

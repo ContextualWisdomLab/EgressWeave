@@ -122,7 +122,7 @@ flowchart LR
     checkout[Exact protected-main checkout] --> pr_gate[Paginated zero-open-PR gate]
     pr_gate --> prompt[Canonical maintainer prompt]
     prompt --> prompt_guard[Regular file + non-symlink + 12 KiB validation]
-    prompt_guard --> opencode[OpenCode with NVIDIA_NIM_API_KEY]
+    prompt_guard --> opencode[OpenCode via contextual-orchestrator gateway]
     opencode --> untrusted_patch[Bounded untrusted patch + NDJSON result]
     untrusted_patch --> handoff_guard[Exact-base and allowlist guard]
     handoff_guard --> verifier[Credential-free verifier]

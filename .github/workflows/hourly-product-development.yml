@@ -29,17 +29,25 @@ jobs:
       changed: ${{ steps.package.outputs.changed }}
     steps:
       - name: Harden runner
+        # audit, not block: the model call now routes through the vendored
+        # contextual-orchestrator gateway's live multi-provider discovery
+        # (BYTEZ_API_KEY, NVIDIA_NIM_API_KEY[_SUB], OPENROUTER_API_KEY,
+        # OPENAI_API_KEY -- see "Provision the contextual-orchestrator gateway
+        # sidecar" below), which resolves its own outbound routes at runtime
+        # (including https://models.dev for free-tier pricing metadata) and
+        # has no fixed host set to pin. This is not a downgrade invented for
+        # this repo: it is the exact egress posture ContextualWisdomLab/.github
+        # already uses in production for the same sidecar in
+        # pr-review-autofix.yml and strix.yml -- no consumer of this sidecar
+        # anywhere in the org runs it under block-mode with a static
+        # allowlist, because that combination is not yet solved. The actual
+        # behavioral boundary against a prompt-injected model stays the
+        # deny-by-default OpenCode permission block below (webfetch, websearch,
+        # task, skill, lsp, and every bash command but three read-only ones all
+        # stay "deny"), which is unaffected by this runner-network setting.
         uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
         with:
-          egress-policy: block
-          allowed-endpoints: >
-            api.github.com:443
-            files.pythonhosted.org:443
-            github.com:443
-            integrate.api.nvidia.com:443
-            objects.githubusercontent.com:443
-            pypi.org:443
-            release-assets.githubusercontent.com:443
+          egress-policy: audit
 
       - name: Check out the protected default branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -67,17 +75,28 @@ jobs:
             echo "::notice::Skipping product development because ${open_prs} pull request(s) remain open."
           fi
 
-      - name: Require the autonomous maintainer model credential
+      - name: Require the autonomous maintainer gateway credentials
         if: steps.queue.outputs.develop == 'true'
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          BYTEZ_API_KEY: ${{ secrets.BYTEZ_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_API_KEY_SUB: ${{ secrets.NVIDIA_NIM_API_KEY_SUB }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${NVIDIA_API_KEY:-}" ]; then
-            echo "::error::NVIDIA_NIM_API_KEY is required for hourly autonomous product development."
+          present=0
+          for secret_name in BYTEZ_API_KEY NVIDIA_NIM_API_KEY NVIDIA_NIM_API_KEY_SUB OPENROUTER_API_KEY OPENAI_API_KEY; do
+            value="${!secret_name:-}"
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              present=$((present + 1))
+            fi
+          done
+          if [ "$present" -eq 0 ]; then
+            echo "::error::At least one of BYTEZ_API_KEY, NVIDIA_NIM_API_KEY, NVIDIA_NIM_API_KEY_SUB, OPENROUTER_API_KEY, OPENAI_API_KEY is required for hourly autonomous product development."
             exit 1
           fi
-          echo "::add-mask::$NVIDIA_API_KEY"
 
       - name: Set up Python
         if: steps.queue.outputs.develop == 'true'
@@ -134,12 +153,49 @@ jobs:
               ;;
           esac
 
+      - name: Checkout the trusted contextual-orchestrator gateway sidecar source
+        if: steps.queue.outputs.develop == 'true'
+        env:
+          TRUSTED_GATEWAY_SOURCE_SHA: "6958918beaad96d0a67ce264706c828bb7f3f000"
+        run: |
+          set -euo pipefail
+          # Cloned outside $GITHUB_WORKSPACE (not via actions/checkout's
+          # workspace-relative `path:`) so this vendored tree never lands
+          # inside the git repository that "Enforce the autonomous change
+          # boundary" below diffs against the pristine baseline -- an
+          # untracked copy of an entire second repository there would be
+          # swept into the model's own patch.
+          source_dir="${RUNNER_TEMP}/trusted-gateway-source"
+          git clone --quiet https://github.com/ContextualWisdomLab/.github.git "$source_dir"
+          git -C "$source_dir" -c advice.detachedHead=false checkout --quiet "$TRUSTED_GATEWAY_SOURCE_SHA"
+          checked_out="$(git -C "$source_dir" rev-parse HEAD)"
+          if [ "$checked_out" != "$TRUSTED_GATEWAY_SOURCE_SHA" ]; then
+            echo "::error::vendored ContextualWisdomLab/.github HEAD ${checked_out} != pin ${TRUSTED_GATEWAY_SOURCE_SHA}"
+            exit 1
+          fi
+          echo "TRUSTED_GATEWAY_SOURCE=$source_dir" >>"$GITHUB_ENV"
+
+      - name: Provision the contextual-orchestrator gateway sidecar
+        if: steps.queue.outputs.develop == 'true'
+        env:
+          BYTEZ_API_KEY: ${{ secrets.BYTEZ_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_API_KEY_SUB: ${{ secrets.NVIDIA_NIM_API_KEY_SUB }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          # strix_runs/ is this sidecar's own evidence directory, hardcoded
+          # (by the vendored script) to land under $GITHUB_WORKSPACE; it is
+          # excluded via .gitignore for the same reason the vendored source
+          # checkout above is cloned outside the workspace.
+          bash "${TRUSTED_GATEWAY_SOURCE}/scripts/ci/contextual_orchestrator_review_sidecar.sh"
+
       - name: Run the bounded OpenCode autonomous maintainer
         if: steps.queue.outputs.develop == 'true'
         id: opencode
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
-          OPENCODE_MODEL: "nvidia/nemotron-3-super-120b-a12b"
+          OPENCODE_MODEL: "contextual-orchestrator/orchestrator/free"
           HOME: "${{ runner.temp }}/opencode-home"
           XDG_CONFIG_HOME: "${{ runner.temp }}/opencode-home/config"
           XDG_DATA_HOME: "${{ runner.temp }}/opencode-home/data"
@@ -152,10 +208,17 @@ jobs:
           OPENCODE_DISABLE_CLAUDE_CODE: "true"
           OPENCODE_AUTO_SHARE: "false"
           OPENCODE_CONFIG_CONTENT: >-
-            {"$schema":"https://opencode.ai/config.json","model":"nvidia/nemotron-3-super-120b-a12b","small_model":"nvidia/nemotron-3-super-120b-a12b","share":"disabled","autoupdate":false,"provider":{"nvidia":{"options":{"baseURL":"https://integrate.api.nvidia.com/v1","apiKey":"{env:NVIDIA_API_KEY}"},"models":{"nemotron-3-super-120b-a12b":{"name":"NVIDIA Nemotron 3 Super 120B A12B","limit":{"context":1000000,"output":32768}}}}},"permission":{"*":"deny","read":{"*":"allow",".git/**":"deny","*.env":"deny","*.env.*":"deny"},"edit":{"*":"deny","src/egressweave/**":"allow","tests/**":"allow","docs/**":"allow","README.md":"allow","CHANGELOG.md":"allow"},"glob":"allow","grep":"allow","bash":{"*":"deny","git diff --check":"allow","git diff --stat":"allow","git status --short":"allow"},"external_directory":"deny","webfetch":"deny","websearch":"deny","question":"deny","task":"deny","skill":"deny"}}
+            {"$schema":"https://opencode.ai/config.json","model":"contextual-orchestrator/orchestrator/free","small_model":"contextual-orchestrator/orchestrator/free","share":"disabled","autoupdate":false,"provider":{"contextual-orchestrator":{"npm":"@ai-sdk/openai-compatible","name":"Contextual Orchestrator Gateway","options":{"baseURL":"{env:CONTEXTUAL_ORCHESTRATOR_BASE_URL}","apiKey":"{env:CONTEXTUAL_ORCHESTRATOR_TOKEN}"},"models":{"orchestrator/free":{"name":"Orchestrator Free (ZDR-first zero-cost pool)","tool_call":true,"reasoning":true,"limit":{"context":200000,"output":32768}}}}},"permission":{"*":"deny","read":{"*":"allow",".git/**":"deny","*.env":"deny","*.env.*":"deny"},"edit":{"*":"deny","src/egressweave/**":"allow","tests/**":"allow","docs/**":"allow","README.md":"allow","CHANGELOG.md":"allow"},"glob":"allow","grep":"allow","bash":{"*":"deny","git diff --check":"allow","git diff --stat":"allow","git status --short":"allow"},"external_directory":"deny","webfetch":"deny","websearch":"deny","question":"deny","task":"deny","skill":"deny"}}
         run: |
           set -euo pipefail
-          echo "::add-mask::$NVIDIA_API_KEY"
+          if [ -z "${CONTEXTUAL_ORCHESTRATOR_BASE_URL:-}" ] || [ -z "${CONTEXTUAL_ORCHESTRATOR_TOKEN_FILE:-}" ]; then
+            echo "::error::The contextual-orchestrator gateway sidecar must be provisioned before the autonomous maintainer runs."
+            exit 1
+          fi
+          # Loads and masks CONTEXTUAL_ORCHESTRATOR_TOKEN from the sidecar's
+          # owner/mode-validated token file into THIS step's shell only -- the
+          # raw bearer never crosses a step boundary via $GITHUB_ENV.
+          source "${TRUSTED_GATEWAY_SOURCE}/scripts/ci/load_contextual_orchestrator_token.sh"
           mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
           chmod 0700 "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
           prompt_file="${RUNNER_TEMP}/opencode-prompt.md"
@@ -182,16 +245,35 @@ jobs:
       - name: Reject model credential disclosure
         if: steps.queue.outputs.develop == 'true'
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          BYTEZ_API_KEY: ${{ secrets.BYTEZ_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_API_KEY_SUB: ${{ secrets.NVIDIA_NIM_API_KEY_SUB }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           set -euo pipefail
+          # None of the five real provider keys are ever this job's OpenCode
+          # process's own environment (only the gateway sidecar process ever
+          # holds them, seeded once into its in-memory KV); this scan is
+          # defense in depth in case the gateway ever echoed one back. The
+          # ephemeral per-run CONTEXTUAL_ORCHESTRATOR_TOKEN, which IS in that
+          # environment, is scanned for the same reason the old NVIDIA_API_KEY
+          # value was.
+          source "${TRUSTED_GATEWAY_SOURCE}/scripts/ci/load_contextual_orchestrator_token.sh"
           result_file="${RUNNER_TEMP}/opencode-result.ndjson"
           disclosure_file="${RUNNER_TEMP}/credential-disclosure-paths"
-          if grep -R -F -l -- "$NVIDIA_API_KEY" \
-            src/egressweave tests docs README.md CHANGELOG.md "$result_file" \
-            >"$disclosure_file"; then
-            echo "::error::The model disclosed its credential in the following path(s):"
-            sed 's/^/::error::/' "$disclosure_file"
+          : >"$disclosure_file"
+          for secret_name in BYTEZ_API_KEY NVIDIA_NIM_API_KEY NVIDIA_NIM_API_KEY_SUB \
+            OPENROUTER_API_KEY OPENAI_API_KEY CONTEXTUAL_ORCHESTRATOR_TOKEN; do
+            value="${!secret_name:-}"
+            [ -n "$value" ] || continue
+            grep -R -F -l -- "$value" \
+              src/egressweave tests docs README.md CHANGELOG.md "$result_file" \
+              >>"$disclosure_file" || true
+          done
+          if [ -s "$disclosure_file" ]; then
+            echo "::error::The model disclosed a credential in the following path(s):"
+            sort -u -- "$disclosure_file" | sed 's/^/::error::/'
             exit 1
           fi
 

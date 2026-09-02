@@ -68,6 +68,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   constructors accept positive integers or ASCII decimal strings and reject
   ambiguous or non-positive configuration before network I/O.
 
+### Changed
+- Migrate the hourly product-development workflow off a direct, hardcoded
+  NVIDIA NIM API call and onto the org's governed contextual-orchestrator
+  gateway, pinned to `orchestrator/free`, following the same vendored-sidecar
+  pattern already shipped for `ContextualWisdomLab/.github`'s OpenCode Review
+  and Strix jobs (`scripts/ci/contextual_orchestrator_review_sidecar.sh`
+  vendored at a pinned immutable commit). OpenCode's provider credential is
+  now an ephemeral, per-run, loopback-scoped bearer token; none of the five
+  bootstrap-only provider secrets (`BYTEZ_API_KEY`, `NVIDIA_NIM_API_KEY`,
+  `NVIDIA_NIM_API_KEY_SUB`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`) ever
+  reach the model-consuming process's own environment. The `develop` job's
+  runner egress policy moves from block-mode with a static host allowlist to
+  audit-mode, matching the only production precedent for this sidecar
+  anywhere in the org, because the sidecar's live multi-provider discovery
+  has no fixed host set to pin; the deny-by-default OpenCode permission
+  boundary (no webfetch, websearch, task, skill, lsp, or unlisted bash) is
+  unaffected and remains the actual control against a prompt-injected model.
+  See ContextualWisdomLab/EgressWeave#234.
+
 ### Fixed
 - Restore the hourly PR-maintenance calls to the reviewed immutable
   `ContextualWisdomLab/.github` revision
