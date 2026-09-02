@@ -69,6 +69,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Accept distinct exact SHA-256 artifact hashes for one pinned CI package while
+  requiring every reviewed runtime SBOM digest to be present in that immutable
+  set, preserving portable hash-locked tooling without weakening release evidence.
 - Restore the hourly PR-maintenance calls to the reviewed immutable
   `ContextualWisdomLab/.github` revision
   `59505c1d89eb7ea816e921b6da38079c736608c2`. The regression contract now
@@ -427,6 +430,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `build_egress_http_client` / `build_pinned_https_async_client` — DNS-pinned
   `httpx.AsyncClient` closing the validate-then-connect TOCTOU / DNS-rebinding
   gap (CWE-350), with redirects and environment proxies disabled.
-- `EgressNotAllowedError` (a `ValueError` subclass) and `ValidatedEgressURL`.
 - 35 tests covering URL rejection, address classification, the `allow_local`
   container case, DNS-to-private rejection, and transport pinning.
+- `build_egress_http_client` and `build_pinned_https_async_client` preserve exact
+  allowlist behavior and deny redirects/proxies under the public API.
