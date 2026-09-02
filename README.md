@@ -25,7 +25,7 @@ The protected implementation currently supports Python 3.10–3.14 and uses pinn
 
 The package metadata version is `0.3.0`, but this repository currently has no GitHub release. Release automation and package acceptance can establish that source is ready to publish; they do not establish that an artifact is already available.
 
-A bare `pip install egressweave` command is authoritative only after the exact target version appears on a verified package-index project with its expected distributions and publication/provenance evidence. Until then, install from a reviewed source checkout and preserve the repository's hash-locked verification before promoting the package into another system.
+A bare `pip install egressweave` command is authoritative only after the exact target version appears on a verified PyPI project page with its expected distributions and publication/provenance evidence. Until then, install from a reviewed source checkout and preserve the repository's hash-locked verification before promoting the package into another system.
 
 ## Quickstart
 
@@ -206,6 +206,8 @@ Release readiness and package-build evidence are not the same as publication evi
 - [Product requirements](docs/product/PRD.md)
 - [Technical requirements](docs/product/TRD.md)
 - [Architecture](ARCHITECTURE.md)
+- [UML and system flows](docs/architecture/UML.md)
+- [ERD and persistence boundary](docs/architecture/ERD.md)
 - [API contract](docs/product/API_CONTRACT.md)
 - [Threat model](docs/THREAT_MODEL.md)
 - [Test strategy](docs/product/TEST_STRATEGY.md)
