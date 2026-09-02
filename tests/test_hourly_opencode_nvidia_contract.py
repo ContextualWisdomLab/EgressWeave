@@ -201,7 +201,8 @@ def test_operator_documentation_identifies_the_opencode_nvidia_maintainer() -> N
     documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
 
     assert "bounded Codex maintainer" not in documentation
-    assert "bounded OpenCode maintainer" in documentation
+    assert f"OpenCode {OPENCODE_VERSION}" in documentation
+    assert NVIDIA_MODEL in documentation
     assert "`NVIDIA_NIM_API_KEY`" in documentation
     assert "COPILOT_GITHUB_TOKEN" not in documentation
 
