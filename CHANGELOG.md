@@ -430,7 +430,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `build_egress_http_client` / `build_pinned_https_async_client` — DNS-pinned
   `httpx.AsyncClient` closing the validate-then-connect TOCTOU / DNS-rebinding
   gap (CWE-350), with redirects and environment proxies disabled.
+- `EgressNotAllowedError` (a `ValueError` subclass) and `ValidatedEgressURL`.
 - 35 tests covering URL rejection, address classification, the `allow_local`
   container case, DNS-to-private rejection, and transport pinning.
-- `build_egress_http_client` and `build_pinned_https_async_client` preserve exact
-  allowlist behavior and deny redirects/proxies under the public API.
