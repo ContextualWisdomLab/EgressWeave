@@ -76,7 +76,7 @@ from the official Linux x64 release asset only after verifying SHA-256
 Model access is not a direct provider call. The job vendors
 `scripts/ci/contextual_orchestrator_review_sidecar.sh` from
 `ContextualWisdomLab/.github` at the pinned immutable commit
-`464da4715b495b5eaaa593eba3796e2d976ee0c9` (cloned outside `$GITHUB_WORKSPACE`
+`6958918beaad96d0a67ce264706c828bb7f3f000` (cloned outside `$GITHUB_WORKSPACE`
 so the vendored tree cannot be swept into the model's own patch), which starts
 the org's governed contextual-orchestrator gateway as a loopback sidecar. The
 bootstrap-only provider secrets `BYTEZ_API_KEY`, `NVIDIA_NIM_API_KEY`,
