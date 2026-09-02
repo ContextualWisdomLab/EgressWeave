@@ -29,19 +29,30 @@ def _product_development_mapping_section(documentation: str) -> str:
 def test_product_workflow_pins_the_reviewed_opencode_release() -> None:
     """Keep one reviewed release bound from download path through verification."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
-    download_and_verification = (
-        "          curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error \\\n"
-        '            --output "$archive" \\\n'
+    lines = workflow.splitlines()
+    curl_line = (
+        "          curl --proto '=https' --tlsv1.2 --fail --location --silent "
+        "--show-error \\"
+    )
+    output_line = '            --output "$archive" \\'
+    release_line = (
         '            "https://github.com/anomalyco/opencode/releases/download/'
-        'v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"\n'
-        "          printf '%s  %s\\n' \"$OPENCODE_SHA256\" \"$archive\" "
-        "| sha256sum --check -"
+        'v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"'
+    )
+    checksum_line = (
+        "          printf '%s  %s\\n' "
+        '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
     )
 
     assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in workflow
     assert OPENCODE_LINUX_X64_SHA256 in workflow
     assert 'archive="${RUNNER_TEMP}/opencode-linux-x64.tar.gz"' in workflow
-    assert download_and_verification in workflow
+    curl_index = lines.index(curl_line)
+    assert lines[curl_index + 1 : curl_index + 4] == [
+        output_line,
+        release_line,
+        checksum_line,
+    ]
     assert "curl | sh" not in workflow
 
 
