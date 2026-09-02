@@ -156,7 +156,7 @@ jobs:
       - name: Checkout the trusted contextual-orchestrator gateway sidecar source
         if: steps.queue.outputs.develop == 'true'
         env:
-          TRUSTED_GATEWAY_SOURCE_SHA: "6958918beaad96d0a67ce264706c828bb7f3f000"
+          TRUSTED_GATEWAY_SOURCE_SHA: "464da4715b495b5eaaa593eba3796e2d976ee0c9"
         run: |
           set -euo pipefail
           # Cloned outside $GITHUB_WORKSPACE (not via actions/checkout's
