@@ -446,7 +446,6 @@ def _preflight_sdist_members_detailed(stream: BinaryIO) -> BinaryIO:
     consumed = 0
     members = 0
     zero_headers = 0
-    # The validated snapshot lifetime is transferred to _sdist_metadata.
     expanded_archive = tempfile.TemporaryFile(mode="w+b")  # noqa: SIM115
     try:
         with gzip.GzipFile(fileobj=stream, mode="rb") as expanded:
@@ -783,25 +782,32 @@ def _canonical_marker(value: str | None, context: str) -> str | None:
         raise SystemExit(f"{context} contains an invalid environment marker") from error
 
 
-def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:
-    """Load exact package versions, markers, and hashes from the CI lock."""
+def _load_runtime_lock(
+    path: Path,
+) -> dict[str, dict[str, str | tuple[str, ...] | None]]:
+    """Load exact package versions, markers, and allowed hashes from the CI lock."""
     try:
         if path.stat().st_size > MAX_MANIFEST_BYTES:
             raise SystemExit("runtime lock exceeds the safety bound")
         content = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
         raise SystemExit("runtime lock is unreadable") from error
-    entries: dict[str, dict[str, str | None]] = {}
+    entries: dict[str, dict[str, str | tuple[str, ...] | None]] = {}
     for raw_line in content.replace("\\\n", " ").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
-        if line.count("--hash=sha256:") != 1:
-            raise SystemExit("runtime lock entries require exactly one SHA-256 hash")
-        requirement_text, digest = line.split("--hash=sha256:", 1)
-        digest = digest.strip()
-        if SHA256.fullmatch(digest) is None:
+        segments = line.split("--hash=sha256:")
+        if len(segments) < 2:
+            raise SystemExit(
+                "runtime lock entries require at least one SHA-256 hash"
+            )
+        requirement_text = segments[0]
+        digests = tuple(segment.strip() for segment in segments[1:])
+        if any(SHA256.fullmatch(digest) is None for digest in digests):
             raise SystemExit("runtime lock contains a noncanonical SHA-256 hash")
+        if len(set(digests)) != len(digests):
+            raise SystemExit("runtime lock contains a duplicate SHA-256 hash")
         try:
             requirement = Requirement(requirement_text.strip())
         except InvalidRequirement as error:
@@ -821,24 +827,27 @@ def _load_runtime_lock(path: Path) -> dict[str, dict[str, str | None]]:
         )
         entries[name] = {
             "version": version,
-            "sha256": digest,
+            "sha256": digests,
             "marker": str(requirement.marker) if requirement.marker is not None else None,
         }
     return entries
 
 
 def validate_runtime_lock(manifest_path: Path, lock_path: Path) -> None:
-    """Require every SBOM dependency to equal its executable lock evidence."""
+    """Require every SBOM dependency to match one reviewed lock artifact."""
     _, components = _load_manifest(manifest_path)
     lock_entries = _load_runtime_lock(lock_path)
     for name, component in components.items():
         locked = lock_entries.get(name)
-        expected = {
-            "version": component["version"],
-            "sha256": component["sha256"],
-            "marker": _canonical_marker(component["marker"], f"component {name}"),
-        }
-        if locked != expected:
+        expected_marker = _canonical_marker(
+            component["marker"], f"component {name}"
+        )
+        if (
+            locked is None
+            or locked["version"] != component["version"]
+            or locked["marker"] != expected_marker
+            or component["sha256"] not in locked["sha256"]
+        ):
             raise SystemExit(
                 f"component {name!r} does not match the hash-locked runtime subset"
             )
