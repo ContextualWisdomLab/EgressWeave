@@ -81,3 +81,32 @@ def test_runtime_manifest_accepts_its_digest_among_platform_hashes(
     )
 
     generator.validate_runtime_lock(MANIFEST_PATH, portable_lock)
+
+
+def test_runtime_manifest_rejects_absent_digest_from_platform_hashes(
+    tmp_path: Path,
+) -> None:
+    """Reject a hash set that omits the exact reviewed runtime artifact digest."""
+    generator = _load_generator()
+    lock_text = LOCK_PATH.read_text(encoding="utf-8")
+    needle = (
+        "anyio==4.14.2 \\\n"
+        "    --hash=sha256:"
+        "9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494"
+    )
+    replacement = (
+        "anyio==4.14.2 \\\n"
+        "    --hash=sha256:"
+        + ("e" * 64)
+        + " \\\n    --hash=sha256:"
+        + ("f" * 64)
+    )
+    assert lock_text.count(needle) == 1
+    portable_lock = tmp_path / "requirements-ci.txt"
+    portable_lock.write_text(
+        lock_text.replace(needle, replacement, 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="does not match the hash-locked runtime subset"):
+        generator.validate_runtime_lock(MANIFEST_PATH, portable_lock)
