@@ -30,11 +30,14 @@ def test_product_workflow_pins_the_reviewed_opencode_release() -> None:
     """Keep the model-execution CLI bound to one reviewed immutable release."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
 
-    assert f"OPENCODE_VERSION: {OPENCODE_VERSION}" in workflow
+    assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in workflow
     assert OPENCODE_LINUX_X64_SHA256 in workflow
     assert "https://github.com/anomalyco/opencode/releases/download/" in workflow
     assert "sha256sum --check" in workflow
-    assert "curl -fsSL" in workflow
+    assert (
+        "curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error"
+        in workflow
+    )
     assert "curl | sh" not in workflow
 
 
