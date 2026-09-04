@@ -1,8 +1,6 @@
 name: Hourly Autonomous Product Development
 
 on:
-  schedule:
-    - cron: "37 * * * *"
   workflow_dispatch:
 
 concurrency:
