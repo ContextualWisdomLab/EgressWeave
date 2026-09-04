@@ -228,7 +228,7 @@ The repository has separate governance and product-development paths. Current pr
 sequenceDiagram
     participant Repo as EgressWeave repository
     participant Central as Organization PR maintenance
-    participant Model as OpenCode + NVIDIA NIM
+    participant Model as OpenCode + contextual-orchestrator gateway
     participant Verify as Credential-free verifier
     participant Review as Independent review / repository gates
 
@@ -329,7 +329,7 @@ sequenceDiagram
 
     Workflow->>Prompt: validate canonical prompt is regular, non-symlink and <= 12 KiB
     Prompt-->>Workflow: reviewed bounded policy bytes
-    Workflow->>Model: execute with NVIDIA credential and deny-by-default tools
+    Workflow->>Model: execute with gateway bearer and deny-by-default tools
     Model-->>Workflow: bounded patch + auditable NDJSON
     Workflow->>Verify: exact-base patch handoff without model credential
     Verify-->>Workflow: sealed digest-bound patch evidence

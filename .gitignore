@@ -14,3 +14,8 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+
+# Vendored contextual-orchestrator gateway sidecar evidence (hourly-product-development.yml).
+# Written under $GITHUB_WORKSPACE by scripts/ci/contextual_orchestrator_review_sidecar.sh;
+# excluded so it is never swept into the autonomous maintainer's captured patch.
+strix_runs/

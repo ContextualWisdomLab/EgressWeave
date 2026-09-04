@@ -127,7 +127,7 @@ The public API contract is documented in [`API_CONTRACT.md`](API_CONTRACT.md). H
 The **ACTIVE-PR** repository-local scheduler must satisfy all of the following:
 
 1. Check out the exact protected branch and reject product development while any open PR exists.
-2. Install one SHA-256-verified OpenCode release and use the existing `NVIDIA_NIM_API_KEY` through the documented `NVIDIA_API_KEY` mapping.
+2. Install one SHA-256-verified OpenCode release and route model access through the vendored, pinned-commit contextual-orchestrator gateway sidecar (`orchestrator/free`); OpenCode itself never receives any of the sidecar's bootstrap-only provider secrets.
 3. Validate and copy `.github/prompts/hourly-product-maintainer.md` under the 12 KiB limit before the credential-bearing model step.
 4. Keep model tools deny-by-default and prohibit repository-code execution in that credential-bearing step.
 5. Package only an allowlisted, bounded patch tied to the exact base SHA.
