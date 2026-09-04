@@ -123,15 +123,15 @@ def test_traceability_maps_automation_governance_to_decision_and_evidence() -> N
 
 
 def test_protected_product_handoff_has_no_repository_local_publisher() -> None:
-    """Keep README, accepted ADR, and root architecture aligned on publisher-free handoff."""
-    readme = _read("README.md")
+    """Keep operator docs, accepted ADR, and architecture aligned on publisher-free handoff."""
+    operator_docs = _read("docs/hourly-autonomous-maintenance.md")
     accepted_adr = _read("docs/adr/0001-security-boundaries-and-modular-integration.md")
     architecture = _read("ARCHITECTURE.md")
 
-    readme_automation = readme.split("## Autonomous maintenance", 1)[1].split(
-        "## Version compatibility",
+    operator_automation = operator_docs.split(
+        "## Zero-PR product-development loop",
         1,
-    )[0]
+    )[1].split("## Model change boundary", 1)[0]
     adr_automation = accepted_adr.split("### 6. Credential-separated automation", 1)[
         1
     ].split("## Alternatives considered", 1)[0]
@@ -140,8 +140,9 @@ def test_protected_product_handoff_has_no_repository_local_publisher() -> None:
         1,
     )[0]
 
-    assert "credential-free" in readme_automation
-    assert "no repository-local job obtains write authority or" in readme_automation
+    normalized_operator = " ".join(operator_automation.split()).lower()
+    assert "credential-free" in normalized_operator
+    assert "no repository-local product-development job promotes" in normalized_operator
 
     for section in (adr_automation, architecture_automation):
         normalized = " ".join(section.split()).lower()
