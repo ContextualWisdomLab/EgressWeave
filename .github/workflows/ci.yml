@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
   workflow_dispatch:
 
 concurrency:
@@ -23,6 +24,7 @@ env:
 
 jobs:
   test:
+    if: ${{ github.event_name != 'pull_request' || (github.event.action != 'closed' && github.event.pull_request.draft == false) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -51,6 +53,7 @@ jobs:
       - run: python -m compileall -q src tests scripts
 
   package-acceptance:
+    if: ${{ github.event_name != 'pull_request' || (github.event.action != 'closed' && github.event.pull_request.draft == false) }}
     name: Build and verify wheel and sdist
     runs-on: ubuntu-24.04
     timeout-minutes: 15

@@ -21,6 +21,21 @@ def test_ci_cancels_only_superseded_heads_for_the_same_pull_request() -> None:
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
 
 
+def test_ci_does_not_admit_draft_or_closed_pull_requests() -> None:
+    """Wake on lifecycle changes while keeping non-reviewable work off runners."""
+    workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert (
+        "types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]"
+        in workflow
+    )
+    admission = (
+        "if: ${{ github.event_name != 'pull_request' || "
+        "(github.event.action != 'closed' && github.event.pull_request.draft == false) }}"
+    )
+    assert workflow.count(admission) == 2
+
+
 def test_pull_request_jobs_checkout_and_verify_the_exact_current_head() -> None:
     """Require both CI jobs to execute only the event's immutable source SHA."""
     workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
