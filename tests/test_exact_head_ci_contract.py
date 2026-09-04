@@ -12,6 +12,15 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 
 
+def test_ci_cancels_only_superseded_heads_for_the_same_pull_request() -> None:
+    """Keep unrelated repositories, workflows, and non-PR runs isolated."""
+    workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "${{ github.workflow }}-${{ github.repository }}-${{" in workflow
+    assert "github.event.pull_request.number || github.run_id" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
+
+
 def test_pull_request_jobs_checkout_and_verify_the_exact_current_head() -> None:
     """Require both CI jobs to execute only the event's immutable source SHA."""
     workflow = CI_WORKFLOW_PATH.read_text(encoding="utf-8")
