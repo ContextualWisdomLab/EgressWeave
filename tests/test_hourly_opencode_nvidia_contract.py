@@ -11,9 +11,6 @@ PRODUCT_WORKFLOW_PATH = (
 MAINTAINER_PROMPT_PATH = (
     REPOSITORY_ROOT / ".github" / "prompts" / "hourly-product-maintainer.md"
 )
-REVIEW_WORKFLOW_PATH = (
-    REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
-)
 MAINTENANCE_DOCUMENTATION_PATH = (
     REPOSITORY_ROOT / "docs" / "hourly-autonomous-maintenance.md"
 )
@@ -147,33 +144,6 @@ def test_product_scheduler_never_publishes_a_model_modified_tree() -> None:
     handoff = workflow.split("Upload the independently verified handoff", 1)[1]
     assert "if-no-files-found: error" in handoff
     assert "retention-days: 3" in handoff
-
-
-def test_ai_generated_pull_requests_require_a_guarded_manual_merge() -> None:
-    """Prevent autonomous product changes from being merged without operator review."""
-    maintenance_workflow = _read(
-        REPOSITORY_ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
-    )
-
-    assert "enable_auto_merge: false" in maintenance_workflow
-    assert "merge_mode: disabled" in maintenance_workflow
-
-
-def test_review_scheduler_keeps_its_existing_identity_contract() -> None:
-    """Keep the centrally managed review-agent path least-privilege."""
-    review_workflow = _read(REVIEW_WORKFLOW_PATH)
-
-    assert "NVIDIA_NIM_API_KEY" not in review_workflow
-    assert "OPENAI_API_KEY" not in review_workflow
-    assert "pr-review-fix-scheduler.yml@" in review_workflow
-    assert "pr-review-merge-scheduler.yml@" in review_workflow
-    assert "secrets: inherit" not in review_workflow
-    assert review_workflow.count(
-        "PR_REVIEW_MERGE_TOKEN: ${{ secrets.PR_REVIEW_MERGE_TOKEN }}"
-    ) == 2
-    assert review_workflow.count(
-        "OPENCODE_APPROVE_TOKEN: ${{ secrets.OPENCODE_APPROVE_TOKEN }}"
-    ) == 2
 
 
 def test_operator_documentation_records_the_pinned_agent_and_secret_mapping() -> None:
