@@ -96,6 +96,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   immutable policy with a context that disables hostname or certificate
   verification; private trust, mTLS, and explicit TLS 1.2 compatibility remain
   available through the documented declarative fields.
+- Seal TLS trust-path, inline CA, and direct private-key-password scalars before
+  trusted configuration is retained. Path-like inputs must yield exact built-in
+  text, `ca_data` must be exact built-in text or bytes, direct passwords must be
+  exact built-in text/bytes/bytearray, and mutable bytearrays are copied to
+  immutable bytes. Callers that relied on scalar subclasses must migrate to the
+  supported built-in values or the explicit zero-argument password callback.
 - Reject non-exact integer subclasses in shared policy integer fields before
   retaining trusted configuration state. Exact built-in integers and existing
   ASCII decimal strings remain supported, preserving defaults and ranges while

@@ -40,42 +40,51 @@ def _normalize_path(
     field_name: str,
     value: str | os.PathLike[str] | None,
 ) -> str | None:
-    """Return one non-empty text path without expanding or resolving it."""
+    """Return one non-empty exact text path without expanding or resolving it.
+
+    ``os.fspath`` is observed exactly once so ordinary ``pathlib.Path`` values
+    remain supported. Its result must be the exact built-in ``str`` type before
+    text inspection or retention; a text subclass is executable behavior rather
+    than an immutable declarative path value.
+    """
     if value is None:
         return None
     try:
         normalized = os.fspath(value)
     except TypeError as exc:
         raise TypeError(f"{field_name} must be a string or path-like object") from exc
-    if not isinstance(normalized, str):
-        raise TypeError(f"{field_name} must resolve to a text path")
+    if type(normalized) is not str:
+        raise TypeError(f"{field_name} must resolve to an exact text path")
     if not normalized.strip():
         raise ValueError(f"{field_name} must not be empty")
     return normalized
 
 
 def _normalize_ca_data(value: str | bytes | None) -> str | bytes | None:
-    """Return non-empty PEM text or DER bytes for a custom trust anchor."""
+    """Return exact non-empty PEM text or DER bytes for a custom trust anchor."""
     if value is None:
         return None
-    if isinstance(value, str):
+    if type(value) is str:
         if not value.strip():
             raise ValueError("ca_data must not be empty")
         return value
-    if isinstance(value, bytes):
+    if type(value) is bytes:
         if not value:
             raise ValueError("ca_data must not be empty")
         return value
-    raise TypeError("ca_data must be PEM text or DER bytes")
+    raise TypeError("ca_data must be exact PEM text or DER bytes")
 
 
 def _validate_private_key_password(password: _PrivateKeyPassword) -> None:
-    """Reject password values that Python's TLS loader cannot consume safely."""
+    """Accept exact secret scalars or an explicit deferred password callback."""
     if password is None or callable(password):
         return
-    if isinstance(password, (str, bytes, bytearray)):
+    if type(password) in {str, bytes, bytearray}:
         return
-    raise TypeError("client_private_key_password must be text, bytes, or a callable")
+    raise TypeError(
+        "client_private_key_password must be exact text, bytes, bytearray, "
+        "or a callable"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,10 +102,10 @@ class TLSConfiguration:
 
     ``client_certificate_file`` enables mutual TLS. The private key can be in
     that PEM file or supplied separately through ``client_private_key_file``.
-    An optional password may be text, bytes, a bytearray, or a zero-argument
-    callable accepted by :meth:`ssl.SSLContext.load_cert_chain`. Mutable
-    bytearrays are copied to immutable bytes during construction. Password
-    values are deliberately excluded from representations and equality
+    An optional password may be exact text, exact bytes, an exact bytearray, or a
+    zero-argument callable accepted by :meth:`ssl.SSLContext.load_cert_chain`.
+    Mutable bytearrays are copied to immutable bytes during construction.
+    Password values are deliberately excluded from representations and equality
     comparisons.
     """
 
@@ -135,7 +144,7 @@ class TLSConfiguration:
             )
         object.__setattr__(self, "ca_data", _normalize_ca_data(self.ca_data))
         _validate_private_key_password(self.client_private_key_password)
-        if isinstance(self.client_private_key_password, bytearray):
+        if type(self.client_private_key_password) is bytearray:
             object.__setattr__(
                 self,
                 "client_private_key_password",
