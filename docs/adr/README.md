@@ -23,6 +23,7 @@ Product documents separately label implementation maturity.
 | [0002](0002-documentation-governance-and-persistence-boundary.md) | Proposed | Establish the canonical commercial documentation graph, explicit implementation-maturity labels, and the rule that EgressWeave core owns no durable database. |
 | [0003](0003-work-conserving-automation-and-dependency-handoff.md) | Proposed | Make autonomous maintenance work-conserving, require exact-identity read-only dependency handoff, and treat control-plane incidents as non-terminal without broadening repository-write authority. |
 | [0004](0004-bounded-canonical-automation-prompt.md) | Proposed | Store the hourly OpenCode policy in one 12 KiB canonical prompt, remove the inline YAML heredoc, and resume repository work after generic control-plane incidents without self-modifying authority. |
+| [0005](0005-cwl-central-github-ci-consumer-integration.md) | Accepted | Integrate hash-pin-only CI trust-boundary consumers (e.g. `.github`'s `pingora_edge_policy.py`) via an exact-commit submodule pin of protected `main`, ahead of PyPI parity, rather than waiting on release or duplicating security logic. |
 
 ## When an ADR is required
 
