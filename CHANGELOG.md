@@ -88,6 +88,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disable the recurring loop.
 
 ### Security
+- Pin isolated PEP 517 source builds to the reviewed Hatchling 1.31.0 backend
+  identity so build isolation cannot silently resolve a different backend than
+  the hash-locked release toolchain.
 - Harden release publication evidence with validated integrating-PR identity,
   cross-repository required-workflow source checks, and Strix check-run
   annotations without adding an elevated release credential.
