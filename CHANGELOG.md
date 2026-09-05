@@ -69,6 +69,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Accept distinct exact SHA-256 artifact hashes for one pinned CI package while
+  requiring every reviewed runtime SBOM digest to be present in that immutable
+  set, preserving portable hash-locked tooling without weakening release evidence.
 - Restore the hourly PR-maintenance calls to the reviewed immutable
   `ContextualWisdomLab/.github` revision
   `59505c1d89eb7ea816e921b6da38079c736608c2`. The regression contract now
