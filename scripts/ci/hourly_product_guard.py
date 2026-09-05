@@ -29,23 +29,23 @@ class BoundaryError(RuntimeError):
     """Raised when an autonomous patch crosses a fail-closed boundary."""
 
 
-def _run(
-    args: Sequence[str],
+def _run_command(
+    command_arguments: Sequence[str],
     *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    text: bool = False,
-    check: bool = True,
+    working_directory: Path | None = None,
+    command_environment: dict[str, str] | None = None,
+    text_mode: bool = False,
+    check_result: bool = True,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     """Run one trusted local command without invoking a shell."""
 
     return subprocess.run(
-        list(args),
-        cwd=cwd,
-        env=env,
-        check=check,
+        list(command_arguments),
+        cwd=working_directory,
+        env=command_environment,
+        check=check_result,
         capture_output=True,
-        text=text,
+        text=text_mode,
     )
 
 
@@ -73,7 +73,11 @@ def _nul_names(
 ) -> list[str]:
     """Return strict UTF-8 filenames from a NUL-delimited Git response."""
 
-    raw = _run([*git, *args, "-z"], cwd=cwd, env=env).stdout
+    raw = _run_command(
+        [*git, *args, "-z"],
+        working_directory=cwd,
+        command_environment=env,
+    ).stdout
     assert isinstance(raw, bytes)
     return [part.decode("utf-8", errors="strict") for part in raw.split(b"\0") if part]
 
@@ -150,12 +154,21 @@ def validate_worktree_diff(
     if total_bytes > MAX_TOTAL_BYTES:
         raise BoundaryError("Autonomous maintenance exceeded the changed-file byte limit")
 
-    summary = _run([*git, "diff", *DIFF_SAFETY, "--summary"], cwd=cwd, env=env, text=True)
+    summary = _run_command(
+        [*git, "diff", *DIFF_SAFETY, "--summary"],
+        working_directory=cwd,
+        command_environment=env,
+        text_mode=True,
+    )
     assert isinstance(summary.stdout, str)
     if " mode change " in summary.stdout:
         raise BoundaryError("Autonomous maintenance must not change file modes")
 
-    numstat = _run([*git, "diff", *DIFF_SAFETY, "--numstat", "-z"], cwd=cwd, env=env).stdout
+    numstat = _run_command(
+        [*git, "diff", *DIFF_SAFETY, "--numstat", "-z"],
+        working_directory=cwd,
+        command_environment=env,
+    ).stdout
     assert isinstance(numstat, bytes)
     changed_lines = 0
     for record in (part for part in numstat.split(b"\0") if part):
@@ -168,7 +181,11 @@ def validate_worktree_diff(
             f"Autonomous maintenance exceeded the changed-line budget: {changed_lines}"
         )
 
-    _run([*git, "diff", "--no-ext-diff", "--no-textconv", "--check"], cwd=cwd, env=env)
+    _run_command(
+        [*git, "diff", "--no-ext-diff", "--no-textconv", "--check"],
+        working_directory=cwd,
+        command_environment=env,
+    )
     return names
 
 
@@ -239,13 +256,16 @@ def _prepare_diff_index(
 
     env = os.environ.copy()
     env["GIT_INDEX_FILE"] = str(index_file)
-    _run([*git, "read-tree", head], env=env)
-    untracked = _run([*git, "ls-files", "--others", "--exclude-standard", "-z"], env=env).stdout
+    _run_command([*git, "read-tree", head], command_environment=env)
+    untracked = _run_command(
+        [*git, "ls-files", "--others", "--exclude-standard", "-z"],
+        command_environment=env,
+    ).stdout
     assert isinstance(untracked, bytes)
     if untracked:
         pathspec = index_file.with_suffix(".pathspec")
         pathspec.write_bytes(untracked)
-        _run(
+        _run_command(
             [
                 *git,
                 "add",
@@ -253,7 +273,7 @@ def _prepare_diff_index(
                 f"--pathspec-from-file={pathspec}",
                 "--pathspec-file-nul",
             ],
-            env=env,
+            command_environment=env,
         )
     return env
 
@@ -264,8 +284,9 @@ def capture(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     baseline_git = args.baseline.resolve() / ".git"
     expected_head = args.base_sha_file.read_text(encoding="utf-8").strip()
-    baseline_head = _run(
-        ["git", f"--git-dir={baseline_git}", "rev-parse", "HEAD"], text=True
+    baseline_head = _run_command(
+        ["git", f"--git-dir={baseline_git}", "rev-parse", "HEAD"],
+        text_mode=True,
     ).stdout.strip()
     if baseline_head != expected_head:
         raise BoundaryError("The immutable diff baseline changed during model execution")
@@ -278,10 +299,10 @@ def capture(args: argparse.Namespace) -> int:
         index_file=index_file,
     )
 
-    quiet = _run(
+    quiet = _run_command(
         [*git, "diff", "--no-ext-diff", "--no-textconv", "--quiet"],
-        env=env,
-        check=False,
+        command_environment=env,
+        check_result=False,
     )
     if quiet.returncode == 0:
         _write_outputs({"changed": "false", "base_sha": expected_head})
@@ -290,8 +311,15 @@ def capture(args: argparse.Namespace) -> int:
         raise BoundaryError("Git could not determine whether the model changed the workspace")
 
     validate_worktree_diff(workspace=workspace, git=git, env=env)
-    patch = _run([*git, "diff", *DIFF_SAFETY, "--binary"], env=env).stdout
-    stat_text = _run([*git, "diff", *DIFF_SAFETY, "--stat"], env=env, text=True).stdout
+    patch = _run_command(
+        [*git, "diff", *DIFF_SAFETY, "--binary"],
+        command_environment=env,
+    ).stdout
+    stat_text = _run_command(
+        [*git, "diff", *DIFF_SAFETY, "--stat"],
+        command_environment=env,
+        text_mode=True,
+    ).stdout
     assert isinstance(patch, bytes)
     assert isinstance(stat_text, str)
     if len(patch) > MAX_PATCH_BYTES:
@@ -308,9 +336,16 @@ def apply_patch(args: argparse.Namespace) -> int:
     workspace = args.workspace.resolve()
     patch_file = args.patch_file.resolve()
     validate_patch_text(patch_file)
-    _run(["git", "apply", "--check", str(patch_file)], cwd=workspace)
-    _run(["git", "apply", str(patch_file)], cwd=workspace)
-    base_sha = _run(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).stdout.strip()
+    _run_command(
+        ["git", "apply", "--check", str(patch_file)],
+        working_directory=workspace,
+    )
+    _run_command(["git", "apply", str(patch_file)], working_directory=workspace)
+    base_sha = _run_command(
+        ["git", "rev-parse", "HEAD"],
+        working_directory=workspace,
+        text_mode=True,
+    ).stdout.strip()
     git = _git_command(git_dir=workspace / ".git", work_tree=workspace)
     env = _prepare_diff_index(
         git=git,
@@ -332,18 +367,38 @@ def self_test() -> int:
         workspace = root / "workspace"
         baseline = root / "baseline"
         workspace.mkdir()
-        _run(["git", "init", "-q"], cwd=workspace)
-        _run(["git", "config", "user.name", "Guard Test"], cwd=workspace)
-        _run(["git", "config", "user.email", "guard@example.invalid"], cwd=workspace)
+        _run_command(["git", "init", "-q"], working_directory=workspace)
+        _run_command(
+            ["git", "config", "user.name", "Guard Test"],
+            working_directory=workspace,
+        )
+        _run_command(
+            ["git", "config", "user.email", "guard@example.invalid"],
+            working_directory=workspace,
+        )
         (workspace / "README.md").write_text("before\n", encoding="utf-8")
         (workspace / "src/egressweave").mkdir(parents=True)
         (workspace / "src/egressweave/__init__.py").write_text(
             "\"\"\"Package.\"\"\"\n", encoding="utf-8"
         )
-        _run(["git", "add", "."], cwd=workspace)
-        _run(["git", "commit", "-qm", "base"], cwd=workspace)
-        _run(["git", "clone", "-q", "--local", "--no-hardlinks", str(workspace), str(baseline)])
-        base_sha = _run(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).stdout.strip()
+        _run_command(["git", "add", "."], working_directory=workspace)
+        _run_command(["git", "commit", "-qm", "base"], working_directory=workspace)
+        _run_command(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--local",
+                "--no-hardlinks",
+                str(workspace),
+                str(baseline),
+            ]
+        )
+        base_sha = _run_command(
+            ["git", "rev-parse", "HEAD"],
+            working_directory=workspace,
+            text_mode=True,
+        ).stdout.strip()
         base_file = root / "base-sha"
         base_file.write_text(base_sha + "\n", encoding="utf-8")
         (workspace / "README.md").write_text("after\n", encoding="utf-8")
