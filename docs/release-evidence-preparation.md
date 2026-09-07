@@ -33,6 +33,19 @@ duplicate distribution kind, or wheel/source version mismatch fails before an
 evidence output is created. The reviewed dependency manifest and hash-locked
 runtime requirements must also be existing canonical regular files.
 
+Each reviewed dependency input is independently limited to 1 MiB and bound to
+its accepted device, inode, and size identity before the deterministic generator
+is loaded. The preparer opens each pathname with no-follow semantics, copies the
+bounded descriptor bytes into a fresh owner-only private snapshot under a
+distinct fixed internal name, and rechecks descriptor and pathname identity
+before and after the copy. Both wheel and source-distribution SBOM builds receive
+the same detached dependency-manifest and runtime-lock snapshots; the generator
+never reopens the caller-controlled reviewed-input paths. A pathname replacement
+after acceptance therefore cannot change the dependency bytes delegated to the
+generator or make the two SBOM passes observe different reviewed inputs. Every
+reviewed-input rejection remains generic, and the private snapshots are removed
+before evidence publication.
+
 Each selected wheel and source distribution is preflighted as a current regular
 file with a finite compressed-byte bound before the deterministic generator is
 loaded or any ZIP or tar archive parser runs. The preparer records that exact
@@ -80,12 +93,13 @@ attestation credentials.
 ## Generated contract
 
 The preparer computes both deterministic CycloneDX 1.7 JSON documents from the
-private identity-bound parser snapshots, constructs canonical strict-JSON source
-identity, computes sorted lowercase SHA-256 entries over the original accepted
-distributions and generated payloads, and then exclusively creates owner-only
-generated files. The private parser snapshots are deleted with their temporary
-directory before any generated evidence is published. After successful
-preparation, the evidence directory contains exactly:
+private identity-bound distribution snapshots and the detached reviewed-input
+snapshots, constructs canonical strict-JSON source identity, computes sorted
+lowercase SHA-256 entries over the original accepted distributions and generated
+payloads, and then exclusively creates owner-only generated files. All private
+snapshots are deleted with their temporary directory before any generated
+evidence is published. After successful preparation, the evidence directory
+contains exactly:
 
 ```text
 egressweave-X.Y.Z-py3-none-any.whl

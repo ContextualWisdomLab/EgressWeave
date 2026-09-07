@@ -26,7 +26,9 @@ ATTESTABLE_GENERATOR_PATH = Path(__file__).with_name(
     "generate_attestable_release_sbom.py"
 )
 MAX_DISTRIBUTION_BYTES = release_evidence.MAX_ARTIFACT_BYTES
+MAX_REVIEWED_INPUT_BYTES = 1_048_576
 COPY_BLOCK_BYTES = 1_048_576
+REVIEWED_INPUT_REJECTION = "reviewed input is unreadable or unsafe"
 DistributionIdentity = tuple[int, int, int]
 
 __all__ = ["main", "prepare_release_evidence"]
@@ -135,11 +137,12 @@ def _require_distribution_metadata(
     metadata: os.stat_result,
     *,
     label: str,
+    max_bytes: int = MAX_DISTRIBUTION_BYTES,
 ) -> DistributionIdentity:
-    """Return one regular finite distribution identity or fail through stable errors."""
+    """Return one regular finite input identity or fail through stable errors."""
     if not stat.S_ISREG(metadata.st_mode):
         raise SystemExit(f"{label} is unreadable or unsafe")
-    if metadata.st_size > MAX_DISTRIBUTION_BYTES:
+    if metadata.st_size > max_bytes:
         raise SystemExit(f"{label} exceeds the safety bound")
     return _distribution_identity(metadata)
 
@@ -157,17 +160,37 @@ def _require_distribution_preflight(
     return _require_distribution_metadata(path_state, label=label)
 
 
+def _require_reviewed_input_preflight(
+    path: Path,
+    *,
+    label: str,
+) -> DistributionIdentity:
+    """Bind one reviewed input while hiding which safety rule rejected it."""
+    del label
+    try:
+        path_state = path.lstat()
+        return _require_distribution_metadata(
+            path_state,
+            label="reviewed input",
+            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+        )
+    except (OSError, SystemExit):
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
+
+
 def _snapshot_distribution(
     path: Path,
     snapshot_root: Path,
     accepted_identity: DistributionIdentity,
     *,
     label: str,
+    max_bytes: int = MAX_DISTRIBUTION_BYTES,
+    snapshot_name: str | None = None,
 ) -> Path:
     """Copy one accepted descriptor into a private parser-only immutable snapshot.
 
     The accepted path identity is checked against both the no-follow descriptor
-    and the current pathname before and after the bounded copy. Archive parsers
+    and the current pathname before and after the bounded copy. Downstream parsers
     receive only the private snapshot, never the mutable caller-controlled path.
     """
     read_flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -180,14 +203,19 @@ def _snapshot_distribution(
     )
     source_descriptor: int | None = None
     snapshot_descriptor: int | None = None
-    snapshot_path = snapshot_root / path.name
+    snapshot_path = snapshot_root / (snapshot_name or path.name)
     try:
         source_descriptor = os.open(path, read_flags)
         opened_identity = _require_distribution_metadata(
             os.fstat(source_descriptor),
             label=label,
+            max_bytes=max_bytes,
         )
-        current_identity = _require_distribution_metadata(path.lstat(), label=label)
+        current_identity = _require_distribution_metadata(
+            path.lstat(),
+            label=label,
+            max_bytes=max_bytes,
+        )
         if opened_identity != accepted_identity or current_identity != accepted_identity:
             raise SystemExit(f"{label} is unreadable or unsafe")
 
@@ -199,7 +227,7 @@ def _snapshot_distribution(
             if not block:
                 break
             copied_bytes += len(block)
-            if copied_bytes > MAX_DISTRIBUTION_BYTES:
+            if copied_bytes > max_bytes:
                 raise SystemExit(f"{label} exceeds the safety bound")
             remaining = memoryview(block)
             while remaining:
@@ -212,8 +240,13 @@ def _snapshot_distribution(
         final_opened_identity = _require_distribution_metadata(
             os.fstat(source_descriptor),
             label=label,
+            max_bytes=max_bytes,
         )
-        final_path_identity = _require_distribution_metadata(path.lstat(), label=label)
+        final_path_identity = _require_distribution_metadata(
+            path.lstat(),
+            label=label,
+            max_bytes=max_bytes,
+        )
         snapshot_state = os.fstat(snapshot_descriptor)
         if (
             final_opened_identity != accepted_identity
@@ -233,6 +266,27 @@ def _snapshot_distribution(
             os.close(snapshot_descriptor)
         if source_descriptor is not None:
             os.close(source_descriptor)
+
+
+def _snapshot_reviewed_input(
+    path: Path,
+    snapshot_root: Path,
+    accepted_identity: DistributionIdentity,
+    *,
+    snapshot_name: str,
+) -> Path:
+    """Copy one reviewed input while normalizing every rejection to one message."""
+    try:
+        return _snapshot_distribution(
+            path,
+            snapshot_root,
+            accepted_identity,
+            label="reviewed input",
+            max_bytes=MAX_REVIEWED_INPUT_BYTES,
+            snapshot_name=snapshot_name,
+        )
+    except SystemExit:
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
 
 
 def _load_attestable_generator() -> ModuleType:
@@ -369,11 +423,11 @@ def prepare_release_evidence(
     """Create and independently verify one credential-free release handoff.
 
     The input directory must initially contain only one canonical wheel and one
-    matching source distribution. Each accepted archive is copied from its
-    no-follow identity-bound descriptor into a private parser-only snapshot
-    before the generator loads. Every generated file is new, owner-only, and
-    deterministic. The returned mapping is the exact manifest already rebuilt
-    and verified after the separately stored handoff has been durably published.
+    matching source distribution. Each accepted archive and reviewed dependency
+    input is copied from its no-follow identity-bound descriptor into one private
+    parser-only snapshot before the generator loads. Every generated file is new,
+    owner-only, and deterministic. The returned mapping is the exact manifest
+    already rebuilt and verified after the separately stored handoff is published.
     """
     _require_source_identity(repository, source_sha)
     evidence_root = _require_canonical_directory(
@@ -381,13 +435,25 @@ def prepare_release_evidence(
         label="release evidence input directory",
     )
     resolved_handoff = _require_handoff_outside_evidence(handoff_path, evidence_root)
-    dependency_manifest = _require_canonical_file(
-        dependency_manifest_path,
-        label="reviewed runtime dependency manifest",
+    reviewed_input_label = "reviewed input"
+    try:
+        dependency_manifest = _require_canonical_file(
+            dependency_manifest_path,
+            label=reviewed_input_label,
+        )
+        runtime_lock = _require_canonical_file(
+            runtime_lock_path,
+            label=reviewed_input_label,
+        )
+    except SystemExit:
+        raise SystemExit(REVIEWED_INPUT_REJECTION) from None
+    dependency_manifest_identity = _require_reviewed_input_preflight(
+        dependency_manifest,
+        label=reviewed_input_label,
     )
-    runtime_lock = _require_canonical_file(
-        runtime_lock_path,
-        label="hash-locked runtime requirements",
+    runtime_lock_identity = _require_reviewed_input_preflight(
+        runtime_lock,
+        label=reviewed_input_label,
     )
     wheel_path, sdist_path = _select_distributions(evidence_root)
     wheel_label = f"release distribution {wheel_path.name}"
@@ -409,19 +475,31 @@ def prepare_release_evidence(
             sdist_identity,
             label=sdist_label,
         )
+        dependency_manifest_snapshot = _snapshot_reviewed_input(
+            dependency_manifest,
+            snapshot_root,
+            dependency_manifest_identity,
+            snapshot_name="reviewed-dependency-manifest",
+        )
+        runtime_lock_snapshot = _snapshot_reviewed_input(
+            runtime_lock,
+            snapshot_root,
+            runtime_lock_identity,
+            snapshot_name="reviewed-runtime-lock",
+        )
         generator = _load_attestable_generator()
         wheel_sbom = _strict_pretty_json_bytes(
             generator.build_attestable_sbom(
                 wheel_snapshot,
-                dependency_manifest,
-                runtime_lock,
+                dependency_manifest_snapshot,
+                runtime_lock_snapshot,
             )
         )
         sdist_sbom = _strict_pretty_json_bytes(
             generator.build_attestable_sbom(
                 sdist_snapshot,
-                dependency_manifest,
-                runtime_lock,
+                dependency_manifest_snapshot,
+                runtime_lock_snapshot,
             )
         )
 
