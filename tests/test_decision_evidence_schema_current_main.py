@@ -11,6 +11,18 @@ import egressweave
 from egressweave.validation import _make_validated_egress_url
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+_AUTHORITY_SCHEMA = {
+    "type": "string",
+    "minLength": 3,
+    "maxLength": 259,
+    "pattern": (
+        r"^(?=.{1,253}:)(?![0-9.]+:)(?!0(?:\.)*x[a-z0-9.-]*:)"
+        r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)"
+        r"(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*:"
+        r"(?:[1-9]|[1-9][0-9]{1,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|"
+        r"65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+    ),
+}
 _METHOD_ITEM_SCHEMA = {
     "type": "string",
     "pattern": "^[!#$%&'*+.^_`|~0-9A-Z-]+$",
@@ -58,7 +70,7 @@ def test_packaged_schema_matches_protected_main_runtime_shape() -> None:
     assert properties["schema_version"] == {
         "const": egressweave.DECISION_EVIDENCE_SCHEMA_VERSION
     }
-    assert properties["authority"] == {"type": "string", "minLength": 1}
+    assert properties["authority"] == _AUTHORITY_SCHEMA
     assert properties["allowed_methods"] == {
         "type": "array",
         "uniqueItems": True,
@@ -137,7 +149,7 @@ def test_schema_loader_returns_detached_data_on_every_call() -> None:
     second = _load_schema()
     second_properties = second["properties"]
     assert isinstance(second_properties, dict)
-    assert second_properties["authority"] == {"type": "string", "minLength": 1}
+    assert second_properties["authority"] == _AUTHORITY_SCHEMA
 
 
 def test_schema_is_a_packaged_utf8_json_resource() -> None:
