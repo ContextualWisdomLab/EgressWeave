@@ -211,11 +211,7 @@ class _PinnedEgressNetworkBackend(httpcore.AsyncNetworkBackend):
                 if remaining_timeout == 0.0:
                     more_addresses = False
                     return False
-            tasks.add(
-                asyncio.create_task(
-                    connect_after_stagger(address)
-                )
-            )
+            tasks.add(asyncio.create_task(connect_after_stagger(address)))
             next_attempt_at = loop.time() + _CONNECTION_ATTEMPT_DELAY_SECONDS
             return True
 
@@ -450,6 +446,17 @@ class _PinnedEgressAsyncTransport(httpx.AsyncBaseTransport):
         await self._pool.aclose()
 
 
+def _build_async_httpx_client(transport: httpx.AsyncBaseTransport) -> httpx.AsyncClient:
+    """Build a client without HTTPX's ambient hop-by-hop connection header."""
+    client = httpx.AsyncClient(
+        follow_redirects=False,
+        trust_env=False,
+        transport=transport,
+    )
+    client.headers.pop("connection", None)
+    return client
+
+
 async def build_egress_http_client(
     base_url: str | None,
     *,
@@ -458,9 +465,11 @@ async def build_egress_http_client(
 ) -> tuple[str | None, httpx.AsyncClient]:
     """Build a DNS-pinned, fail-closed client for ``base_url``.
 
-    Empty or absent URLs return a deny-all client. Exact outbound targets are
-    limited by ``policy.max_request_target_bytes``. Final outbound fields are
-    limited by ``policy.max_request_header_fields`` and
+    Empty or absent URLs return a deny-all client. HTTPX's ambient ``Connection``
+    header is removed at construction while caller-supplied hop-by-hop fields
+    remain subject to the transport's strict request-header policy. Exact outbound
+    targets are limited by ``policy.max_request_target_bytes``. Final outbound
+    fields are limited by ``policy.max_request_header_fields`` and
     ``policy.max_request_header_bytes``. Request bodies are limited to
     ``policy.max_request_bytes`` and must match a supplied ``Content-Length``
     exactly. Request-phase timeout metadata is capped by
@@ -472,22 +481,13 @@ async def build_egress_http_client(
     """
     validated = await validate_egress_url_details_async(base_url, policy=policy)
     if validated is None:
-        return (
-            None,
-            httpx.AsyncClient(
-                follow_redirects=False,
-                trust_env=False,
-                transport=_DenyAllAsyncTransport(),
-            ),
-        )
+        return None, _build_async_httpx_client(_DenyAllAsyncTransport())
     return (
         validated.normalized_url,
-        httpx.AsyncClient(
-            follow_redirects=False,
-            trust_env=False,
-            transport=_PinnedEgressAsyncTransport(
+        _build_async_httpx_client(
+            _PinnedEgressAsyncTransport(
                 validated, policy, tls_configuration=tls_configuration
-            ),
+            )
         ),
     )
 
@@ -498,11 +498,14 @@ def build_pinned_https_async_client(
     policy: EgressPolicy,
     tls_configuration: TLSConfiguration | None = None,
 ) -> httpx.AsyncClient:
-    """Build an async client with bounded request, timeout, and response policy."""
-    return httpx.AsyncClient(
-        follow_redirects=False,
-        trust_env=False,
-        transport=_PinnedEgressAsyncTransport(
+    """Build an async client with bounded request, timeout, and response policy.
+
+    HTTPX's ambient ``Connection`` header is removed at construction while any
+    caller-supplied hop-by-hop field remains subject to the fail-closed transport
+    policy.
+    """
+    return _build_async_httpx_client(
+        _PinnedEgressAsyncTransport(
             validated, policy, tls_configuration=tls_configuration
-        ),
+        )
     )
