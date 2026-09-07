@@ -38,7 +38,7 @@ classifiers = [
 dependencies = [
     "httpx==0.28.1",
     "httpcore==1.0.9",
-    "idna>=3.18,<4",
+    "idna>=3.19,<4",
 ]
 
 [project.optional-dependencies]
