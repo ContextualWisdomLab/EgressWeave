@@ -260,13 +260,20 @@ def _bind_bounded_request_timeouts(
     every phase after the destination has already passed policy validation.
     Missing or disabled values therefore receive the immutable policy maximum;
     stricter non-negative finite values are preserved and larger values are
-    capped. Malformed maps, unknown keys, booleans, negative numbers, and
+    capped. The outer mapping is detached exactly once before timeout lookup so
+    caller-controlled ``get`` methods cannot cross the generic denial boundary
+    and a stateful mapping cannot present different extension snapshots during
+    one decision. Malformed maps, unknown keys, booleans, negative numbers, and
     non-finite values fail through the generic policy boundary before HTTPCore
     can allocate a connection or wait on network I/O. Failures raised by
     attacker-controlled mapping, key-comparison, or numeric protocol methods
     are also masked.
     """
-    raw_timeout = extensions.get("timeout")
+    safe_extensions = _copy_request_extensions(extensions)
+    if safe_extensions is None:
+        raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
+
+    raw_timeout = safe_extensions.get("timeout")
     if raw_timeout is None:
         requested_timeouts: dict[object, object] | None = {}
     elif isinstance(raw_timeout, Mapping):
@@ -299,7 +306,6 @@ def _bind_bounded_request_timeouts(
             raise EgressNotAllowedError(EGRESS_NOT_ALLOWED) from None
         bounded_timeouts[key] = min(normalized_value, maximum)
 
-    safe_extensions = dict(extensions)
     safe_extensions["timeout"] = bounded_timeouts
     return safe_extensions
 
