@@ -29,20 +29,46 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _workflow_step(workflow: str, name: str) -> str:
+    """Return one named workflow step with comments removed."""
+    marker = f"      - name: {name}\n"
+    assert marker in workflow
+    step = workflow.split(marker, 1)[1].split("\n      - name: ", 1)[0]
+    return "\n".join(
+        line for line in step.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def test_product_scheduler_uses_pinned_opencode_with_nvidia_nim() -> None:
     """Replace the Codex scheduler model step without mutable agent tooling."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
+    install_step = _workflow_step(workflow, "Install the pinned OpenCode CLI")
+    lines = install_step.splitlines()
+    curl_line = (
+        "          curl --proto '=https' --tlsv1.2 --fail --location --silent "
+        "--show-error \\"
+    )
+    expected_chain = [
+        '            --output "$archive" \\',
+        (
+            '            "https://github.com/anomalyco/opencode/releases/download/'
+            'v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"'
+        ),
+        (
+            "          printf '%s  %s\\n' "
+            '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
+        ),
+    ]
 
     assert "openai/codex-action@" not in workflow
     assert "OPENAI_API_KEY" not in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}" in workflow
-    assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in workflow
-    assert f'OPENCODE_SHA256: "{OPENCODE_LINUX_X64_SHA256}"' in workflow
-    assert (
-        "https://github.com/anomalyco/opencode/releases/download/"
-        "v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"
-    ) in workflow
-    assert "sha256sum --check" in workflow
+    assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in install_step
+    assert f'OPENCODE_SHA256: "{OPENCODE_LINUX_X64_SHA256}"' in install_step
+    assert 'archive="${RUNNER_TEMP}/opencode-linux-x64.tar.gz"' in install_step
+    curl_index = lines.index(curl_line)
+    assert lines[curl_index + 1 : curl_index + 4] == expected_chain
+    assert "curl | sh" not in install_step
     assert "opencode run --auto" in workflow
     assert f'OPENCODE_MODEL: "{NVIDIA_MODEL}"' in workflow
 
@@ -167,14 +193,17 @@ def test_operator_documentation_forbids_repository_local_patch_publication() -> 
     assert "reconstruct and verify the exact tree" in documentation
 
 
-def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
-    """Keep the public execution identity aligned with the audited workflow."""
+def test_buyer_readme_keeps_maintainer_identity_in_operator_documentation() -> None:
+    """Keep credential-bearing maintenance detail out of buyer-facing copy."""
     readme = _read(README_PATH)
+    documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
 
     assert "bounded Codex maintainer" not in readme
-    assert "bounded OpenCode maintainer" in readme
-    assert "`NVIDIA_NIM_API_KEY`" in readme
-    assert "COPILOT_GITHUB_TOKEN" not in readme
+    assert "OpenCode" not in readme
+    assert "NVIDIA_NIM_API_KEY" not in readme
+    assert f"OpenCode {OPENCODE_VERSION}" in documentation
+    assert "`NVIDIA_NIM_API_KEY`" in documentation
+    assert "COPILOT_GITHUB_TOKEN" not in documentation
 
 
 def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
