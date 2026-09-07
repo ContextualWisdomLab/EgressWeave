@@ -164,7 +164,7 @@ def _normalize_allowed_method(value: object) -> str:
     is never accepted: its semantics create an application-layer tunnel whose
     destination is independent of the validated URL authority.
     """
-    if not isinstance(value, str):
+    if type(value) is not str:
         raise TypeError("allowed_methods entries must be HTTP method strings")
 
     normalized = value.strip().upper()

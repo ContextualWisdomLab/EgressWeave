@@ -100,6 +100,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   retaining trusted configuration state. Exact built-in integers and existing
   ASCII decimal strings remain supported, preserving defaults and ranges while
   preventing subclass-controlled values from crossing immutable policy construction.
+- Reject non-exact string subclasses in HTTP method policy values before
+  normalization, comma-separated parsing, or runtime authorization.
 - Erase private request-method normalization exception provenance from
   caller-visible policy denials.
 - Pin the credential-free verifier to a reviewed Python 3.13
