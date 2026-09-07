@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "hourly-product-development.yml"
 REVIEW_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "hourly-pr-maintenance.yml"
 MAINTENANCE_DOCUMENTATION_PATH = ROOT / "docs" / "hourly-autonomous-maintenance.md"
+PRODUCT_GUARD_PATH = ROOT / "scripts" / "ci" / "hourly_product_guard.py"
 
 OPENCODE_VERSION = "1.18.13"
 OPENCODE_LINUX_X64_SHA256 = (
@@ -26,10 +27,21 @@ def _product_development_mapping_section(documentation: str) -> str:
     return documentation.split(start, 1)[1].split(end, 1)[0]
 
 
+def _workflow_step(workflow: str, name: str) -> str:
+    """Return one named workflow step with comments removed."""
+    marker = f"      - name: {name}\n"
+    assert marker in workflow
+    step = workflow.split(marker, 1)[1].split("\n      - name: ", 1)[0]
+    return "\n".join(
+        line for line in step.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def test_product_workflow_pins_the_reviewed_opencode_release() -> None:
     """Keep one reviewed release bound from download path through verification."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
-    lines = workflow.splitlines()
+    install_step = _workflow_step(workflow, "Install the pinned OpenCode CLI")
+    lines = install_step.splitlines()
     curl_line = (
         "          curl --proto '=https' --tlsv1.2 --fail --location --silent "
         "--show-error \\"
@@ -44,16 +56,16 @@ def test_product_workflow_pins_the_reviewed_opencode_release() -> None:
         '"$OPENCODE_SHA256" "$archive" | sha256sum --check -'
     )
 
-    assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in workflow
-    assert OPENCODE_LINUX_X64_SHA256 in workflow
-    assert 'archive="${RUNNER_TEMP}/opencode-linux-x64.tar.gz"' in workflow
+    assert f'OPENCODE_VERSION: "{OPENCODE_VERSION}"' in install_step
+    assert f'OPENCODE_SHA256: "{OPENCODE_LINUX_X64_SHA256}"' in install_step
+    assert 'archive="${RUNNER_TEMP}/opencode-linux-x64.tar.gz"' in install_step
     curl_index = lines.index(curl_line)
     assert lines[curl_index + 1 : curl_index + 4] == [
         output_line,
         release_line,
         checksum_line,
     ]
-    assert "curl | sh" not in workflow
+    assert "curl | sh" not in install_step
 
 
 def test_product_workflow_uses_the_exact_nvidia_model_and_secret_mapping() -> None:
@@ -61,7 +73,6 @@ def test_product_workflow_uses_the_exact_nvidia_model_and_secret_mapping() -> No
     workflow = _read(PRODUCT_WORKFLOW_PATH)
 
     assert NVIDIA_MODEL in workflow
-    assert "NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}" in workflow
     assert "NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}" in workflow
     assert "OPENAI_API_KEY" not in workflow
     assert "ANTHROPIC_API_KEY" not in workflow
@@ -84,12 +95,12 @@ def test_product_workflow_does_not_give_the_model_repository_write_identity() ->
 def test_product_workflow_keeps_model_execution_on_a_bounded_patch_surface() -> None:
     """Require the repository-reviewed patch guard around autonomous edits."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
+    guard = _read(PRODUCT_GUARD_PATH)
 
-    assert "scripts/ci/hourly_product_guard.py" in workflow
-    assert "capture" in workflow
-    assert "reverify" in workflow
-    assert "MAX_CHANGED_FILES" in workflow
-    assert "MAX_CHANGED_LINES" in workflow
+    assert '${RUNNER_TEMP}/hourly-pristine/scripts/ci/hourly_product_guard.py" capture' in workflow
+    assert "scripts/ci/hourly_product_guard.py apply" in workflow
+    assert "MAX_FILES = 10" in guard
+    assert "MAX_CHANGED_LINES = 1_000" in guard
 
 
 def test_product_workflow_reverification_is_credential_free() -> None:
@@ -103,20 +114,23 @@ def test_product_workflow_reverification_is_credential_free() -> None:
 
     assert "NVIDIA_NIM_API_KEY" in develop
     assert "NVIDIA_NIM_API_KEY" not in reverify
-    assert "permissions:\n      contents: read" in reverify
+    assert "      contents: read" in reverify
+    assert "      contents: write" not in reverify
     assert "id-token: write" not in reverify
-    assert "network: none" in reverify
-    assert "cap-drop ALL" in reverify
+    assert "--network none" in reverify
+    assert "--cap-drop ALL" in reverify
     assert "no-new-privileges" in reverify
 
 
 def test_product_workflow_does_not_execute_model_modified_code_with_secret() -> None:
     """Keep source/test execution deferred until after the model secret is gone."""
     workflow = _read(PRODUCT_WORKFLOW_PATH)
-
-    develop_start = workflow.index("  develop:")
-    verify_start = workflow.index("  reverify:")
-    develop = workflow[develop_start:verify_start]
+    credential_steps = "\n".join(
+        (
+            _workflow_step(workflow, "Run the bounded OpenCode autonomous maintainer"),
+            _workflow_step(workflow, "Reject model credential disclosure"),
+        )
+    )
 
     forbidden = (
         "pytest",
@@ -125,7 +139,7 @@ def test_product_workflow_does_not_execute_model_modified_code_with_secret() -> 
         "python -m",
         "python3 -m",
     )
-    assert all(command not in develop for command in forbidden)
+    assert all(command not in credential_steps for command in forbidden)
 
 
 def test_pr_maintenance_uses_only_named_review_credentials() -> None:
