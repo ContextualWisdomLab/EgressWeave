@@ -193,14 +193,17 @@ def test_operator_documentation_forbids_repository_local_patch_publication() -> 
     assert "reconstruct and verify the exact tree" in documentation
 
 
-def test_buyer_readme_identifies_the_opencode_nvidia_maintainer() -> None:
-    """Keep the public execution identity aligned with the audited workflow."""
+def test_buyer_readme_keeps_maintainer_identity_in_operator_documentation() -> None:
+    """Keep credential-bearing maintenance detail out of buyer-facing copy."""
     readme = _read(README_PATH)
+    documentation = _read(MAINTENANCE_DOCUMENTATION_PATH)
 
     assert "bounded Codex maintainer" not in readme
-    assert "bounded OpenCode maintainer" in readme
-    assert "`NVIDIA_NIM_API_KEY`" in readme
-    assert "COPILOT_GITHUB_TOKEN" not in readme
+    assert "OpenCode" not in readme
+    assert "NVIDIA_NIM_API_KEY" not in readme
+    assert f"OpenCode {OPENCODE_VERSION}" in documentation
+    assert "`NVIDIA_NIM_API_KEY`" in documentation
+    assert "COPILOT_GITHUB_TOKEN" not in documentation
 
 
 def test_product_workflow_keeps_printf_escapes_on_indented_yaml_lines() -> None:
