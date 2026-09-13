@@ -604,8 +604,25 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$RELEASE_TAG" release-evidence/* \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
             --title "EgressWeave ${RELEASE_TAG#v}" \
             --generate-notes
-          gh release edit "$RELEASE_TAG" --draft=false
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          if ! jq -e --arg tag "$RELEASE_TAG" '
+            .tag_name == $tag and .draft == false and
+            .prerelease == false and .immutable == true
+          ' <<<"$release" >/dev/null; then
+            echo "::error::Published release is not immutable; it is ineligible for released-owner consumption."
+            exit 1
+          fi
+          gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+          for asset in release-evidence/*; do
+            if [ ! -f "$asset" ] || [ ! -s "$asset" ]; then
+              echo "::error::Release evidence contains a missing or empty artifact."
+              exit 1
+            fi
+            gh release verify-asset "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
+          done
