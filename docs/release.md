@@ -31,6 +31,11 @@ checksums have been re-verified.
    release tag.
 5. Keep the release workflow and every third-party action pinned to reviewed
    commit SHAs.
+6. Enable GitHub release immutability in repository settings before publication.
+   The publisher does not hold Administration permission and must not gain a
+   long-lived administrative credential to change that setting. Its completion
+   gate verifies the actual published result rather than assuming the setting.
+   The runner must support `gh release verify` and `gh release verify-asset`.
 
 The project cannot be published through this workflow until the PyPI project or
 pending Trusted Publisher exists. That external enrollment is deliberately not
@@ -135,7 +140,15 @@ level claim.
    the reviewed SHA, verifies `SHA256SUMS`, creates a draft GitHub Release with
    all evidence attached, and then publishes that complete draft. It refuses to
    overwrite an existing public release and also depends directly on the same
-   release-evidence gate.
+   release-evidence gate. This artifact-only job has no git checkout: every
+   `gh release` command explicitly selects `--repo "$GITHUB_REPOSITORY"`.
+9. The final step reads the version-specific Releases API and requires the exact
+   tag, typed `draft: false`, `prerelease: false`, and `immutable: true`. It then
+   verifies the signed release attestation and every local release-evidence
+   file, including `SHA256SUMS`, using `gh release verify` and
+   `gh release verify-asset`. Missing or empty files, mismatched identities,
+   mutable releases, unavailable metadata, and invalid attestations fail the
+   run. A public release's mere existence does not pass this completion gate.
 
 ## Failure and retry semantics
 
@@ -156,6 +169,17 @@ level claim.
   only that recoverable draft. An existing public release is never replaced.
 - Never republish changed bytes under an existing version. Correct a release
   with a new version and a transparent changelog entry.
+- A completion-gate failure after publication does not undo PyPI or GitHub
+  publication. Do not delete, retag or recycle the version. An owner must
+  investigate missing metadata or attestation and verify the existing artifacts
+  without changing them; use a new reviewed version for an actual defect.
+  The existing workflow still rejects a public-release retry before creation,
+  so a generic whole-job rerun is not an automatic verify-only recovery path.
+- If release immutability was disabled or changed during publication, a complete
+  but mutable public release may exist. It remains ineligible for released-owner
+  consumption. Enabling the setting afterward does not retroactively validate
+  it. Do not describe the post-publication check as an atomic administrative
+  preflight or as proof that publication never occurred on a failed run.
 
 ## Post-release verification
 
@@ -170,8 +194,21 @@ level claim.
 - Install the wheel in clean Python 3.10 and Python 3.13 environments and run a
   minimal import/version check outside the source tree.
 - Confirm the GitHub Release tag resolves to the exact workflow and protected
-  `main` commit.
+  `main` commit, the release is immutable, and the release and artifact
+  attestations validate. Use the version-specific URL, not `releases/latest`.
+- For LifeOS or another released-owner consumer, separately verify that the
+  released version implements the required executable transport/API contract.
+  A schema, destination identifier, source branch, or release inventory entry
+  alone does not prove DNS/IP, proxy, redirect, connect-time or language-runtime
+  enforcement. This publisher repair does not implement those consumer gaps.
 - Restore an empty `[Unreleased]` section only in the next normal development PR.
+
+The focused command `python -m pytest -q
+tests/test_immutable_release_publication.py` executes the actual final shell
+step in a checkout-free fixture with a stateful fake GitHub CLI. It checks the
+repository binding and fail-closed completion outcomes without any network or
+publication authority. It does not replace full repository, hosted exact-head,
+independent-review, real publication or consumer-canary evidence.
 
 ## Authoritative references
 
@@ -181,3 +218,7 @@ level claim.
 - [GitHub Docs: REST API endpoints for commits](https://docs.github.com/en/rest/commits/commits)
 - [PyPI Docs: Publishing with a Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 - [PyPI Docs: Trusted Publishing security model](https://docs.pypi.org/trusted-publishers/security-model/)
+- [GitHub Docs: Immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+- [GitHub CLI: Repository environment](https://cli.github.com/manual/gh_help_environment)
+- [GitHub CLI: Verify a release](https://cli.github.com/manual/gh_release_verify)
+- [GitHub CLI: Verify a release asset](https://cli.github.com/manual/gh_release_verify-asset)
