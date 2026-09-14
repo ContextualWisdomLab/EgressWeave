@@ -137,24 +137,27 @@ level claim.
    action with attestations enabled. It receives no repository-content write
    permission and no long-lived package-index token.
 8. Only after PyPI succeeds, the final job rechecks that the tag still points to
-   the reviewed SHA, verifies `SHA256SUMS`, creates a draft GitHub Release with
-   all evidence attached, and then publishes that complete draft. It refuses to
-   overwrite an existing public release and also depends directly on the same
-   release-evidence gate. This artifact-only job has no git checkout: every
-   `gh release` command explicitly selects `--repo "$GITHUB_REPOSITORY"`.
-9. After publication, the final step first reads the version-specific Releases
-   API and requires the exact tag, typed `draft: false`, `prerelease: false`, and
-   `immutable: true`. Only after this proves the release is immutable does it
-   re-read the associated tag ref and require the exact reviewed workflow SHA.
-   `gh release create --verify-tag` proves that the tag exists; it is not used as
-   a substitute for commit binding. This order closes the interval between the
-   earlier preflight and publication: the final tag identity is read only after
-   the immutable-release lock is observable.
+   the reviewed SHA and verifies `SHA256SUMS`. A recoverable draft for the tag may
+   be deleted and rebuilt. If no release exists, the job creates a complete draft
+   with all reviewed evidence and publishes it. If an already-public release
+   exists, the job does not delete, recreate, edit, or add assets to it; it enters
+   verify-only recovery and subjects the existing release to the same completion
+   gate. This artifact-only job has no git checkout: every `gh release` command
+   explicitly selects `--repo "$GITHUB_REPOSITORY"`.
+9. The completion gate reads the version-specific Releases API and requires the
+   exact tag, typed `draft: false`, `prerelease: false`, and `immutable: true`.
+   It also requires the remote release asset-name inventory to equal exactly the
+   non-empty local `release-evidence/*` inventory; missing or extra remote assets
+   fail closed. Only after these checks prove the public result is the reviewed
+   immutable inventory does it re-read the associated tag ref and require the
+   exact reviewed workflow SHA. `gh release create --verify-tag` proves that the
+   tag exists; it is not used as a substitute for commit binding.
 10. The final step then verifies the signed release attestation and every local
    release-evidence file, including `SHA256SUMS`, using `gh release verify` and
    `gh release verify-asset`. Missing or empty files, mismatched identities,
-   mutable releases, unavailable metadata, and invalid attestations fail the
-   run. A public release's mere existence does not pass this completion gate.
+   mismatched asset inventory, mutable releases, unavailable metadata, and
+   invalid attestations fail the run. A public release's mere existence does not
+   pass this completion gate.
 
 ## Failure and retry semantics
 
@@ -172,18 +175,19 @@ level claim.
   tag remains at the reviewed commit. Correct the external publisher or
   environment configuration and rerun the failed jobs; do not move the tag.
 - If the final GitHub Release job leaves a draft, a retry may delete and rebuild
-  only that recoverable draft. An existing public release is never replaced.
+  only that recoverable draft. An existing public release is never replaced or
+  mutated.
 - Never republish changed bytes under an existing version. Correct a release
   with a new version and a transparent changelog entry.
 - A completion-gate failure after publication does not undo PyPI or GitHub
-  publication. Do not delete, retag or recycle the version. An owner must
-  investigate missing metadata, tag identity, or attestation and verify the
-  existing artifacts without changing them; use a new reviewed version for an
-  actual defect. A post-publication tag mismatch is a failed release-authority
-  event even if GitHub has already made the release public; that version remains
-  ineligible for released-owner consumption.
-  The existing workflow still rejects a public-release retry before creation,
-  so a generic whole-job rerun is not an automatic verify-only recovery path.
+  publication. Do not delete, retag or recycle the version. Rerunning the failed
+  final job is a verify-only recovery when the public release already exists: it
+  may succeed only if exact typed metadata, immutable state, reviewed tag SHA,
+  exact release-asset inventory, release attestation, and every asset attestation
+  validate. The rerun must not edit that public release. A mutable, mismatched,
+  or unverifiable public release remains ineligible for released-owner
+  consumption and requires investigation; use a new reviewed version for an
+  actual artifact defect.
 - If release immutability was disabled or changed during publication, a complete
   but mutable public release may exist. It remains ineligible for released-owner
   consumption. Enabling the setting afterward does not retroactively validate
