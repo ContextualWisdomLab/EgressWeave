@@ -60,9 +60,13 @@ if args[0] == "release":
             fail("release edit must follow draft creation for the requested tag")
         state["published"] = True
     elif args[1] == "verify":
+        if not state["published"]:
+            fail("release attestation is unavailable before publication")
         if state.get("release_failure"):
             fail("release attestation failed")
     elif args[1] == "verify-asset":
+        if not state["published"]:
+            fail("asset attestation is unavailable before publication")
         asset = Path(args[3])
         if not asset.is_file() or asset.name == state.get("asset_failure"):
             fail("asset attestation failed")
