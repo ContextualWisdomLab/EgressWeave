@@ -53,6 +53,8 @@ if args[0] == "release":
         state["created_tag"] = args[2]
         state["uploaded_assets"] = uploaded_assets
     elif args[1] == "edit":
+        if "--draft=false" not in args:
+            fail("release edit must clear draft state")
         state["published"] = True
     elif args[1] == "verify":
         if state.get("release_failure"):
@@ -69,7 +71,13 @@ elif args[0] == "api":
         fail("HTTP 503")
     if args[1] != "repos/" + os.environ["GITHUB_REPOSITORY"] + "/releases/tags/" + os.environ["RELEASE_TAG"]:
         fail("metadata request not bound to repository and tag")
-    print(json.dumps(state["metadata"]))
+    metadata = dict(state["metadata"])
+    metadata["draft"] = (
+        state["metadata_draft_override"]
+        if state["metadata_draft_override_present"]
+        else not state["published"]
+    )
+    print(json.dumps(metadata))
 else:
     fail("unexpected command")
 save()
@@ -88,10 +96,15 @@ def _run(
     tmp_path: Path, *, script: str | None = None, **changes: object
 ) -> tuple[subprocess.CompletedProcess[str], dict]:
     """Execute shell in a non-repository workspace with an observable CLI boundary."""
-    metadata = {"tag_name": _TAG, "draft": False, "prerelease": False, "immutable": True}
-    metadata.update(changes.pop("metadata", {}))
+    metadata_changes = dict(changes.pop("metadata", {}))
+    metadata_draft_override_present = "draft" in metadata_changes
+    metadata_draft_override = metadata_changes.pop("draft", None)
+    metadata = {"tag_name": _TAG, "prerelease": False, "immutable": True}
+    metadata.update(metadata_changes)
     state = {
         "metadata": metadata,
+        "metadata_draft_override_present": metadata_draft_override_present,
+        "metadata_draft_override": metadata_draft_override,
         "calls": [],
         "uploaded_assets": [],
         "verified_assets": [],
