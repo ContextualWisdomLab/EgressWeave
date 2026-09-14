@@ -600,6 +600,7 @@ jobs:
       - name: Create a complete draft and publish it atomically
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
@@ -610,6 +611,12 @@ jobs:
             --title "EgressWeave ${RELEASE_TAG#v}" \
             --generate-notes
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          published_tag="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          published_tag_sha="$(jq -er '.object.sha' <<<"$published_tag")"
+          if [ "$published_tag_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Published release tag does not point to the exact reviewed commit."
+            exit 1
+          fi
           release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
           if ! jq -e --arg tag "$RELEASE_TAG" '
             .tag_name == $tag and .draft == false and
