@@ -36,10 +36,22 @@ def fail(message):
 if args[0] == "release":
     if "--repo" not in args or args[args.index("--repo") + 1] != os.environ["GITHUB_REPOSITORY"]:
         fail("no local git repository; explicit repository selection required")
+    if len(args) < 3 or args[2] != os.environ["RELEASE_TAG"]:
+        fail("release command tag did not match the requested tag")
     if args[1] == "create":
         if "--draft" not in args or "--verify-tag" not in args:
             fail("draft and verified tag are mandatory")
+        first_option = next(
+            (index for index, value in enumerate(args[3:], start=3) if value.startswith("--")),
+            len(args),
+        )
+        uploaded_assets = [Path(value).name for value in args[3:first_option]]
+        expected_assets = json.loads(os.environ["EXPECTED_RELEASE_ASSETS"])
+        if sorted(uploaded_assets) != sorted(expected_assets):
+            fail("release create asset inventory did not match reviewed evidence")
         state["created"] = True
+        state["created_tag"] = args[2]
+        state["uploaded_assets"] = uploaded_assets
     elif args[1] == "edit":
         state["published"] = True
     elif args[1] == "verify":
@@ -79,8 +91,13 @@ def _run(
     metadata = {"tag_name": _TAG, "draft": False, "prerelease": False, "immutable": True}
     metadata.update(changes.pop("metadata", {}))
     state = {
-        "metadata": metadata, "calls": [], "verified_assets": [],
-        "created": False, "published": False, **changes,
+        "metadata": metadata,
+        "calls": [],
+        "uploaded_assets": [],
+        "verified_assets": [],
+        "created": False,
+        "published": False,
+        **changes,
     }
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps(state), encoding="utf-8")
@@ -102,6 +119,7 @@ def _run(
         "FAKE_RELEASE_STATE": str(state_path),
         "GITHUB_REPOSITORY": _REPOSITORY,
         "RELEASE_TAG": _TAG,
+        "EXPECTED_RELEASE_ASSETS": json.dumps(_ASSETS),
     })
     result = subprocess.run(
         ["bash", "-c", _script() if script is None else script],
@@ -120,6 +138,11 @@ def test_checkout_free_publish_verifies_release_and_every_asset(tmp_path: Path) 
     result, state = _run(tmp_path)
     assert result.returncode == 0, result.stderr + result.stdout
     assert state["created"] and state["published"]
+    release_calls = [call for call in state["calls"] if call[:1] == ["release"]]
+    assert release_calls
+    assert all(call[2] == _TAG for call in release_calls)
+    assert state["created_tag"] == _TAG
+    assert sorted(state["uploaded_assets"]) == sorted(_ASSETS)
     assert ["release", "verify"] in [call[:2] for call in state["calls"]]
     assert sorted(state["verified_assets"]) == sorted(_ASSETS)
 
