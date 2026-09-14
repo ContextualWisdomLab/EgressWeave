@@ -11,16 +11,33 @@ _HELPERS = runpy.run_path(
 _run = _HELPERS["_run"]
 _script = _HELPERS["_script"]
 
+_PUBLISH = 'gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false'
+_RELEASE_VERIFY = 'gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"'
+_ASSET_LOOP_START = "for asset in release-evidence/*; do"
+
 
 def test_release_attestation_verification_must_follow_publication(tmp_path: Path) -> None:
     """A draft has no immutable-release attestation to accept as publication evidence."""
     script = _script()
-    publish = 'gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false'
-    verify = 'gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"'
-    assert script.count(publish) == 1
-    assert script.count(verify) == 1
-    without_verify = script.replace(verify, "", 1)
-    mutated = without_verify.replace(publish, f"{verify}\n{publish}", 1)
+    assert script.count(_PUBLISH) == 1
+    assert script.count(_RELEASE_VERIFY) == 1
+    without_verify = script.replace(_RELEASE_VERIFY, "", 1)
+    mutated = without_verify.replace(_PUBLISH, f"{_RELEASE_VERIFY}\n{_PUBLISH}", 1)
+    result, state = _run(tmp_path, script=mutated)
+    assert result.returncode != 0
+    assert state["published"] is False
+    assert not state["verified_assets"]
+
+
+def test_asset_attestation_verification_must_follow_publication(tmp_path: Path) -> None:
+    """Local asset verification cannot stand in for a published release attestation."""
+    script = _script()
+    assert script.count(_PUBLISH) == 1
+    loop_start = script.index(_ASSET_LOOP_START)
+    loop_end = script.index("\ndone", loop_start) + len("\ndone")
+    asset_loop = script[loop_start:loop_end]
+    without_loop = script[:loop_start] + script[loop_end:]
+    mutated = without_loop.replace(_PUBLISH, f"{asset_loop}\n{_PUBLISH}", 1)
     result, state = _run(tmp_path, script=mutated)
     assert result.returncode != 0
     assert state["published"] is False
