@@ -82,6 +82,8 @@ elif args[0] == "api":
         "repos/" + os.environ["GITHUB_REPOSITORY"] + "/git/ref/tags/" + os.environ["RELEASE_TAG"]
     )
     if args[1] == release_endpoint:
+        if not state["created"] and not state["published"]:
+            fail("HTTP 404")
         if state.get("metadata_failure"):
             fail("HTTP 503")
         metadata = dict(state["metadata"])
@@ -90,6 +92,7 @@ elif args[0] == "api":
             if state["metadata_draft_override_present"]
             else not state["published"]
         )
+        metadata["assets"] = [{"name": name} for name in state["uploaded_assets"]]
         state["release_metadata_read"] = True
         print(json.dumps(metadata))
     elif args[1] == tag_endpoint:
