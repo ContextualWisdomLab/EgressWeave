@@ -107,7 +107,10 @@ def _publication_script() -> str:
     return "\n".join(line[10:] for line in script.splitlines() if line.startswith("          "))
 
 
-def _run_public_rerun(tmp_path: Path, remote_assets: tuple[str, ...]) -> tuple[subprocess.CompletedProcess[str], dict]:
+def _run_public_rerun(
+    tmp_path: Path, remote_assets: tuple[str, ...]
+) -> tuple[subprocess.CompletedProcess[str], dict]:
+    """Run the real final shell against an already-public fake release inventory."""
     state = {
         "calls": [],
         "created": False,
@@ -153,21 +156,29 @@ def _run_public_rerun(tmp_path: Path, remote_assets: tuple[str, ...]) -> tuple[s
     return result, json.loads(state_path.read_text(encoding="utf-8"))
 
 
-def test_existing_public_immutable_release_is_reverified_without_mutation(tmp_path: Path) -> None:
+def test_existing_public_immutable_release_is_reverified_without_mutation(
+    tmp_path: Path,
+) -> None:
     """A failed completion check must be recoverable without recreating a public release."""
     result, state = _run_public_rerun(tmp_path, _ASSETS)
     assert result.returncode == 0, result.stderr + result.stdout
-    release_subcommands = [call[1] for call in state["calls"] if call[:1] == ["release"]]
+    release_subcommands = [
+        call[1] for call in state["calls"] if call[:1] == ["release"]
+    ]
     assert "create" not in release_subcommands
     assert "edit" not in release_subcommands
     assert state["release_verified"]
     assert sorted(state["verified_assets"]) == sorted(_ASSETS)
 
 
-def test_existing_public_release_with_wrong_asset_inventory_fails_closed(tmp_path: Path) -> None:
+def test_existing_public_release_with_wrong_asset_inventory_fails_closed(
+    tmp_path: Path,
+) -> None:
     """Verify-only recovery cannot bless a public release with missing reviewed evidence."""
     result, state = _run_public_rerun(tmp_path, _ASSETS[:-1])
     assert result.returncode != 0
-    release_subcommands = [call[1] for call in state["calls"] if call[:1] == ["release"]]
+    release_subcommands = [
+        call[1] for call in state["calls"] if call[:1] == ["release"]
+    ]
     assert "create" not in release_subcommands
     assert "edit" not in release_subcommands
