@@ -53,8 +53,9 @@ if args[0] == "release":
         state["created_tag"] = args[2]
         state["uploaded_assets"] = uploaded_assets
     elif args[1] == "edit":
-        if "--draft=false" not in args:
-            fail("release edit must clear draft state")
+        draft_flags = [value for value in args[3:] if value.startswith("--draft")]
+        if draft_flags != ["--draft=false"]:
+            fail("release edit must clear draft state exactly once")
         state["published"] = True
     elif args[1] == "verify":
         if state.get("release_failure"):
