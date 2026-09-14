@@ -13,6 +13,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[1]
 _REPOSITORY = "ContextualWisdomLab/EgressWeave"
 _TAG = "v0.3.0"
+_RELEASE_SHA = "a" * 40
 _ASSETS = ("SHA256SUMS", "egressweave-0.3.0.whl", "egressweave-0.3.0.tar.gz")
 _GH = r'''
 import json
@@ -74,17 +75,28 @@ if args[0] == "release":
     else:
         fail("unexpected release command")
 elif args[0] == "api":
-    if state.get("metadata_failure"):
-        fail("HTTP 503")
-    if args[1] != "repos/" + os.environ["GITHUB_REPOSITORY"] + "/releases/tags/" + os.environ["RELEASE_TAG"]:
-        fail("metadata request not bound to repository and tag")
-    metadata = dict(state["metadata"])
-    metadata["draft"] = (
-        state["metadata_draft_override"]
-        if state["metadata_draft_override_present"]
-        else not state["published"]
+    release_endpoint = (
+        "repos/" + os.environ["GITHUB_REPOSITORY"] + "/releases/tags/" + os.environ["RELEASE_TAG"]
     )
-    print(json.dumps(metadata))
+    tag_endpoint = (
+        "repos/" + os.environ["GITHUB_REPOSITORY"] + "/git/ref/tags/" + os.environ["RELEASE_TAG"]
+    )
+    if args[1] == tag_endpoint:
+        if state.get("tag_metadata_failure"):
+            fail("HTTP 503")
+        print(json.dumps({"object": {"sha": state["tag_sha"]}}))
+    elif args[1] == release_endpoint:
+        if state.get("metadata_failure"):
+            fail("HTTP 503")
+        metadata = dict(state["metadata"])
+        metadata["draft"] = (
+            state["metadata_draft_override"]
+            if state["metadata_draft_override_present"]
+            else not state["published"]
+        )
+        print(json.dumps(metadata))
+    else:
+        fail("metadata request not bound to repository and tag")
 else:
     fail("unexpected command")
 save()
@@ -117,6 +129,7 @@ def _run(
         "verified_assets": [],
         "created": False,
         "published": False,
+        "tag_sha": _RELEASE_SHA,
         **changes,
     }
     state_path = tmp_path / "state.json"
@@ -131,16 +144,20 @@ def _run(
     for name in _ASSETS:
         (evidence / name).write_text("reviewed fixture\n", encoding="utf-8")
     env = {
-        key: value for key, value in os.environ.items()
+        key: value
+        for key, value in os.environ.items()
         if key not in {"GH_REPO", "GH_TOKEN", "GITHUB_TOKEN", "GIT_DIR", "GIT_WORK_TREE"}
     }
-    env.update({
-        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-        "FAKE_RELEASE_STATE": str(state_path),
-        "GITHUB_REPOSITORY": _REPOSITORY,
-        "RELEASE_TAG": _TAG,
-        "EXPECTED_RELEASE_ASSETS": json.dumps(_ASSETS),
-    })
+    env.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "FAKE_RELEASE_STATE": str(state_path),
+            "GITHUB_REPOSITORY": _REPOSITORY,
+            "RELEASE_SHA": _RELEASE_SHA,
+            "RELEASE_TAG": _TAG,
+            "EXPECTED_RELEASE_ASSETS": json.dumps(_ASSETS),
+        }
+    )
     result = subprocess.run(
         ["bash", "-c", _script() if script is None else script],
         cwd=tmp_path,
@@ -163,6 +180,8 @@ def test_checkout_free_publish_verifies_release_and_every_asset(tmp_path: Path) 
     assert all(call[2] == _TAG for call in release_calls)
     assert state["created_tag"] == _TAG
     assert sorted(state["uploaded_assets"]) == sorted(_ASSETS)
+    tag_endpoint = f"repos/{_REPOSITORY}/git/ref/tags/{_TAG}"
+    assert ["api", tag_endpoint] in [call[:2] for call in state["calls"]]
     assert ["release", "verify"] in [call[:2] for call in state["calls"]]
     assert sorted(state["verified_assets"]) == sorted(_ASSETS)
 
@@ -193,11 +212,18 @@ def test_release_create_must_upload_every_locally_verified_asset(tmp_path: Path)
     assert result.returncode != 0
 
 
-@pytest.mark.parametrize("field,value", [
-    ("immutable", False), ("immutable", None), ("immutable", "true"),
-    ("draft", True), ("draft", "false"), ("prerelease", True),
-    ("tag_name", "v9.9.9"),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("immutable", False),
+        ("immutable", None),
+        ("immutable", "true"),
+        ("draft", True),
+        ("draft", "false"),
+        ("prerelease", True),
+        ("tag_name", "v9.9.9"),
+    ],
+)
 def test_unverified_inventory_is_rejected(tmp_path: Path, field: str, value: object) -> None:
     """Published existence cannot stand in for typed, exact immutable identity."""
     result, state = _run(tmp_path, metadata={field: value})
@@ -210,6 +236,14 @@ def test_unverified_inventory_is_rejected(tmp_path: Path, field: str, value: obj
 def test_verification_outage_is_not_success(tmp_path: Path, failure: str) -> None:
     """Read failure or invalid attestation must fail the publication result."""
     result, state = _run(tmp_path, **{failure: True})
+    assert state["published"], result.stderr
+    assert result.returncode != 0
+    assert not state["verified_assets"]
+
+
+def test_published_tag_lookup_outage_is_not_success(tmp_path: Path) -> None:
+    """Post-publication tag identity must be observable before attestations are accepted."""
+    result, state = _run(tmp_path, tag_metadata_failure=True)
     assert state["published"], result.stderr
     assert result.returncode != 0
     assert not state["verified_assets"]
