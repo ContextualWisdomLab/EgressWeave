@@ -593,11 +593,11 @@ jobs:
           if [ -n "$existing_release" ]; then
             release_id="${existing_release%%$'\t'*}"
             release_is_draft="${existing_release#*$'\t'}"
-            if [ "$release_is_draft" != "true" ]; then
-              echo "::error::A public GitHub Release already exists for this tag."
-              exit 1
+            if [ "$release_is_draft" = "true" ]; then
+              gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+            else
+              echo "Public GitHub Release already exists; verify it in place without mutation."
             fi
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
           fi
       - name: Create a complete draft and publish it atomically
         env:
@@ -606,19 +606,41 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release-evidence/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag \
-            --draft \
-            --title "EgressWeave ${RELEASE_TAG#v}" \
-            --generate-notes
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          release="$(gh api "$release_endpoint" 2>/dev/null || true)"
+          if [ -z "$release" ]; then
+            gh release create "$RELEASE_TAG" release-evidence/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --draft \
+              --title "EgressWeave ${RELEASE_TAG#v}" \
+              --generate-notes
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+            release="$(gh api "$release_endpoint")"
+          fi
           if ! jq -e --arg tag "$RELEASE_TAG" '
             .tag_name == $tag and .draft == false and
             .prerelease == false and .immutable == true
           ' <<<"$release" >/dev/null; then
             echo "::error::Published release is not immutable; it is ineligible for released-owner consumption."
+            exit 1
+          fi
+          local_asset_names=()
+          for asset in release-evidence/*; do
+            if [ ! -f "$asset" ] || [ ! -s "$asset" ]; then
+              echo "::error::Release evidence contains a missing or empty artifact."
+              exit 1
+            fi
+            local_asset_names+=("$(basename "$asset")")
+          done
+          if [ "${#local_asset_names[@]}" -eq 0 ]; then
+            echo "::error::Release evidence is empty."
+            exit 1
+          fi
+          local_assets="$(printf '%s\n' "${local_asset_names[@]}" | LC_ALL=C sort)"
+          remote_assets="$(jq -r '.assets[]?.name' <<<"$release" | LC_ALL=C sort)"
+          if [ "$remote_assets" != "$local_assets" ]; then
+            echo "::error::Published release asset inventory does not exactly match reviewed evidence."
             exit 1
           fi
           published_tag="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
@@ -629,9 +651,5 @@ jobs:
           fi
           gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
           for asset in release-evidence/*; do
-            if [ ! -f "$asset" ] || [ ! -s "$asset" ]; then
-              echo "::error::Release evidence contains a missing or empty artifact."
-              exit 1
-            fi
             gh release verify-asset "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"
           done
