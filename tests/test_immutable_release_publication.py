@@ -72,7 +72,9 @@ def _script() -> str:
     return "\n".join(line[10:] for line in script.splitlines() if line.startswith("          "))
 
 
-def _run(tmp_path: Path, **changes: object) -> tuple[subprocess.CompletedProcess[str], dict]:
+def _run(
+    tmp_path: Path, *, script: str | None = None, **changes: object
+) -> tuple[subprocess.CompletedProcess[str], dict]:
     """Execute shell in a non-repository workspace with an observable CLI boundary."""
     metadata = {"tag_name": _TAG, "draft": False, "prerelease": False, "immutable": True}
     metadata.update(changes.pop("metadata", {}))
@@ -102,8 +104,13 @@ def _run(tmp_path: Path, **changes: object) -> tuple[subprocess.CompletedProcess
         "RELEASE_TAG": _TAG,
     })
     result = subprocess.run(
-        ["bash", "-c", _script()], cwd=tmp_path, env=env,
-        text=True, capture_output=True, timeout=15, check=False,
+        ["bash", "-c", _script() if script is None else script],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=15,
+        check=False,
     )
     return result, json.loads(state_path.read_text(encoding="utf-8"))
 
@@ -115,6 +122,32 @@ def test_checkout_free_publish_verifies_release_and_every_asset(tmp_path: Path) 
     assert state["created"] and state["published"]
     assert ["release", "verify"] in [call[:2] for call in state["calls"]]
     assert sorted(state["verified_assets"]) == sorted(_ASSETS)
+
+
+@pytest.mark.parametrize("command", ["create", "edit", "verify", "verify-asset"])
+def test_every_release_command_is_bound_to_requested_tag(
+    tmp_path: Path, command: str
+) -> None:
+    """A release subcommand using another tag must fail the publication contract."""
+    script = _script()
+    expected = f'gh release {command} "$RELEASE_TAG"'
+    assert expected in script
+    mutated = script.replace(expected, f'gh release {command} "v9.9.9"', 1)
+    result, _ = _run(tmp_path, script=mutated)
+    assert result.returncode != 0
+
+
+def test_release_create_must_upload_every_locally_verified_asset(tmp_path: Path) -> None:
+    """Local verification cannot certify an artifact omitted from the published release."""
+    script = _script()
+    assert "release-evidence/*" in script
+    mutated = script.replace(
+        "release-evidence/*",
+        "release-evidence/SHA256SUMS release-evidence/egressweave-0.3.0.whl",
+        1,
+    )
+    result, _ = _run(tmp_path, script=mutated)
+    assert result.returncode != 0
 
 
 @pytest.mark.parametrize("field,value", [
