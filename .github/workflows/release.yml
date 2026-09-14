@@ -553,6 +553,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       actions: read
+      attestations: read
       contents: write
     steps:
       - name: Download complete reviewed release evidence
