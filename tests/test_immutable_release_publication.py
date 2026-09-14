@@ -56,6 +56,8 @@ if args[0] == "release":
         draft_flags = [value for value in args[3:] if value.startswith("--draft")]
         if draft_flags != ["--draft=false"]:
             fail("release edit must clear draft state exactly once")
+        if not state["created"] or state.get("created_tag") != args[2]:
+            fail("release edit must follow draft creation for the requested tag")
         state["published"] = True
     elif args[1] == "verify":
         if state.get("release_failure"):
