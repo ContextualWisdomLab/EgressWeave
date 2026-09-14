@@ -103,7 +103,7 @@ def _run(tmp_path: Path, **changes: object) -> tuple[subprocess.CompletedProcess
     })
     result = subprocess.run(
         ["bash", "-c", _script()], cwd=tmp_path, env=env,
-        text=True, capture_output=True, timeout=15,
+        text=True, capture_output=True, timeout=15, check=False,
     )
     return result, json.loads(state_path.read_text(encoding="utf-8"))
 
