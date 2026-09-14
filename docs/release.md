@@ -142,9 +142,16 @@ level claim.
    overwrite an existing public release and also depends directly on the same
    release-evidence gate. This artifact-only job has no git checkout: every
    `gh release` command explicitly selects `--repo "$GITHUB_REPOSITORY"`.
-9. The final step reads the version-specific Releases API and requires the exact
-   tag, typed `draft: false`, `prerelease: false`, and `immutable: true`. It then
-   verifies the signed release attestation and every local release-evidence
+9. Immediately after publication, before release metadata or attestations are
+   accepted, the final step reads the tag ref again and requires it to resolve
+   to the exact reviewed workflow SHA. `gh release create --verify-tag` proves
+   that the tag exists; it is not used as a substitute for commit binding. Once
+   the immutable release is published, GitHub locks its associated tag, so this
+   post-publication identity read is the completion gate against a tag move in
+   the interval after the earlier preflight.
+10. The final step then reads the version-specific Releases API and requires the
+   exact tag, typed `draft: false`, `prerelease: false`, and `immutable: true`.
+   It verifies the signed release attestation and every local release-evidence
    file, including `SHA256SUMS`, using `gh release verify` and
    `gh release verify-asset`. Missing or empty files, mismatched identities,
    mutable releases, unavailable metadata, and invalid attestations fail the
@@ -171,8 +178,11 @@ level claim.
   with a new version and a transparent changelog entry.
 - A completion-gate failure after publication does not undo PyPI or GitHub
   publication. Do not delete, retag or recycle the version. An owner must
-  investigate missing metadata or attestation and verify the existing artifacts
-  without changing them; use a new reviewed version for an actual defect.
+  investigate missing metadata, tag identity, or attestation and verify the
+  existing artifacts without changing them; use a new reviewed version for an
+  actual defect. A post-publication tag mismatch is a failed release-authority
+  event even if GitHub has already made the release public; that version remains
+  ineligible for released-owner consumption.
   The existing workflow still rejects a public-release retry before creation,
   so a generic whole-job rerun is not an automatic verify-only recovery path.
 - If release immutability was disabled or changed during publication, a complete
@@ -204,11 +214,12 @@ level claim.
 - Restore an empty `[Unreleased]` section only in the next normal development PR.
 
 The focused command `python -m pytest -q
-tests/test_immutable_release_publication.py` executes the actual final shell
-step in a checkout-free fixture with a stateful fake GitHub CLI. It checks the
-repository binding and fail-closed completion outcomes without any network or
-publication authority. It does not replace full repository, hosted exact-head,
-independent-review, real publication or consumer-canary evidence.
+tests/test_immutable_release_publication.py
+tests/test_immutable_release_tag_revalidation.py` executes the actual final
+shell step in a checkout-free fixture with a stateful fake GitHub CLI. It checks
+the repository/tag binding and fail-closed completion outcomes without any
+network or publication authority. It does not replace full repository, hosted
+exact-head, independent-review, real publication or consumer-canary evidence.
 
 ## Authoritative references
 
@@ -219,6 +230,7 @@ independent-review, real publication or consumer-canary evidence.
 - [PyPI Docs: Publishing with a Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 - [PyPI Docs: Trusted Publishing security model](https://docs.pypi.org/trusted-publishers/security-model/)
 - [GitHub Docs: Immutable releases](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)
+- [GitHub CLI: Create a release](https://cli.github.com/manual/gh_release_create)
 - [GitHub CLI: Repository environment](https://cli.github.com/manual/gh_help_environment)
 - [GitHub CLI: Verify a release](https://cli.github.com/manual/gh_release_verify)
 - [GitHub CLI: Verify a release asset](https://cli.github.com/manual/gh_release_verify-asset)
