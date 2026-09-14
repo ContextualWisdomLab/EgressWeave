@@ -142,17 +142,16 @@ level claim.
    overwrite an existing public release and also depends directly on the same
    release-evidence gate. This artifact-only job has no git checkout: every
    `gh release` command explicitly selects `--repo "$GITHUB_REPOSITORY"`.
-9. Immediately after publication, before release metadata or attestations are
-   accepted, the final step reads the tag ref again and requires it to resolve
-   to the exact reviewed workflow SHA. `gh release create --verify-tag` proves
-   that the tag exists; it is not used as a substitute for commit binding. Once
-   the immutable release is published, GitHub locks its associated tag, so this
-   post-publication identity read is the completion gate against a tag move in
-   the interval after the earlier preflight.
-10. The final step then reads the version-specific Releases API and requires the
-   exact tag, typed `draft: false`, `prerelease: false`, and `immutable: true`.
-   It verifies the signed release attestation and every local release-evidence
-   file, including `SHA256SUMS`, using `gh release verify` and
+9. After publication, the final step first reads the version-specific Releases
+   API and requires the exact tag, typed `draft: false`, `prerelease: false`, and
+   `immutable: true`. Only after this proves the release is immutable does it
+   re-read the associated tag ref and require the exact reviewed workflow SHA.
+   `gh release create --verify-tag` proves that the tag exists; it is not used as
+   a substitute for commit binding. This order closes the interval between the
+   earlier preflight and publication: the final tag identity is read only after
+   the immutable-release lock is observable.
+10. The final step then verifies the signed release attestation and every local
+   release-evidence file, including `SHA256SUMS`, using `gh release verify` and
    `gh release verify-asset`. Missing or empty files, mismatched identities,
    mutable releases, unavailable metadata, and invalid attestations fail the
    run. A public release's mere existence does not pass this completion gate.
