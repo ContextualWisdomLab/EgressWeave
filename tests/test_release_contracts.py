@@ -138,6 +138,22 @@ def test_release_tag_creation_rechecks_the_current_main_head() -> None:
     assert "Protected main moved after artifact verification" in tag_job
 
 
+def test_release_required_workflows_are_bound_to_the_integrating_pr() -> None:
+    """Do not accept a push, dispatch, or another PR's same-head run as merge evidence."""
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    evidence_job = workflow.split("  verify-release-evidence:", maxsplit=1)[1].split(
+        "  create-release-tag:", maxsplit=1
+    )[0]
+
+    assert (
+        'actions/runs?head_sha=${SOURCE_HEAD_SHA}&event=pull_request&per_page=100'
+        in evidence_job
+    )
+    assert '--argjson pr "$SOURCE_PR_NUMBER"' in evidence_job
+    assert '.event == "pull_request"' in evidence_job
+    assert 'any(.number == $pr)' in evidence_job
+
+
 def test_pypi_staging_rechecks_verified_distribution_digests_before_upload() -> None:
     """Bind copied PyPI staging bytes to the verifier-issued SHA256SUMS manifest."""
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
