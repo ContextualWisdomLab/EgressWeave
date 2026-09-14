@@ -81,11 +81,7 @@ elif args[0] == "api":
     tag_endpoint = (
         "repos/" + os.environ["GITHUB_REPOSITORY"] + "/git/ref/tags/" + os.environ["RELEASE_TAG"]
     )
-    if args[1] == tag_endpoint:
-        if state.get("tag_metadata_failure"):
-            fail("HTTP 503")
-        print(json.dumps({"object": {"sha": state["tag_sha"]}}))
-    elif args[1] == release_endpoint:
+    if args[1] == release_endpoint:
         if state.get("metadata_failure"):
             fail("HTTP 503")
         metadata = dict(state["metadata"])
@@ -94,7 +90,14 @@ elif args[0] == "api":
             if state["metadata_draft_override_present"]
             else not state["published"]
         )
+        state["release_metadata_read"] = True
         print(json.dumps(metadata))
+    elif args[1] == tag_endpoint:
+        if not state["release_metadata_read"]:
+            fail("published tag identity must be checked after immutable release metadata")
+        if state.get("tag_metadata_failure"):
+            fail("HTTP 503")
+        print(json.dumps({"object": {"sha": state["tag_sha"]}}))
     else:
         fail("metadata request not bound to repository and tag")
 else:
@@ -129,6 +132,7 @@ def _run(
         "verified_assets": [],
         "created": False,
         "published": False,
+        "release_metadata_read": False,
         "tag_sha": _RELEASE_SHA,
         **changes,
     }
@@ -180,9 +184,15 @@ def test_checkout_free_publish_verifies_release_and_every_asset(tmp_path: Path) 
     assert all(call[2] == _TAG for call in release_calls)
     assert state["created_tag"] == _TAG
     assert sorted(state["uploaded_assets"]) == sorted(_ASSETS)
+    release_endpoint = f"repos/{_REPOSITORY}/releases/tags/{_TAG}"
     tag_endpoint = f"repos/{_REPOSITORY}/git/ref/tags/{_TAG}"
-    assert ["api", tag_endpoint] in [call[:2] for call in state["calls"]]
-    assert ["release", "verify"] in [call[:2] for call in state["calls"]]
+    call_prefixes = [call[:2] for call in state["calls"]]
+    assert call_prefixes.index(["api", release_endpoint]) < call_prefixes.index(
+        ["api", tag_endpoint]
+    )
+    assert call_prefixes.index(["api", tag_endpoint]) < call_prefixes.index(
+        ["release", "verify"]
+    )
     assert sorted(state["verified_assets"]) == sorted(_ASSETS)
 
 
