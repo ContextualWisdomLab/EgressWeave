@@ -30,10 +30,11 @@ def test_release_attestation_verification_must_follow_publication(tmp_path: Path
 
 
 def test_asset_attestation_verification_must_follow_publication(tmp_path: Path) -> None:
-    """Local asset verification cannot stand in for a published release attestation."""
+    """Remote asset attestations cannot be accepted before release publication."""
     script = _script()
     assert script.count(_PUBLISH) == 1
-    loop_start = script.index(_ASSET_LOOP_START)
+    assert script.count(_ASSET_LOOP_START) >= 2
+    loop_start = script.rindex(_ASSET_LOOP_START)
     loop_end = script.index("\ndone", loop_start) + len("\ndone")
     asset_loop = script[loop_start:loop_end]
     without_loop = script[:loop_start] + script[loop_end:]
