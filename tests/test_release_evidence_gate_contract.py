@@ -74,7 +74,10 @@ def test_release_evidence_gate_binds_exact_integrating_pr_and_live_rules() -> No
     assert ".parameters.workflows[]?" in evidence_job
     assert "repositories/${workflow_repository_id}" in evidence_job
     assert "contents/${workflow_path}?ref=${workflow_ref}" in evidence_job
-    assert "actions/runs?head_sha=${SOURCE_HEAD_SHA}&per_page=100" in evidence_job
+    assert (
+        "actions/runs?head_sha=${SOURCE_HEAD_SHA}&event=pull_request&per_page=100"
+        in evidence_job
+    )
     assert '.head_sha == $head' in evidence_job
     assert 'workflow_url // ""' in evidence_job
     assert 'required_workflow_url_prefix="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/required_workflows/"' in evidence_job
