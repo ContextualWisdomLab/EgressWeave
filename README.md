@@ -21,17 +21,15 @@ response (CWE-400).
 
 ## Product and architecture source of truth
 
-Start with [`docs/product/PRD.md`](docs/product/PRD.md) for buyer/product
-requirements and [`docs/product/TRD.md`](docs/product/TRD.md) for the technical
-contract. Root [`ARCHITECTURE.md`](ARCHITECTURE.md) remains the authoritative
+Root [`ARCHITECTURE.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/ARCHITECTURE.md) remains the authoritative
 protected-main implementation architecture. The product documentation labels
 shipped, active-PR, accepted-target, and planned behavior separately so an
 unmerged design is never presented as protected-main functionality.
 
 Architecture views and durable decisions are indexed in
-[`docs/architecture/UML.md`](docs/architecture/UML.md),
-[`docs/architecture/ERD.md`](docs/architecture/ERD.md), and
-[`docs/adr/README.md`](docs/adr/README.md). The ERD explicitly records that the
+[`docs/architecture/UML.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/architecture/UML.md),
+[`docs/architecture/ERD.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/architecture/ERD.md), and
+[`docs/adr/README.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/adr/README.md). The ERD explicitly records that the
 core library owns no durable database rather than inventing persistence for
 architecture completeness.
 
@@ -356,7 +354,7 @@ capability-free, read-only verifier container. It emits only a short-lived
 digest-bound handoff; no repository-local job obtains write authority or
 publishes the patch. CI, security scans, independent reviews, branch
 protection, and the operator-controlled merge boundary remain authoritative. See
-[`docs/hourly-autonomous-maintenance.md`](docs/hourly-autonomous-maintenance.md)
+[`docs/hourly-autonomous-maintenance.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/hourly-autonomous-maintenance.md)
 for the complete control and configuration contract.
 
 ## Version compatibility
@@ -371,23 +369,23 @@ synchronous and asynchronous transports.
 
 ## Research grounding
 
-See [`docs/research`](docs/research/README.md): OWASP SSRF Prevention and
+See [`docs/research`](https://github.com/ContextualWisdomLab/EgressWeave/tree/main/docs/research): OWASP SSRF Prevention and
 positive scheme/port/destination allowlisting, secure defaults / fail securely,
 CWE-918, CWE-350 (DNS rebinding / TOCTOU), CWE-400 (uncontrolled resource
 consumption), CWE-444 (HTTP request interpretation differentials), RFC 9110
 (origin authority, content coding, and `CONNECT`), RFC 9112 (HTTP/1.1 message
 framing and response body length), and RFC 8305 (Happy Eyeballs-style concurrent
 connect across asynchronously pinned addresses). The exact authority decision is
-specified in [`exact-authority-pairs.md`](docs/research/exact-authority-pairs.md),
+specified in [`exact-authority-pairs.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/research/exact-authority-pairs.md),
 outbound request limits in
-[`request-body-resource-limits.md`](docs/research/request-body-resource-limits.md),
+[`request-body-resource-limits.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/research/request-body-resource-limits.md),
 request-timeout ceilings in
-[`request-timeout-boundaries.md`](docs/research/request-timeout-boundaries.md),
+[`request-timeout-boundaries.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/research/request-timeout-boundaries.md),
 response limits in
-[`response-body-resource-limits.md`](docs/research/response-body-resource-limits.md),
+[`response-body-resource-limits.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/research/response-body-resource-limits.md),
 and enterprise TLS configuration in
-[`tls-configuration.md`](docs/research/tls-configuration.md).
+[`tls-configuration.md`](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/docs/research/tls-configuration.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](https://github.com/ContextualWisdomLab/EgressWeave/blob/main/LICENSE).
