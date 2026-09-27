@@ -69,6 +69,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ambiguous or non-positive configuration before network I/O.
 
 ### Fixed
+- Keep the Pygments 2.21.0 CI dependency bound to its single reviewed universal
+  wheel artifact so release-SBOM validation, exact hash installation, and the
+  supported Python test matrix share one immutable runtime-lock identity.
 - Restore the hourly PR-maintenance calls to the reviewed immutable
   `ContextualWisdomLab/.github` revision
   `59505c1d89eb7ea816e921b6da38079c736608c2`. The regression contract now
