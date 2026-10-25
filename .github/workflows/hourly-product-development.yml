@@ -28,7 +28,7 @@ jobs:
       changed: ${{ steps.package.outputs.changed }}
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -80,7 +80,7 @@ jobs:
 
       - name: Set up Python
         if: steps.queue.outputs.develop == 'true'
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.13"
           cache: pip
@@ -218,7 +218,7 @@ jobs:
 
       - name: Upload the bounded change for credential-free reverification
         if: steps.package.outputs.changed == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hourly-product-change-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -243,7 +243,7 @@ jobs:
       VERIFIER_BASE_IMAGE: "python@sha256:6771159cd4fa5d9bba1258caf0b82e6b73458c694d178ad97c5e925c2d0e1a91"
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920
+        uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2
         with:
           egress-policy: audit
 
@@ -255,7 +255,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the bounded change
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: hourly-product-change-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/hourly-product-change
@@ -422,7 +422,7 @@ jobs:
 
       - name: Upload the independently verified handoff
         if: steps.gate.outputs.verify == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: hourly-verified-product-change-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
